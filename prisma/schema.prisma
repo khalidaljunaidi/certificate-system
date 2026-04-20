@@ -1,0 +1,275 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PROCUREMENT
+  PROCUREMENT_LEAD
+  PROCUREMENT_SPECIALIST
+  PROCUREMENT_DIRECTOR
+  ADMIN
+}
+
+enum AppLocale {
+  EN
+  AR
+}
+
+enum ProjectStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  ON_HOLD
+  CANCELLED
+}
+
+enum CertificateStatus {
+  DRAFT
+  PENDING_PM_APPROVAL
+  PM_APPROVED
+  REOPENED
+  PM_REJECTED
+  ISSUED
+  REVOKED
+}
+
+enum NotificationType {
+  CERTIFICATE_CREATED
+  CERTIFICATE_UPDATED
+  SENT_FOR_PM_APPROVAL
+  PM_APPROVED
+  PM_REJECTED
+  CERTIFICATE_ISSUED
+  CERTIFICATE_REOPENED
+  CERTIFICATE_REVOKED
+}
+
+enum AuditAction {
+  CREATED
+  UPDATED
+  SENT_FOR_PM_APPROVAL
+  PM_APPROVED
+  PM_REJECTED
+  ISSUED
+  REOPENED
+  REISSUED
+  REVOKED
+  DUPLICATED
+  ARCHIVED
+  UNARCHIVED
+}
+
+enum ApprovalTokenAction {
+  PM_APPROVAL
+}
+
+model User {
+  id                  String          @id @default(cuid())
+  name                String
+  email               String          @unique
+  emailVerified       DateTime?
+  image               String?
+  passwordHash        String
+  title               String          @default("Procurement User")
+  role                UserRole        @default(PROCUREMENT)
+  locale              AppLocale       @default(EN)
+  isActive            Boolean         @default(true)
+  passwordChanged     Boolean         @default(false)
+  passwordUpdatedAt   DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  accounts            Account[]
+  sessions            Session[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  createdCertificates Certificate[]   @relation("CertificateCreatedBy")
+}
+
+model Project {
+  id              String          @id @default(cuid())
+  projectCode     String          @unique
+  projectName     String
+  projectLocation String
+  clientName      String
+  startDate       DateTime
+  endDate         DateTime?
+  status          ProjectStatus   @default(PLANNED)
+  isArchived      Boolean         @default(false)
+  archivedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  vendorLinks     ProjectVendor[]
+  certificates    Certificate[]
+  notifications   Notification[]  @relation("ProjectNotifications")
+  auditLogs       AuditLog[]
+
+  @@index([status])
+  @@index([isArchived])
+}
+
+model Vendor {
+  id           String          @id @default(cuid())
+  vendorName   String
+  vendorEmail  String
+  vendorId     String          @unique
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  projectLinks ProjectVendor[]
+  certificates Certificate[]
+}
+
+model ProjectVendor {
+  id             String        @id @default(cuid())
+  projectId      String
+  vendorId       String
+  poNumber       String?
+  contractNumber String?
+  isActive       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  vendor         Vendor        @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  certificates   Certificate[]
+
+  @@index([projectId, vendorId])
+  @@index([projectId])
+  @@index([vendorId])
+}
+
+model Certificate {
+  id                   String            @id @default(cuid())
+  certificateCode      String            @unique
+  projectId            String
+  vendorId             String
+  projectVendorId      String
+  issueDate            DateTime
+  poNumber             String
+  contractNumber       String?
+  completionDate       DateTime
+  totalAmount          Decimal           @db.Decimal(12, 2)
+  executedScopeSummary String
+  clientName           String
+  clientTitle          String
+  approverName         String
+  approverTitle        String
+  pmName               String?
+  pmEmail              String?
+  pmTitle              String?
+  pmApprovedAt         DateTime?
+  approvalNotes        String?
+  status               CertificateStatus @default(DRAFT)
+  isArchived           Boolean           @default(false)
+  archivedAt           DateTime?
+  createdById          String
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  issuedAt             DateTime?
+  pdfUrl               String?
+  pdfStoragePath       String?
+  revokedAt            DateTime?
+  revokedReason        String?
+  project              Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  vendor               Vendor            @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  projectVendor        ProjectVendor     @relation(fields: [projectVendorId], references: [id], onDelete: Restrict)
+  createdBy            User              @relation("CertificateCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  approvalTokens       ApprovalToken[]
+  notifications        Notification[]    @relation("CertificateNotifications")
+  auditLogs            AuditLog[]
+
+  @@index([projectId, status])
+  @@index([vendorId, status])
+  @@index([projectVendorId])
+  @@index([isArchived])
+}
+
+model ApprovalToken {
+  id            String              @id @default(cuid())
+  certificateId String
+  actionType    ApprovalTokenAction @default(PM_APPROVAL)
+  tokenHash     String              @unique
+  expiresAt     DateTime
+  usedAt        DateTime?
+  invalidatedAt DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  certificate   Certificate         @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+
+  @@index([certificateId, expiresAt])
+}
+
+model Notification {
+  id                   String           @id @default(cuid())
+  userId               String
+  type                 NotificationType
+  title                String
+  message              String
+  relatedProjectId     String?
+  relatedCertificateId String?
+  read                 Boolean          @default(false)
+  readAt               DateTime?
+  createdAt            DateTime         @default(now())
+  user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project              Project?         @relation("ProjectNotifications", fields: [relatedProjectId], references: [id], onDelete: SetNull)
+  certificate          Certificate?     @relation("CertificateNotifications", fields: [relatedCertificateId], references: [id], onDelete: SetNull)
+
+  @@index([userId, read])
+  @@index([relatedProjectId])
+  @@index([relatedCertificateId])
+}
+
+model AuditLog {
+  id            String       @id @default(cuid())
+  action        AuditAction
+  entityType    String
+  entityId      String
+  projectId     String?
+  certificateId String?
+  userId        String?
+  details       Json?
+  createdAt     DateTime     @default(now())
+  project       Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  certificate   Certificate? @relation(fields: [certificateId], references: [id], onDelete: SetNull)
+  user          User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([certificateId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}

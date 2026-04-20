@@ -1,0 +1,276 @@
+@import "@fontsource/public-sans/400.css";
+@import "@fontsource/public-sans/700.css";
+@import "@fontsource/amiri/400.css";
+@import "@fontsource/amiri/700.css";
+@import "tailwindcss";
+
+:root {
+  --color-background: #fbf8f4;
+  --color-panel: #fffdf9;
+  --color-panel-soft: #f4ede5;
+  --color-border: #e3d8cc;
+  --color-ink: #161113;
+  --color-muted: #6d6166;
+  --color-primary: #311347;
+  --color-primary-strong: #220d31;
+  --color-accent: #d78439;
+  --color-success: #166534;
+  --font-sans: "Public Sans", "Segoe UI", Tahoma, sans-serif;
+  --font-serif: "Amiri", Georgia, serif;
+  --motion-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background:
+    radial-gradient(circle at top left, rgba(215, 132, 57, 0.08), transparent 28%),
+    linear-gradient(180deg, #fffaf4 0%, #fbf8f4 34%, #f7f1ea 100%);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+}
+
+::selection {
+  background: rgba(49, 19, 71, 0.14);
+}
+
+@keyframes tg-rise-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes tg-breathe {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  50% {
+    transform: translate3d(0, -4px, 0) scale(1.004);
+  }
+}
+
+@keyframes tg-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  50% {
+    transform: translate3d(0, -6px, 0);
+  }
+}
+
+@keyframes tg-sheen {
+  0% {
+    transform: translate3d(-180%, 0, 0) skewX(-18deg);
+    opacity: 0;
+  }
+
+  22% {
+    opacity: 0.42;
+  }
+
+  100% {
+    transform: translate3d(260%, 0, 0) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+@keyframes tg-button-breathe {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    box-shadow: 0 12px 28px rgba(17, 17, 17, 0.08);
+  }
+
+  50% {
+    transform: translate3d(0, -3px, 0) scale(1.018);
+    box-shadow: 0 18px 40px rgba(17, 17, 17, 0.14);
+  }
+}
+
+.tg-reveal {
+  animation: tg-rise-in 0.72s var(--motion-emphasized) both;
+  will-change: transform, opacity;
+}
+
+.tg-delay-1 {
+  animation-delay: 90ms;
+}
+
+.tg-delay-2 {
+  animation-delay: 180ms;
+}
+
+.tg-delay-3 {
+  animation-delay: 270ms;
+}
+
+.tg-delay-4 {
+  animation-delay: 360ms;
+}
+
+.tg-breathe-panel {
+  animation: tg-breathe 7.5s ease-in-out infinite;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.tg-logo-float {
+  animation: tg-float 6s ease-in-out infinite;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.tg-reveal.tg-breathe-panel {
+  animation:
+    tg-rise-in 0.72s var(--motion-emphasized) both,
+    tg-breathe 7.5s ease-in-out 0.72s infinite;
+}
+
+.tg-reveal.tg-logo-float {
+  animation:
+    tg-rise-in 0.72s var(--motion-emphasized) both,
+    tg-float 6s ease-in-out 0.72s infinite;
+}
+
+.tg-button-live {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  transform: translateZ(0);
+  transition:
+    transform 220ms var(--motion-emphasized),
+    box-shadow 220ms var(--motion-emphasized),
+    background-color 220ms ease,
+    border-color 220ms ease,
+    color 220ms ease;
+  will-change: transform;
+}
+
+.tg-button-live::after {
+  content: "";
+  position: absolute;
+  top: -10%;
+  left: -38%;
+  z-index: -1;
+  height: 120%;
+  width: 34%;
+  transform: skewX(-18deg);
+  background: linear-gradient(
+    115deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0) 28%,
+    rgba(255, 255, 255, 0.3) 52%,
+    rgba(255, 255, 255, 0) 76%
+  );
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tg-button-live:hover {
+  transform: translate3d(0, -3px, 0) scale(1.018);
+  box-shadow: 0 22px 46px rgba(17, 17, 17, 0.16);
+}
+
+.tg-button-live:hover::after {
+  animation: tg-sheen 820ms ease;
+}
+
+.tg-button-live:active {
+  transform: translate3d(0, 0, 0) scale(0.985);
+  box-shadow: 0 10px 22px rgba(17, 17, 17, 0.1);
+}
+
+.tg-cta-live {
+  animation: tg-button-breathe 4.8s ease-in-out infinite;
+}
+
+.tg-surface-live {
+  transition:
+    transform 280ms var(--motion-emphasized),
+    box-shadow 280ms var(--motion-emphasized),
+    border-color 280ms ease,
+    background-color 280ms ease;
+  will-change: transform;
+}
+
+.tg-surface-live:hover {
+  transform: translate3d(0, -4px, 0);
+  box-shadow: 0 28px 70px rgba(17, 17, 17, 0.11);
+  border-color: rgba(49, 19, 71, 0.14);
+}
+
+.tg-notification-shell {
+  position: relative;
+}
+
+.tg-notification-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 14px);
+  width: min(26rem, calc(100vw - 2rem));
+  border-radius: 28px;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 253, 249, 0.98);
+  box-shadow: 0 28px 70px rgba(17, 17, 17, 0.14);
+  backdrop-filter: blur(14px);
+  overflow: hidden;
+  z-index: 40;
+  animation: tg-rise-in 260ms var(--motion-emphasized) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tg-reveal,
+  .tg-breathe-panel,
+  .tg-logo-float,
+  .tg-button-live,
+  .tg-surface-live,
+  .tg-cta-live {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .tg-button-live:hover,
+  .tg-button-live:active,
+  .tg-surface-live:hover {
+    transform: none !important;
+    box-shadow: none !important;
+  }
+
+  .tg-button-live::after {
+    animation: none !important;
+    display: none !important;
+  }
+}

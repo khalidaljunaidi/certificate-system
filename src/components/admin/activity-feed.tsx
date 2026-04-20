@@ -1,0 +1,46 @@
+import { formatDateTime } from "@/lib/utils";
+
+export function ActivityFeed({
+  items,
+}: {
+  items: Array<{
+    id: string;
+    action: string;
+    entityType: string;
+    actorName: string | null;
+    createdAt: Date;
+  }>;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="rounded-[24px] border border-dashed border-[var(--color-border)] p-6 text-sm text-[var(--color-muted)]">
+        No activity recorded yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {items.map((item) => (
+        <div
+          key={item.id}
+          className="rounded-[24px] border border-[var(--color-border)] bg-white p-5"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">
+                {item.action.replaceAll("_", " ")}
+              </p>
+              <p className="mt-2 text-base text-[var(--color-ink)]">
+                {item.actorName ?? "System"} updated {item.entityType}.
+              </p>
+            </div>
+            <p className="text-xs text-[var(--color-muted)]">
+              {formatDateTime(item.createdAt)}
+            </p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
