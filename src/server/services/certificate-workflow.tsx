@@ -284,7 +284,6 @@ export async function saveCertificateDraft(input: {
   if (payload.pmApprovalPayload) {
     await sendPmApprovalRequestEmail({
       to: payload.pmApprovalPayload.pmEmail,
-      cc: "mohamed@thegatheringksa.com",
       approvalUrl: payload.pmApprovalPayload.approvalUrl,
       projectName: payload.pmApprovalPayload.projectName,
       vendorName: payload.pmApprovalPayload.vendorName,
@@ -447,7 +446,6 @@ export async function submitCertificateForPmApproval(input: {
 
   await sendPmApprovalRequestEmail({
     to: payload.pmEmail,
-    cc: "mohamed@thegatheringksa.com",
     approvalUrl: payload.approvalUrl,
     projectName: payload.projectName,
     vendorName: payload.vendorName,
