@@ -48,6 +48,8 @@ type FallbackEmailContentInput = {
   footerNote?: string;
 };
 
+const HEAD_OF_PROJECTS_EMAIL = "mohamed@thegatheringksa.com";
+
 class EmailDeliveryError extends Error {
   constructor(
     message: string,
@@ -450,6 +452,7 @@ async function buildEmailTestFixture() {
 
 export async function sendPmApprovalRequestEmail(input: {
   to: string;
+  cc?: string[];
   approvalUrl: string;
   projectName: string;
   vendorName: string;
@@ -457,13 +460,20 @@ export async function sendPmApprovalRequestEmail(input: {
   contractNumber?: string | null;
 }) {
   const to = normalizeEmail(input.to);
-  const procurementRecipients = await getProcurementTeamRecipients([to]);
+
+  const baseCc = uniqueEmails(
+    [HEAD_OF_PROJECTS_EMAIL, ...(input.cc ?? [])],
+    [to],
+  );
+
+  const procurementRecipients = await getProcurementTeamRecipients([to, ...baseCc]);
+  const finalCc = uniqueEmails([...baseCc, ...procurementRecipients], [to]);
 
   return sendResendEmail("pm-approval-request", {
     payload: {
       from: "",
       to,
-      cc: procurementRecipients,
+      cc: finalCc,
       subject: `Approval Required - ${input.projectName}`,
       react: PMApprovalRequestEmail({
         projectName: input.projectName,
@@ -488,6 +498,7 @@ export async function sendPmApprovalRequestEmail(input: {
     logContext: {
       projectName: input.projectName,
       vendorName: input.vendorName,
+      headOfProjectsEmail: HEAD_OF_PROJECTS_EMAIL,
     },
   });
 }
