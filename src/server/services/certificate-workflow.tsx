@@ -282,14 +282,15 @@ export async function saveCertificateDraft(input: {
   });
 
   if (payload.pmApprovalPayload) {
-    await sendPmApprovalRequestEmail({
-      to: payload.pmApprovalPayload.pmEmail,
-      approvalUrl: payload.pmApprovalPayload.approvalUrl,
-      projectName: payload.pmApprovalPayload.projectName,
-      vendorName: payload.pmApprovalPayload.vendorName,
-      poNumber: payload.pmApprovalPayload.poNumber,
-      contractNumber: payload.pmApprovalPayload.contractNumber,
-    });
+await sendPmApprovalRequestEmail({
+  to: payload.pmEmail,
+  cc: mohamed@thegatheringksa.com
+  approvalUrl: payload.approvalUrl,
+  projectName: payload.projectName,
+  vendorName: payload.vendorName,
+  poNumber: payload.poNumber,
+  contractNumber: payload.contractNumber,
+});
   }
 
   return payload.certificate;
