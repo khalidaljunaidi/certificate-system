@@ -218,7 +218,7 @@ export async function saveQuarterlyPerformanceReview(input: {
     throw new Error("Only Khaled can create or finalize quarterly performance reviews.");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const employee = await tx.user.findUnique({
       where: {
         id: input.values.employeeUserId,
@@ -444,6 +444,8 @@ export async function saveQuarterlyPerformanceReview(input: {
 
     return result.review;
   });
+
+  return result;
 }
 
 export async function createMonthlyCycle(input: {
@@ -463,7 +465,7 @@ export async function createMonthlyCycle(input: {
     throw new Error("Only Khaled can create or activate monthly cycles.");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const existing = await tx.monthlyCycle.findUnique({
       where: {
         month_year: {
@@ -524,6 +526,8 @@ export async function createMonthlyCycle(input: {
 
     return cycle;
   });
+
+  return result;
 }
 
 export async function updateMonthlyCycleStatus(input: {
@@ -538,7 +542,7 @@ export async function updateMonthlyCycleStatus(input: {
     throw new Error("Only Khaled can manage monthly cycle state.");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const cycle = await tx.monthlyCycle.findUnique({
       where: {
         id: input.cycleId,
@@ -612,6 +616,8 @@ export async function updateMonthlyCycleStatus(input: {
 
     return updated;
   });
+
+  return result;
 }
 
 export async function saveMonthlyPerformanceReview(input: {
@@ -634,7 +640,7 @@ export async function saveMonthlyPerformanceReview(input: {
     throw new Error("Only Khaled can save monthly performance reviews.");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const [cycle, employee, existing] = await Promise.all([
       tx.monthlyCycle.findUnique({
         where: {
@@ -744,8 +750,8 @@ export async function saveMonthlyPerformanceReview(input: {
             finalScorePercent: new Prisma.Decimal(finalScorePercent),
             grade,
             finalizedAt,
-          },
-        });
+        },
+      });
 
     await createAuditLog(tx, {
       action: input.finalize
@@ -766,6 +772,75 @@ export async function saveMonthlyPerformanceReview(input: {
       },
     });
 
-    return review;
+    if (input.finalize) {
+      await createWorkflowNotification(tx, {
+        type: "SYSTEM_ALERT",
+        eventKey: "PERFORMANCE_REVIEW_FINALIZED",
+        title: "Monthly review finalized",
+        message: `${employee.name} monthly review for ${cycle.label} was finalized with grade ${grade}.`,
+        routingStrategies: ["evaluated_employee", "entity_owner"],
+        routingContext: {
+          evaluatedEmployee: {
+            userId: employee.id,
+            email: employee.email,
+          },
+          entityOwner: {
+            userId: input.actor.id,
+            email: input.actor.email,
+          },
+        },
+        includeProcurementTeam: false,
+        href: `/admin/performance?cycleId=${cycle.id}&employeeUserId=${employee.id}`,
+      });
+    }
+
+    return {
+      review,
+      cycle,
+      employee,
+      systemMetrics,
+      managerScorePercent,
+      finalScorePercent,
+      grade,
+    };
   });
+
+  if (input.finalize) {
+    await sendGovernedWorkflowEmail({
+      event: "PERFORMANCE_REVIEW_FINALIZED",
+      label: "monthly-review-finalized",
+      subject: `Monthly Review Finalized - ${result.employee.name}`,
+      heading: "Monthly Review Finalized",
+      intro: `${result.employee.name}'s monthly review for ${result.cycle.label} has been finalized with grade ${result.grade}.`,
+      rows: [
+        { label: "Employee", value: result.employee.name },
+        { label: "Cycle", value: result.cycle.label },
+        { label: "System Score", value: `${result.systemMetrics.systemScore.toFixed(2)}%` },
+        { label: "Manager Score", value: `${result.managerScorePercent.toFixed(2)}%` },
+        { label: "Final Score", value: `${result.finalScorePercent.toFixed(2)}%` },
+        { label: "Grade", value: result.grade },
+      ],
+      actionLabel: "Open Monthly Review",
+      actionUrl: absoluteUrl(
+        `/admin/performance?cycleId=${result.cycle.id}&employeeUserId=${result.employee.id}`,
+      ),
+      logContext: {
+        employeeEmail: result.employee.email,
+        evaluatorEmail: input.actor.email,
+      },
+      routingPolicy: WORKFLOW_EMAIL_ROUTING_POLICIES.PERFORMANCE_REVIEW_FINALIZED,
+      routingContext: {
+        evaluatedEmployee: {
+          userId: result.employee.id,
+          email: result.employee.email,
+        },
+        entityOwner: {
+          userId: input.actor.id,
+          email: input.actor.email,
+        },
+      },
+    });
+  }
+
+  return result.review;
 }

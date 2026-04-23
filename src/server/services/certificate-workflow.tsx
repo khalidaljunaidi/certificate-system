@@ -496,6 +496,101 @@ export async function submitCertificateForPmApproval(input: {
   return payload;
 }
 
+export async function forceApproveCertificateByExecutive(input: {
+  userId: string;
+  userName: string;
+  userTitle: string;
+  overrideReason: string;
+  values: {
+    certificateId: string;
+  };
+}) {
+  const payload = await prisma.$transaction(async (tx) => {
+    const certificate = await tx.certificate.findUnique({
+      where: {
+        id: input.values.certificateId,
+      },
+      include: {
+        project: true,
+        vendor: true,
+      },
+    });
+
+    if (!certificate) {
+      throw new Error("Certificate not found.");
+    }
+
+    if (certificate.isArchived) {
+      throw new Error(
+        "Archived certificates must be unarchived before an override can be applied.",
+      );
+    }
+
+    if (certificate.status !== "PENDING_PM_APPROVAL") {
+      throw new Error("Only pending PM approval certificates can be bypassed.");
+    }
+
+    const approvedAt = new Date();
+    const updated = await tx.certificate.update({
+      where: {
+        id: certificate.id,
+      },
+      data: {
+        status: "PM_APPROVED",
+        pmName: input.userName,
+        pmTitle: input.userTitle,
+        pmApprovedAt: approvedAt,
+        approvalNotes: input.overrideReason,
+      },
+    });
+
+    await invalidateOutstandingPmTokens(tx, updated.id);
+
+    await createAuditLog(tx, {
+      action: "PM_APPROVED",
+      entityType: "Certificate",
+      entityId: updated.id,
+      certificateId: updated.id,
+      projectId: updated.projectId,
+      userId: input.userId,
+      details: {
+        previousStatus: certificate.status,
+        nextStatus: updated.status,
+        overrideReason: input.overrideReason,
+        overrideByName: input.userName,
+        overrideByTitle: input.userTitle,
+        bypassedStep: "PM_APPROVAL",
+        approvedAt: approvedAt.toISOString(),
+      },
+    });
+
+    await createWorkflowNotification(tx, {
+      type: "PM_APPROVED",
+      title: "Certificate approved by executive override",
+      message: `${certificate.vendor.vendorName} certificate under ${certificate.project.projectName} was advanced to PM approved by Khaled without waiting for the pending approval step.`,
+      projectId: updated.projectId,
+      vendorId: updated.vendorId,
+      projectVendorId: updated.projectVendorId,
+      certificateId: updated.id,
+      routingStrategies: ["project_manager", "procurement_chain"],
+      routingContext: {
+        projectManager: {
+          email: certificate.pmEmail,
+        },
+      },
+      severity: "WARNING",
+    });
+
+    return {
+      certificate: updated,
+      projectName: certificate.project.projectName,
+      vendorName: certificate.vendor.vendorName,
+    };
+  });
+
+  return payload;
+}
+
 export async function approveCertificateByToken(input: {
   values: z.infer<typeof pmApprovalSchema>;
 }) {

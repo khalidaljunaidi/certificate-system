@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import type { VendorEvaluationEvaluatorRole } from "@prisma/client";
 
 import { FormStateMessage } from "@/components/forms/form-state-message";
@@ -34,6 +35,7 @@ export function VendorScorecardFields({
   submitLabel,
   submitPendingLabel,
   includeEvaluatorName = true,
+  beforeSubmitContent,
 }: {
   role: VendorEvaluationEvaluatorRole;
   state: ActionState;
@@ -42,6 +44,7 @@ export function VendorScorecardFields({
   submitLabel: string;
   submitPendingLabel: string;
   includeEvaluatorName?: boolean;
+  beforeSubmitContent?: ReactNode;
 }) {
   const template = useMemo(() => getVendorScorecardTemplate(role), [role]);
   const [entries, setEntries] = useState(createDefaultVendorScorecardEntries(role));
@@ -306,6 +309,8 @@ export function VendorScorecardFields({
           disabled={isPending}
         />
       </div>
+
+      {beforeSubmitContent}
 
       <FormStateMessage state={state.error ? state : {}} />
 

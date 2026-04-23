@@ -127,6 +127,16 @@ const NOTICE_TOASTS: Record<string, ToastConfig> = {
     body: "Vendor evaluation finalized successfully.",
     tone: "success",
   },
+  "vendor-evaluation-force-finalized": {
+    title: "Vendor evaluation force-finalized",
+    body: "Executive override applied successfully and the evaluation was closed.",
+    tone: "warning",
+  },
+  "certificate-override-approved": {
+    title: "Certificate force-approved",
+    body: "Executive override applied successfully and the certificate workflow advanced.",
+    tone: "warning",
+  },
   "workflow-email-routing-saved": {
     title: "Workflow routing updated",
     body: "Workflow email routing updated successfully.",
@@ -135,11 +145,17 @@ const NOTICE_TOASTS: Record<string, ToastConfig> = {
 };
 
 function getToastIconKey(title: string) {
+  const loweredTitle = title.toLowerCase();
+
+  if (loweredTitle.includes("override") || loweredTitle.includes("force")) {
+    return "shield";
+  }
+
   if (title.includes("PM")) {
     return "send";
   }
 
-  if (title.toLowerCase().includes("reopened")) {
+  if (loweredTitle.includes("reopened")) {
     return "refresh";
   }
 

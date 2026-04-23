@@ -8,6 +8,7 @@ import {
   canFinalizeVendorEvaluation,
   canManageWorkflowEmailSettings,
   canManageVendorGovernance,
+  isPrimaryEvaluator,
   canRequestVendorEvaluation,
 } from "@/lib/permissions";
 import {
@@ -16,6 +17,7 @@ import {
   vendorCategorySchema,
   vendorMasterSchema,
   vendorEvaluationSubmissionSchema,
+  forceFinalizeVendorEvaluationSchema,
   vendorGovernanceSchema,
   vendorSubcategorySchema,
   workflowEmailSettingSchema,
@@ -306,6 +308,56 @@ export async function finalizeVendorEvaluationCycleAction(
       redirectTo: buildVendorDetailPath(vendorId, {
         notice: "vendor-evaluation-finalized",
       }),
+    };
+  } catch (error) {
+    return toActionState(error);
+  }
+}
+
+export async function forceFinalizeVendorEvaluationCycleAction(
+  prevState: ActionState = EMPTY_ACTION_STATE,
+  formData: FormData,
+): Promise<ActionState> {
+  try {
+    void prevState;
+    const session = await requireAdminSession();
+
+    if (!canFinalizeVendorEvaluation(session.user.role) || !isPrimaryEvaluator(session.user.email)) {
+      return {
+        error: "Only Khaled can force-finalize vendor evaluations.",
+      };
+    }
+
+    const vendorId = String(formData.get("vendorId"));
+    const values = forceFinalizeVendorEvaluationSchema.parse({
+      cycleId: formData.get("cycleId"),
+      criteriaSnapshot: formData.get("criteriaSnapshot"),
+      totalScorePercent: formData.get("totalScorePercent"),
+      summary: formData.get("summary"),
+      strengths: formData.get("strengths"),
+      concerns: formData.get("concerns"),
+      recommendation: formData.get("recommendation"),
+      correctiveActions: formData.get("correctiveActions"),
+      overrideReason: formData.get("overrideReason"),
+    });
+
+    await finalizeVendorEvaluationCycle({
+      userId: session.user.id,
+      userName: session.user.name,
+      userEmail: session.user.email,
+      values,
+      forceFinalize: true,
+      overrideReason: values.overrideReason,
+    });
+
+    revalidateVendorSurfaces(vendorId);
+
+    return {
+      success: "Vendor evaluation force-finalized successfully.",
+      noticeKey: "vendor-evaluation-force-finalized",
+      redirectTo: buildVendorDetailPath(vendorId, {
+        notice: "vendor-evaluation-force-finalized",
+      }, "evaluation-history"),
     };
   } catch (error) {
     return toActionState(error);

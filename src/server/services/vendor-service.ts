@@ -618,6 +618,8 @@ export async function finalizeVendorEvaluationCycle(input: {
   userName: string;
   userEmail: string;
   values: z.infer<typeof finalizeVendorEvaluationSchema>;
+  forceFinalize?: boolean;
+  overrideReason?: string;
 }) {
   return prisma.$transaction(async (tx) => {
     const cycle = await tx.vendorEvaluationCycle.findUnique({
@@ -639,7 +641,10 @@ export async function finalizeVendorEvaluationCycle(input: {
       throw new Error("This vendor evaluation has already been finalized.");
     }
 
-    if (!hasRequiredExternalSubmissions(cycle.submissions)) {
+    if (
+      !input.forceFinalize &&
+      !hasRequiredExternalSubmissions(cycle.submissions)
+    ) {
       throw new Error(
         "Procurement can finalize the evaluation only after the Project Manager and Head of Projects have both submitted.",
       );
@@ -698,18 +703,27 @@ export async function finalizeVendorEvaluationCycle(input: {
       projectId: updated.sourceProjectId,
       userId: input.userId,
       details: {
+        previousStatus: cycle.status,
+        nextStatus: updated.status,
         finalGrade: updated.finalGrade,
         finalScorePercent: scorecard.totalScorePercent,
         finalizedAt: finalizedAt.toISOString(),
+        forceFinalized: Boolean(input.forceFinalize),
+        overrideReason: input.overrideReason ?? null,
       },
     });
 
     await createWorkflowNotification(tx, {
       type: "VENDOR_EVALUATION_COMPLETED",
-      title: "Vendor evaluation completed",
-      message: `${cycle.vendor.vendorName} evaluation for ${cycle.year} was finalized by Procurement.`,
+      title: input.forceFinalize
+        ? "Vendor evaluation force-finalized"
+        : "Vendor evaluation completed",
+      message: input.forceFinalize
+        ? `${cycle.vendor.vendorName} evaluation for ${cycle.year} was force-finalized by Khaled for ${cycle.sourceProject.projectName}.`
+        : `${cycle.vendor.vendorName} evaluation for ${cycle.year} was finalized by Procurement.`,
       projectId: cycle.sourceProjectId,
       vendorId: cycle.vendorId,
+      severity: input.forceFinalize ? "WARNING" : "INFO",
     });
 
     return updated;

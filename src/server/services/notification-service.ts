@@ -7,6 +7,7 @@ import type {
 
 import {
   NOTIFICATION_EVENT_DEFAULTS,
+  PRIMARY_EVALUATOR_EMAIL,
   PROCUREMENT_TEAM_EMAILS,
 } from "@/lib/constants";
 import { buildAdminContextHref } from "@/lib/context-links";
@@ -48,6 +49,28 @@ function uniqueStrings(values: Array<string | null | undefined>) {
   return [...new Set(values.filter(Boolean) as string[])];
 }
 
+function mergeUsersById(
+  users: Array<{
+    id: string;
+    email: string;
+    name: string | null;
+  }>,
+) {
+  const seen = new Set<string>();
+  const merged: typeof users = [];
+
+  for (const user of users) {
+    if (seen.has(user.id)) {
+      continue;
+    }
+
+    seen.add(user.id);
+    merged.push(user);
+  }
+
+  return merged;
+}
+
 function inferEventKeyFromType(type: NotificationType): NotificationEventKey {
   switch (type) {
     case "CERTIFICATE_CREATED":
@@ -87,6 +110,60 @@ function inferEventKeyFromType(type: NotificationType): NotificationEventKey {
     default:
       return "SYSTEM_ALERT";
   }
+}
+
+const MANDATORY_EXECUTIVE_NOTIFICATION_TYPES = new Set<NotificationType>([
+  "CERTIFICATE_CREATED",
+  "CERTIFICATE_UPDATED",
+  "SENT_FOR_PM_APPROVAL",
+  "PM_APPROVED",
+  "PM_REJECTED",
+  "CERTIFICATE_ISSUED",
+  "CERTIFICATE_REOPENED",
+  "CERTIFICATE_REVOKED",
+  "VENDOR_EVALUATION_REQUESTED",
+  "VENDOR_EVALUATION_READY_FOR_PROCUREMENT",
+  "VENDOR_EVALUATION_COMPLETED",
+  "TASK_OVERDUE",
+  "SYSTEM_ALERT",
+]);
+
+const MANDATORY_EXECUTIVE_NOTIFICATION_EVENT_KEYS = new Set<
+  NotificationEventKey | "PERFORMANCE_REVIEW_FINALIZED"
+>(["PERFORMANCE_REVIEW_FINALIZED"]);
+
+function shouldAddMandatoryExecutiveOversight(input: {
+  type: NotificationType;
+  eventKey: NotificationEventKey;
+}) {
+  return (
+    MANDATORY_EXECUTIVE_NOTIFICATION_TYPES.has(input.type) ||
+    MANDATORY_EXECUTIVE_NOTIFICATION_EVENT_KEYS.has(input.eventKey)
+  );
+}
+
+async function resolveMandatoryExecutiveOversightUsers(
+  tx: Prisma.TransactionClient,
+) {
+  const user = await tx.user.findUnique({
+    where: {
+      email: PRIMARY_EVALUATOR_EMAIL,
+    },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+    },
+  });
+
+  if (!user) {
+    console.warn("[notification] mandatory executive oversight user not found", {
+      email: PRIMARY_EVALUATOR_EMAIL,
+    });
+    return [];
+  }
+
+  return [user];
 }
 
 async function resolveRecipientUsers(
@@ -236,7 +313,17 @@ export async function createWorkflowNotification(
   }
 
   const recipientUsers = await resolveRecipientUsers(tx, input);
-  const recipientIds = uniqueStrings(recipientUsers.map((user) => user.id));
+  const mandatoryOversightUsers = shouldAddMandatoryExecutiveOversight({
+    type: input.type,
+    eventKey,
+  })
+    ? await resolveMandatoryExecutiveOversightUsers(tx)
+    : [];
+  const resolvedRecipients = mergeUsersById([
+    ...recipientUsers,
+    ...mandatoryOversightUsers,
+  ]);
+  const recipientIds = uniqueStrings(resolvedRecipients.map((user) => user.id));
 
   if (recipientIds.length === 0) {
     await createDispatchLog(tx, {
@@ -248,6 +335,7 @@ export async function createWorkflowNotification(
         recipientUserIds: input.recipientUserIds ?? [],
         includeProcurementTeam: input.includeProcurementTeam ?? true,
         resolvedRecipients: [],
+        mandatoryOversightRecipientEmails: [],
         reason: "NO_ACTIVE_RECIPIENTS",
       },
       inAppCreatedCount: 0,
@@ -270,9 +358,12 @@ export async function createWorkflowNotification(
   }
 
   const recipientSnapshot = {
-    recipientUserIds: recipientUsers.map((user) => user.id),
-    recipientNames: recipientUsers.map((user) => user.name),
-    recipientEmails: recipientUsers.map((user) => user.email.toLowerCase()),
+    recipientUserIds: resolvedRecipients.map((user) => user.id),
+    recipientNames: resolvedRecipients.map((user) => user.name),
+    recipientEmails: resolvedRecipients.map((user) => user.email.toLowerCase()),
+    mandatoryOversightRecipientEmails: mandatoryOversightUsers.map((user) =>
+      user.email.toLowerCase(),
+    ),
     routingStrategies: input.routingStrategies ?? null,
   };
 
@@ -326,9 +417,12 @@ export async function createWorkflowNotification(
     vendorId: input.vendorId ?? null,
     projectVendorId: input.projectVendorId ?? null,
     taskId: input.taskId ?? null,
-    recipientUserIds: recipientUsers.map((user) => user.id),
-    recipientEmails: recipientUsers.map((user) => user.email.toLowerCase()),
-    recipientNames: recipientUsers.map((user) => user.name),
+    recipientUserIds: resolvedRecipients.map((user) => user.id),
+    recipientEmails: resolvedRecipients.map((user) => user.email.toLowerCase()),
+    recipientNames: resolvedRecipients.map((user) => user.name),
+    mandatoryOversightRecipientEmails: mandatoryOversightUsers.map((user) =>
+      user.email.toLowerCase(),
+    ),
     createdCount: createdNotifications.length,
     href,
   });

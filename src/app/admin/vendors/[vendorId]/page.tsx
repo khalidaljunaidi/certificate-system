@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { CertificateStatus } from "@prisma/client";
 
+import { PageNotice } from "@/components/admin/page-notice";
 import {
   CertificateStatusBadge,
   ProjectStatusBadge,
@@ -11,6 +12,7 @@ import {
 import { VendorCategoryForm } from "@/components/forms/vendor-category-form";
 import { VendorEvaluationCycleForm } from "@/components/forms/vendor-evaluation-cycle-form";
 import { VendorEvaluationFinalizeForm } from "@/components/forms/vendor-evaluation-finalize-form";
+import { VendorEvaluationForceFinalizeForm } from "@/components/forms/vendor-evaluation-force-finalize-form";
 import { VendorMasterForm } from "@/components/forms/vendor-master-form";
 import { VendorSubcategoryForm } from "@/components/forms/vendor-subcategory-form";
 import { Button } from "@/components/ui/button";
@@ -21,6 +23,7 @@ import {
   canFinalizeVendorEvaluation,
   canManageVendorGovernance,
   canRequestVendorEvaluation,
+  isPrimaryEvaluator,
 } from "@/lib/permissions";
 import { formatDate } from "@/lib/utils";
 import {
@@ -32,12 +35,17 @@ type VendorDetailPageProps = {
   params: Promise<{
     vendorId: string;
   }>;
+  searchParams: Promise<{
+    notice?: string;
+  }>;
 };
 
 export default async function VendorDetailPage({
   params,
+  searchParams,
 }: VendorDetailPageProps) {
   const { vendorId } = await params;
+  const feedback = await searchParams;
   const session = await requireAdminSession();
   const [vendorView, governanceOptions] = await Promise.all([
     getVendorRegistryView(vendorId),
@@ -51,15 +59,47 @@ export default async function VendorDetailPage({
   const canManageVendor = canManageVendorGovernance(session.user.role);
   const canRequestEvaluation = canRequestVendorEvaluation(session.user.role);
   const canFinalizeEvaluation = canFinalizeVendorEvaluation(session.user.role);
+  const isKhaled = isPrimaryEvaluator(session.user.email);
   const assignmentCount = vendorView.assignmentGroups.reduce(
     (total, group) => total + group.assignments.length,
     0,
   );
   const latestCycle = vendorView.evaluationCycles[0] ?? null;
+  const completedEvaluationCycles = vendorView.evaluationCycles.filter(
+    (cycle) =>
+      cycle.status === "COMPLETED" &&
+      cycle.finalScorePercent !== null &&
+      cycle.finalScorePercent !== undefined,
+  );
+  const averageEvaluationScore =
+    completedEvaluationCycles.length > 0
+      ? completedEvaluationCycles.reduce(
+          (total, cycle) => total + Number(cycle.finalScorePercent ?? 0),
+          0,
+        ) / completedEvaluationCycles.length
+      : null;
+  const latestCompletedCycle = completedEvaluationCycles[0] ?? null;
+  const previousCompletedCycle = completedEvaluationCycles[1] ?? null;
+  const trendDelta =
+    latestCompletedCycle && previousCompletedCycle
+      ? Number(latestCompletedCycle.finalScorePercent ?? 0) -
+        Number(previousCompletedCycle.finalScorePercent ?? 0)
+      : null;
+  const pendingEvaluationCount = vendorView.evaluationCycles.filter(
+    (cycle) => cycle.status !== "COMPLETED",
+  ).length;
   const defaultYear = new Date().getFullYear();
 
   return (
     <div className="space-y-8">
+      {isKhaled && feedback.notice === "vendor-evaluation-force-finalized" ? (
+        <PageNotice
+          tone="warning"
+          title="Evaluation force-finalized"
+          body="Khaled force-finalized the vendor evaluation successfully and the cycle is now closed."
+        />
+      ) : null}
+
       <section className="rounded-[32px] border border-[var(--color-border)] bg-white p-8 shadow-[0_20px_60px_rgba(17,17,17,0.05)]">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -98,6 +138,9 @@ export default async function VendorDetailPage({
           <div className="flex flex-wrap gap-3">
             <Button asChild>
               <Link href="#profile-editor">Edit Profile</Link>
+            </Button>
+            <Button asChild variant="secondary">
+              <Link href="#evaluation-workspace">Evaluation Workspace</Link>
             </Button>
             <Button asChild variant="secondary">
               <Link href="#evaluation-history">Evaluation History</Link>
@@ -177,28 +220,92 @@ export default async function VendorDetailPage({
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="evaluation-workspace" className="scroll-mt-28">
           <CardHeader>
-            <CardTitle>Vendor Lifecycle Actions</CardTitle>
+            <CardTitle>Vendor Evaluation Workspace</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-5">
             <p className="text-sm leading-7 text-[var(--color-muted)]">
-              Move smoothly between master profile updates, evaluation activity,
-              and vendor-linked assignment history without leaving the vendor
-              workspace.
+              Review the annual vendor scorecard, monitor evaluation progress,
+              and jump directly to the latest result or full history without
+              leaving the vendor workspace.
             </p>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <InfoTile
+                label="Latest Score"
+                value={
+                  latestCycle?.finalScorePercent !== null &&
+                  latestCycle?.finalScorePercent !== undefined
+                    ? `${latestCycle.finalScorePercent.toFixed(2)}%`
+                    : "Not scored"
+                }
+              />
+              <InfoTile
+                label="Average Score"
+                value={
+                  averageEvaluationScore !== null
+                    ? `${averageEvaluationScore.toFixed(2)}%`
+                    : "Not scored"
+                }
+              />
+              <InfoTile
+                label="Latest Grade"
+                value={
+                  latestCycle?.finalGrade
+                    ? `Grade ${latestCycle.finalGrade}`
+                    : latestCycle
+                      ? latestCycle.status.replaceAll("_", " ")
+                      : "Not started"
+                }
+              />
+              <InfoTile
+                label="Trend"
+                value={
+                  trendDelta !== null
+                    ? `${trendDelta >= 0 ? "+" : ""}${trendDelta.toFixed(2)} pts`
+                    : "No prior cycle"
+                }
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <InfoTile
+                label="Completed Cycles"
+                value={String(
+                  vendorView.evaluationCycles.filter(
+                    (cycle) => cycle.status === "COMPLETED",
+                  ).length,
+                )}
+              />
+              <InfoTile
+                label="Pending Cycles"
+                value={String(pendingEvaluationCount)}
+              />
+              <InfoTile
+                label="Latest Cycle"
+                value={
+                  latestCycle
+                    ? `${latestCycle.year} | ${latestCycle.status.replaceAll("_", " ")}`
+                    : "Not started"
+                }
+              />
+            </div>
+
             <div className="flex flex-wrap gap-3">
               <Button asChild>
-                <Link href="#profile-editor">Open Profile Editor</Link>
+                <Link href="#evaluation-request">Request Evaluation</Link>
               </Button>
-              <Button asChild variant="secondary">
-                <Link href="#evaluation-request">Send Evaluation Request</Link>
-              </Button>
+              {latestCycle ? (
+                <Button asChild variant="secondary">
+                  <Link href={`#evaluation-cycle-${latestCycle.id}`}>
+                    {latestCycle.status === "COMPLETED"
+                      ? "View Latest Result"
+                      : "Open Latest Cycle"}
+                  </Link>
+                </Button>
+              ) : null}
               <Button asChild variant="secondary">
                 <Link href="#evaluation-history">Open Evaluation History</Link>
-              </Button>
-              <Button asChild variant="secondary">
-                <Link href="#vendor-analytics">Analytics Snapshot</Link>
               </Button>
             </div>
           </CardContent>
@@ -506,7 +613,8 @@ export default async function VendorDetailPage({
                 return (
                   <div
                     key={cycle.id}
-                    className="rounded-[24px] border border-[var(--color-border)] bg-white p-5"
+                    id={`evaluation-cycle-${cycle.id}`}
+                    className="scroll-mt-28 rounded-[24px] border border-[var(--color-border)] bg-white p-5"
                   >
                     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                       <div>
@@ -608,7 +716,12 @@ export default async function VendorDetailPage({
 
                     {cycle.status !== "COMPLETED" ? (
                       <div className="mt-5 rounded-[20px] border border-dashed border-[var(--color-border)] p-4">
-                        {readyForProcurement && canFinalizeEvaluation ? (
+                        {isKhaled ? (
+                          <VendorEvaluationForceFinalizeForm
+                            vendorId={vendorView.vendor.id}
+                            cycleId={cycle.id}
+                          />
+                        ) : readyForProcurement && canFinalizeEvaluation ? (
                           <VendorEvaluationFinalizeForm
                             vendorId={vendorView.vendor.id}
                             cycleId={cycle.id}

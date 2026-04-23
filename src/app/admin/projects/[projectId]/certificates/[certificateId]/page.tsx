@@ -11,10 +11,13 @@ import {
 } from "@/actions/certificate-actions";
 import { PageNotice } from "@/components/admin/page-notice";
 import { CertificateStatusBadge } from "@/components/admin/status-badges";
+import { CertificateExecutiveOverrideForm } from "@/components/forms/certificate-executive-override-form";
 import { EditCertificateForm } from "@/components/forms/certificate-form";
 import { RevokeCertificateForm } from "@/components/forms/revoke-certificate-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireAdminSession } from "@/lib/auth";
+import { isPrimaryEvaluator } from "@/lib/permissions";
 import { formatDate, formatSarAmount } from "@/lib/utils";
 import { getCertificateById } from "@/server/queries/certificate-queries";
 import { getProjectVendorOptions } from "@/server/queries/project-queries";
@@ -37,6 +40,8 @@ export default async function CertificateDetailPage({
 }: CertificateDetailPageProps) {
   const { projectId, certificateId } = await params;
   const feedback = await searchParams;
+  const session = await requireAdminSession();
+  const isKhaled = isPrimaryEvaluator(session.user.email);
   const [certificate, vendors] = await Promise.all([
     getCertificateById(certificateId),
     getProjectVendorOptions(projectId),
@@ -84,6 +89,14 @@ export default async function CertificateDetailPage({
         <PageNotice
           title="Draft duplicated"
           body="A new draft was created from the selected certificate."
+        />
+      ) : null}
+
+      {feedback.notice === "certificate-override-approved" ? (
+        <PageNotice
+          tone="warning"
+          title="Certificate force-approved"
+          body="Khaled force-approved the certificate successfully and the workflow has advanced."
         />
       ) : null}
 
@@ -256,6 +269,15 @@ export default async function CertificateDetailPage({
               <CardTitle>Workflow Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {certificate.status === "PENDING_PM_APPROVAL" && isKhaled ? (
+                <div className="rounded-[24px] border border-[rgba(215,132,57,0.24)] bg-[rgba(215,132,57,0.08)] p-4">
+                  <CertificateExecutiveOverrideForm
+                    projectId={projectId}
+                    certificateId={certificate.id}
+                  />
+                </div>
+              ) : null}
+
               {certificate.isArchived ? (
                 <form action={unarchiveCertificateAction}>
                   <input type="hidden" name="projectId" value={projectId} />

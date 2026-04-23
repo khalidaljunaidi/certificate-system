@@ -256,6 +256,14 @@ export const issueCertificateSchema = z.object({
   certificateId: requiredString("Certificate"),
 });
 
+export const certificateOverrideSchema = z.object({
+  certificateId: requiredString("Certificate"),
+  overrideReason: requiredString("Override reason").max(
+    500,
+    "Override reason must stay concise",
+  ),
+});
+
 export const duplicateCertificateSchema = z.object({
   certificateId: requiredString("Certificate"),
 });
@@ -330,6 +338,14 @@ export const finalizeVendorEvaluationSchema = z.object({
     "Corrective actions must stay concise",
   ),
 });
+
+export const forceFinalizeVendorEvaluationSchema =
+  finalizeVendorEvaluationSchema.extend({
+    overrideReason: requiredString("Override reason").max(
+      500,
+      "Override reason must stay concise",
+    ),
+  });
 
 export const vendorEvaluationSubmissionSchema = z.object({
   token: requiredString("Token"),

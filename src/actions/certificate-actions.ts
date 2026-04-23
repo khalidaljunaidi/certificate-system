@@ -5,8 +5,10 @@ import { redirect } from "next/navigation";
 
 import type { ActionState } from "@/lib/types";
 import { requireAdminSession } from "@/lib/auth";
+import { isPrimaryEvaluator } from "@/lib/permissions";
 import {
   archiveCertificateSchema,
+  certificateOverrideSchema,
   certificateDraftSchema,
   duplicateCertificateSchema,
   issueCertificateSchema,
@@ -21,6 +23,7 @@ import {
   reopenCertificate,
   revokeCertificate,
   saveCertificateDraft,
+  forceApproveCertificateByExecutive,
   submitCertificateForPmApproval,
   unarchiveCertificate,
 } from "@/server/services/certificate-workflow";
@@ -208,6 +211,56 @@ export async function submitForPmApprovalAction(formData: FormData) {
   }
 
   redirect(redirectPath);
+}
+
+export async function forceApproveCertificateAction(
+  prevState: ActionState = EMPTY_ACTION_STATE,
+  formData: FormData,
+): Promise<ActionState> {
+  try {
+    void prevState;
+    const session = await requireAdminSession();
+
+    if (!isPrimaryEvaluator(session.user.email)) {
+      return {
+        error: "Only Khaled can bypass pending certificate approval.",
+      };
+    }
+
+    const projectId = String(formData.get("projectId"));
+    const certificateId = String(formData.get("certificateId"));
+
+    const values = certificateOverrideSchema.parse({
+      certificateId,
+      overrideReason: formData.get("overrideReason"),
+    });
+
+    await forceApproveCertificateByExecutive({
+      userId: session.user.id,
+      userName: session.user.name,
+      userTitle: session.user.title,
+      overrideReason: values.overrideReason,
+      values,
+    });
+
+    revalidatePath(`/admin/projects/${projectId}`);
+    revalidatePath(`/admin/projects/${projectId}/certificates`);
+    revalidatePath(`/admin/projects/${projectId}/certificates/${certificateId}`);
+    revalidatePath("/admin/certificates");
+    revalidatePath("/admin/dashboard");
+    revalidatePath("/admin/notifications");
+    revalidatePath("/admin", "layout");
+
+    return {
+      success: "Certificate advanced successfully through executive override.",
+      noticeKey: "certificate-override-approved",
+      redirectTo: buildCertificateDetailPath(projectId, certificateId, {
+        notice: "certificate-override-approved",
+      }),
+    };
+  } catch (error) {
+    return toActionState(error);
+  }
 }
 
 export async function issueCertificateAction(formData: FormData) {
