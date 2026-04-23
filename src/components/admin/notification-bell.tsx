@@ -86,11 +86,11 @@ export function NotificationBell({
   }
 
   return (
-    <div ref={rootRef} className="tg-notification-shell">
+    <div ref={rootRef} className="tg-notification-shell relative">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[var(--color-ink)] transition-[transform,box-shadow,background-color,border-color] duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-panel-soft)] hover:shadow-[0_16px_32px_rgba(17,17,17,0.12)]"
+        className="relative z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[var(--color-ink)] transition-[transform,box-shadow,background-color,border-color] duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-panel-soft)] hover:shadow-[0_16px_32px_rgba(17,17,17,0.12)]"
         aria-label="Open notifications"
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -104,7 +104,18 @@ export function NotificationBell({
       </button>
 
       {open ? (
-        <div className="tg-notification-panel" role="dialog" aria-label="Notifications">
+        <>
+          <button
+            type="button"
+            aria-label="Close notifications"
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-30 cursor-default bg-transparent"
+          />
+          <div
+            className="tg-notification-panel relative z-40"
+            role="dialog"
+            aria-label="Notifications"
+          >
           <div className="border-b border-[var(--color-border)] bg-[rgba(49,19,71,0.03)] px-5 py-4">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -193,7 +204,8 @@ export function NotificationBell({
               Open notification center
             </button>
           </div>
-        </div>
+          </div>
+        </>
       ) : null}
     </div>
   );

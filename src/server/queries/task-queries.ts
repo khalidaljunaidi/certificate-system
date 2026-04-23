@@ -35,6 +35,7 @@ function mapTaskItem(task: {
   startDate: Date | null;
   dueDate: Date;
   completedAt: Date | null;
+  executionResult: string | null;
   createdAt: Date;
   updatedAt: Date;
   reopenedCount: number;
@@ -94,6 +95,7 @@ function mapTaskItem(task: {
     startDate: task.startDate,
     dueDate: task.dueDate,
     completedAt: task.completedAt,
+    executionResult: task.executionResult,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     assignedTo: task.assignedTo,
@@ -442,8 +444,10 @@ export async function getOperationalTaskDetail(
     task: {
       ...mapTaskItem({
         ...task,
+        executionResult: task.executionResult,
       }),
       requiresChecklistCompletion: task.requiresChecklistCompletion,
+      executionResult: task.executionResult,
       dueSoonNotifiedAt: task.dueSoonNotifiedAt,
       overdueNotifiedAt: task.overdueNotifiedAt,
       lastStatusChangedAt: task.lastStatusChangedAt,

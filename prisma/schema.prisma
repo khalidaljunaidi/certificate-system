@@ -463,6 +463,31 @@ model WorkflowEmailSetting {
   @@index([updatedByUserId])
 }
 
+model WorkflowEmailGroup {
+  id          String                      @id @default(cuid())
+  key         String                      @unique
+  name        String
+  description  String
+  members     WorkflowEmailGroupMember[]
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+}
+
+model WorkflowEmailGroupMember {
+  id         String               @id @default(cuid())
+  groupId    String
+  name       String
+  email      String
+  isActive   Boolean              @default(true)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+  group      WorkflowEmailGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, email])
+  @@index([groupId])
+  @@index([email])
+}
+
 model OperationalTask {
   id                   String                  @id @default(cuid())
   title                String
@@ -475,6 +500,7 @@ model OperationalTask {
   startDate            DateTime?
   dueDate              DateTime
   completedAt          DateTime?
+  executionResult      String?
   linkedProjectId      String?
   linkedVendorId       String?
   linkedProjectVendorId String?

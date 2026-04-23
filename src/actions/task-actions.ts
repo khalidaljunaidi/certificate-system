@@ -5,9 +5,9 @@ import { revalidatePath } from "next/cache";
 import type { ActionState } from "@/lib/types";
 import { requireAdminSession } from "@/lib/auth";
 import { canManageOperationalTasks } from "@/lib/permissions";
-import { operationalTaskSchema } from "@/lib/validation";
+import { operationalTaskSchema, taskExecutionSchema } from "@/lib/validation";
 import { EMPTY_ACTION_STATE, toActionState } from "@/actions/utils";
-import { saveOperationalTask } from "@/server/services/task-service";
+import { saveOperationalTask, updateOperationalTaskExecution } from "@/server/services/task-service";
 
 export async function saveOperationalTaskAction(
   prevState: ActionState = EMPTY_ACTION_STATE,
@@ -65,6 +65,46 @@ export async function saveOperationalTaskAction(
         : "Operational task created successfully.",
       redirectTo: `/admin/tasks/${task.id}?notice=${values.taskId ? "task-updated" : "task-created"}`,
       noticeKey: values.taskId ? "task-updated" : "task-created",
+    };
+  } catch (error) {
+    return toActionState(error);
+  }
+}
+
+export async function updateOperationalTaskExecutionAction(
+  prevState: ActionState = EMPTY_ACTION_STATE,
+  formData: FormData,
+): Promise<ActionState> {
+  try {
+    void prevState;
+    const session = await requireAdminSession();
+    const values = taskExecutionSchema.parse({
+      taskId: formData.get("taskId"),
+      executionResult: formData.get("executionResult"),
+      checklistPayload: formData.get("checklistPayload"),
+    });
+
+    const task = await updateOperationalTaskExecution({
+      actorUser: {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name,
+        role: session.user.role,
+      },
+      values,
+    });
+
+    revalidatePath("/admin/tasks");
+    revalidatePath(`/admin/tasks/${task.id}`);
+    revalidatePath("/admin/dashboard");
+    revalidatePath("/admin/performance");
+    revalidatePath("/admin/notifications");
+    revalidatePath("/admin", "layout");
+
+    return {
+      success: "Task execution result saved successfully.",
+      redirectTo: `/admin/tasks/${task.id}?notice=task-completed`,
+      noticeKey: "task-completed",
     };
   } catch (error) {
     return toActionState(error);

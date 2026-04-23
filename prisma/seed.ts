@@ -3,6 +3,8 @@ import { PrismaClient, type UserRole } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { Pool } from "pg";
 
+import { NOTIFICATION_EMAIL_GROUP_DEFINITIONS } from "../src/lib/constants";
+
 const connectionString = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
 if (!connectionString) {
@@ -260,6 +262,31 @@ async function upsertVendorTaxonomy() {
   });
 }
 
+async function upsertNotificationEmailGroups() {
+  await Promise.all(
+    NOTIFICATION_EMAIL_GROUP_DEFINITIONS.map((group) =>
+      prisma.workflowEmailGroup.upsert({
+        where: {
+          key: group.value,
+        },
+        update: {
+          name: group.label,
+          description: group.description,
+        },
+        create: {
+          key: group.value,
+          name: group.label,
+          description: group.description,
+        },
+      }),
+    ),
+  );
+
+  console.info("[seed:notification-groups] Notification groups upserted", {
+    groups: NOTIFICATION_EMAIL_GROUP_DEFINITIONS.map((group) => group.label),
+  });
+}
+
 async function main() {
   const passwordHash = await bcrypt.hash(TEMPORARY_PASSWORD, 12);
 
@@ -295,6 +322,7 @@ async function main() {
   console.info("[seed:users] Procurement users upserted", {
     users: seededUsers.map((user) => normalizeEmail(user.email)),
   });
+  await upsertNotificationEmailGroups();
   await upsertVendorTaxonomy();
   console.info("[seed:users] Default seed completed", {
     scope: "core-auth-users-and-vendor-taxonomy",

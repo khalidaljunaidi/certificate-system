@@ -5,6 +5,7 @@ import {
   OperationalTaskStatusBadge,
   TaskSlaStatusBadge,
 } from "@/components/admin/status-badges";
+import { OperationalTaskExecutionForm } from "@/components/forms/operational-task-execution-form";
 import { OperationalTaskForm } from "@/components/forms/operational-task-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -72,6 +73,10 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
           <InfoTile
             label="Checklist"
             value={`${task.task.checklistCompletionPercent.toFixed(0)}% complete`}
+          />
+          <InfoTile
+            label="Execution Result"
+            value={task.task.executionResult ?? "Awaiting execution"}
           />
         </div>
 
@@ -147,11 +152,15 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
             <CardTitle>{canManage ? "Edit Task" : "Update My Task"}</CardTitle>
           </CardHeader>
           <CardContent>
-            <OperationalTaskForm
-              task={task}
-              lookupOptions={lookupOptions}
-              canManage={canManage}
-            />
+            {canManage ? (
+              <OperationalTaskForm
+                task={task}
+                lookupOptions={lookupOptions}
+                canManage={canManage}
+              />
+            ) : (
+              <OperationalTaskExecutionForm task={task} />
+            )}
           </CardContent>
         </Card>
       </section>

@@ -352,6 +352,26 @@ export type WorkflowEmailSettingView = {
   updatedByName: string | null;
 };
 
+export type WorkflowEmailGroupMemberView = {
+  id: string;
+  groupId: string;
+  name: string;
+  email: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type WorkflowEmailGroupView = {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  members: WorkflowEmailGroupMemberView[];
+  activeMembers: WorkflowEmailGroupMemberView[];
+  inactiveMembers: WorkflowEmailGroupMemberView[];
+};
+
 export type VendorPickerOption = {
   id: string;
   vendorId: string;
@@ -382,6 +402,7 @@ export type OperationalTaskListItem = {
   startDate: Date | null;
   dueDate: Date;
   completedAt: Date | null;
+  executionResult: string | null;
   createdAt: Date;
   updatedAt: Date;
   assignedTo: {
@@ -437,6 +458,7 @@ export type OperationalTaskListItem = {
 export type OperationalTaskDetailView = {
   task: OperationalTaskListItem & {
     requiresChecklistCompletion: boolean;
+    executionResult: string | null;
     dueSoonNotifiedAt: Date | null;
     overdueNotifiedAt: Date | null;
     lastStatusChangedAt: Date;

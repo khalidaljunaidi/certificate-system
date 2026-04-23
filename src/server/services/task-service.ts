@@ -20,6 +20,7 @@ import {
 } from "@/lib/task-metrics";
 import {
   operationalTaskSchema,
+  taskExecutionSchema,
   taskChecklistItemPayloadSchema,
 } from "@/lib/validation";
 import { prisma } from "@/lib/prisma";
@@ -59,6 +60,7 @@ type TaskAlertPayload = {
   certificateId: string | null;
   href: string;
   priority: OperationalTask["priority"];
+  executionResult?: string | null;
 };
 
 type ChecklistPayload = Array<{
@@ -85,6 +87,10 @@ function getTaskEscalationEmails(
   }
 
   if (event === "TASK_OVERDUE") {
+    escalationEmails.add(PRIMARY_EVALUATOR_EMAIL);
+  }
+
+  if (event === "TASK_COMPLETED") {
     escalationEmails.add(PRIMARY_EVALUATOR_EMAIL);
   }
 
@@ -254,6 +260,8 @@ async function notifyTaskEvent(
       email: task.assignedBy.email,
     },
     procurementChainEmails: getTaskEscalationEmails(event, task),
+    manualCcEmails:
+      event === "TASK_COMPLETED" ? [PRIMARY_EVALUATOR_EMAIL] : [],
   };
 
   await client.$transaction(async (tx) => {
@@ -269,7 +277,7 @@ async function notifyTaskEvent(
       taskId: task.taskId,
       href: task.href,
       routingStrategies:
-        event === "TASK_OVERDUE"
+        event === "TASK_OVERDUE" || event === "TASK_COMPLETED"
           ? ["assigned_user", "entity_owner", "procurement_chain"]
           : ["assigned_user", "entity_owner"],
       routingContext,
@@ -297,6 +305,9 @@ async function notifyTaskEvent(
       { label: "Assigned By", value: task.assignedBy.name },
       { label: "Due Date", value: task.dueDate.toLocaleDateString("en-GB") },
       { label: "Priority", value: task.priority.replaceAll("_", " ") },
+      ...(event === "TASK_COMPLETED" && task.executionResult
+        ? [{ label: "Execution Result", value: task.executionResult }]
+        : []),
       { label: "Head of Projects", value: HEAD_OF_PROJECTS_EMAIL },
     ],
     actionLabel: "Open Task",
@@ -381,24 +392,8 @@ export async function saveOperationalTask(input: SaveOperationalTaskInput) {
       throw new Error("Operational task not found.");
     }
 
-    if (
-      currentTask &&
-      !canManageOperationalTasks(input.actorUser.role) &&
-      currentTask.assignedToUserId !== input.actorUser.id
-    ) {
-      throw new Error("You do not have permission to update this task.");
-    }
-
-    if (!currentTask && !canManageOperationalTasks(input.actorUser.role)) {
+    if (!canManageOperationalTasks(input.actorUser.role)) {
       throw new Error("You do not have permission to create operational tasks.");
-    }
-
-    if (
-      currentTask &&
-      !canManageOperationalTasks(input.actorUser.role) &&
-      input.values.assignedToUserId !== currentTask.assignedToUserId
-    ) {
-      throw new Error("Only task managers can reassign operational tasks.");
     }
 
     const now = new Date();
@@ -545,6 +540,145 @@ export async function saveOperationalTask(input: SaveOperationalTaskInput) {
   if (result.shouldNotifyCompletion) {
     await notifyTaskEvent(prisma, "TASK_COMPLETED", taskContext);
   }
+
+  return result.task;
+}
+
+export async function updateOperationalTaskExecution(input: {
+  actorUser: {
+    id: string;
+    email: string;
+    role: UserRole;
+    name: string;
+  };
+  values: z.infer<typeof taskExecutionSchema>;
+}) {
+  const values = taskExecutionSchema.parse(input.values);
+  const checklist = parseChecklistPayload(values.checklistPayload);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const currentTask = await tx.operationalTask.findUnique({
+      where: {
+        id: values.taskId,
+      },
+      include: {
+        assignedTo: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            title: true,
+            role: true,
+          },
+        },
+        assignedBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!currentTask) {
+      throw new Error("Operational task not found.");
+    }
+
+    if (currentTask.assignedToUserId !== input.actorUser.id) {
+      throw new Error("Only the assigned user can complete this task.");
+    }
+
+    if (currentTask.status === "COMPLETED") {
+      throw new Error("This task has already been completed.");
+    }
+
+    if (
+      currentTask.requiresChecklistCompletion &&
+      checklist.some((item) => !item.completed)
+    ) {
+      throw new Error("Complete every checklist item before marking the task as completed.");
+    }
+
+    const now = new Date();
+    const task = await tx.operationalTask.update({
+      where: {
+        id: currentTask.id,
+      },
+      data: {
+        executionResult: values.executionResult,
+        status: "COMPLETED",
+        completedAt: now,
+        lastStatusChangedAt: now,
+      },
+    });
+
+    await tx.taskChecklistItem.deleteMany({
+      where: {
+        taskId: task.id,
+      },
+    });
+
+    if (checklist.length > 0) {
+      await tx.taskChecklistItem.createMany({
+        data: checklist.map((item) => ({
+          taskId: task.id,
+          label: item.label,
+          completed: item.completed,
+          completedAt: item.completed ? now : null,
+          orderIndex: item.orderIndex,
+        })),
+      });
+    }
+
+    await createAuditLog(tx, {
+      action: "TASK_COMPLETED",
+      entityType: "OperationalTask",
+      entityId: task.id,
+      projectId: task.linkedProjectId,
+      certificateId: task.linkedCertificateId,
+      userId: input.actorUser.id,
+      details: {
+        title: task.title,
+        priority: task.priority,
+        status: task.status,
+        assignedToUserId: task.assignedToUserId,
+        assignedByUserId: task.assignedByUserId,
+        checklistItems: checklist.length,
+        executionResult: values.executionResult,
+        monthlyCycleId: task.monthlyCycleId,
+      },
+    });
+
+    return {
+      task,
+      assignedTo: currentTask.assignedTo,
+      assignedBy: currentTask.assignedBy,
+    };
+  });
+
+  const taskContext: TaskAlertPayload = {
+    taskId: result.task.id,
+    title: result.task.title,
+    dueDate: result.task.dueDate,
+    assignedTo: result.assignedTo,
+    assignedBy: result.assignedBy,
+    projectId: result.task.linkedProjectId,
+    vendorId: result.task.linkedVendorId,
+    projectVendorId: result.task.linkedProjectVendorId,
+    certificateId: result.task.linkedCertificateId,
+    href: buildAdminContextHref({
+      taskId: result.task.id,
+      projectId: result.task.linkedProjectId,
+      vendorId: result.task.linkedVendorId,
+      projectVendorId: result.task.linkedProjectVendorId,
+      certificateId: result.task.linkedCertificateId,
+    }),
+    priority: result.task.priority,
+    executionResult: result.task.executionResult,
+  };
+
+  await notifyTaskEvent(prisma, "TASK_COMPLETED", taskContext);
 
   return result.task;
 }

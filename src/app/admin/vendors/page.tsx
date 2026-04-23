@@ -348,7 +348,7 @@ function HeroMetric({
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#f7c08b]">
         {label}
       </p>
-      <p className="mt-3 text-3xl font-semibold text-white">{value}</p>
+      <p className="mt-3 break-words text-3xl font-semibold text-white">{value}</p>
       <p className="mt-3 text-sm leading-7 text-[#efe3f5]">{hint}</p>
     </div>
   );
@@ -370,7 +370,7 @@ function MetricCard({
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
             {label}
           </p>
-          <p className="mt-3 break-words text-4xl font-semibold text-[var(--color-ink)]">
+          <p className="mt-3 break-words text-3xl font-semibold text-[var(--color-ink)]">
             {value}
           </p>
         </div>

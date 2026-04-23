@@ -108,11 +108,11 @@ export const WORKFLOW_EMAIL_ROUTING_POLICIES: Record<
   },
   TASK_COMPLETED: {
     primaryTo: ["assigned_user"],
-    primaryCc: ["entity_owner"],
+    primaryCc: ["entity_owner", "manual_override"],
     fallbackTo: ["default_fallback"],
     fallbackCc: ["default_fallback"],
     summary:
-      "Confirm task completion to the assignee and owner directly from the task context, with fallback routing only when needed.",
+      "Confirm task completion to the assignee and owner directly from the task context and allow explicit oversight copies without fallback routing.",
   },
   SYSTEM_ALERT: {
     primaryTo: ["procurement_chain"],

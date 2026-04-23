@@ -135,6 +135,20 @@ export const workflowEmailSettingSchema = z.object({
   ccEmails: z.array(z.email("Enter valid email addresses for CC recipients")),
 });
 
+export const workflowEmailGroupMemberSchema = z.object({
+  intent: z.enum(["create", "update", "deactivate", "activate"]),
+  groupId: requiredString("Notification group"),
+  memberId: z.string().trim().optional(),
+  name: requiredString("Member name").max(
+    120,
+    "Member name must stay concise",
+  ),
+  email: z.string().trim().email("Enter a valid member email address").max(
+    320,
+    "Member email must stay concise",
+  ),
+});
+
 export const operationalTaskSchema = z.object({
   taskId: z.string().trim().optional(),
   title: requiredString("Task title").max(140, "Task title must stay concise"),
@@ -161,6 +175,15 @@ export const operationalTaskSchema = z.object({
   linkedCertificateId: z.string().trim().optional(),
   monthlyCycleId: z.string().trim().optional(),
   requiresChecklistCompletion: z.boolean(),
+  checklistPayload: requiredString("Task checklist"),
+});
+
+export const taskExecutionSchema = z.object({
+  taskId: requiredString("Task"),
+  executionResult: requiredString("Execution result").max(
+    2000,
+    "Execution result must stay concise",
+  ),
   checklistPayload: requiredString("Task checklist"),
 });
 

@@ -5,8 +5,10 @@ import {
   WORKFLOW_EMAIL_ROUTING_POLICIES,
 } from "@/lib/workflow-routing";
 import { canManageWorkflowEmailSettings } from "@/lib/permissions";
+import { NotificationGroupsManager } from "@/components/admin/notification-groups-manager";
 import { WorkflowEmailSettingForm } from "@/components/forms/workflow-email-setting-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getNotificationEmailGroups } from "@/server/services/notification-group-service";
 import { getWorkflowEmailSettings } from "@/server/services/workflow-email-settings-service";
 
 export default async function SettingsPage() {
@@ -28,7 +30,10 @@ export default async function SettingsPage() {
     );
   }
 
-  const settings = await getWorkflowEmailSettings();
+  const [settings, notificationGroups] = await Promise.all([
+    getWorkflowEmailSettings(),
+    getNotificationEmailGroups(),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -42,9 +47,9 @@ export default async function SettingsPage() {
         <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
           Automatic routing now resolves recipients from the actual entity
           context first, such as project managers, evaluated employees,
-          assignees, and the procurement chain. Use this page to manage fallback
-          recipients and recovery routing only when entity-specific recipients
-          are unavailable.
+          assignees, and the procurement chain. Use this page to manage manual
+          To / CC overrides and the editable email groups that power workflow
+          shortcuts.
         </p>
       </section>
 
@@ -66,16 +71,15 @@ export default async function SettingsPage() {
                 <WorkflowEmailSettingForm
                   event={setting.event}
                   title={eventOption.label}
-                  description={policy.summary}
+                  description={`${eventOption.description} Entity-specific routing is resolved automatically first; use explicit To and CC recipients below for intentional copies or overrides.`}
                   primaryToLabels={getRoutingStrategyLabels(policy.primaryTo)}
                   primaryCcLabels={getRoutingStrategyLabels(policy.primaryCc)}
-                  fallbackToLabels={getRoutingStrategyLabels(policy.fallbackTo)}
-                  fallbackCcLabels={getRoutingStrategyLabels(policy.fallbackCc)}
                   enabled={setting.enabled}
                   includeDefaultTo={setting.includeDefaultTo}
                   includeDefaultCc={setting.includeDefaultCc}
                   toEmails={setting.toEmails}
                   ccEmails={setting.ccEmails}
+                  notificationGroups={notificationGroups}
                 />
                 <p className="text-xs text-[var(--color-muted)]">
                   Last updated:{" "}
@@ -86,10 +90,12 @@ export default async function SettingsPage() {
                     : "Using automatic entity routing with no custom fallback changes"}
                 </p>
               </CardContent>
-            </Card>
-          );
-        })}
+          </Card>
+        );
+      })}
       </div>
+
+      <NotificationGroupsManager groups={notificationGroups} />
     </div>
   );
 }

@@ -32,6 +32,29 @@ export const PROCUREMENT_LEAD_EMAIL = "abdulmajeed@thegatheringksa.com";
 export const PROCUREMENT_SPECIALIST_EMAIL = "samia@thegatheringksa.com";
 export const HEAD_OF_PROJECTS_EMAIL = "mohamed@thegatheringksa.com";
 
+export const NOTIFICATION_EMAIL_GROUP_DEFINITIONS = [
+  {
+    value: "EXECUTIVE_GROUP",
+    label: "Executive Group",
+    description: "Executive oversight recipients.",
+  },
+  {
+    value: "PROJECTS_GROUP",
+    label: "Projects Group",
+    description: "Project-side governance recipients.",
+  },
+  {
+    value: "PROCUREMENT_GROUP",
+    label: "Procurement Group",
+    description: "Procurement team recipients.",
+  },
+  {
+    value: "BD_GROUP",
+    label: "BD Group",
+    description: "Business development recipients.",
+  },
+] as const;
+
 export const ADMIN_NAV_ITEMS = [
   { href: "/admin/dashboard", label: "Dashboard" },
   { href: "/admin/projects", label: "Projects" },

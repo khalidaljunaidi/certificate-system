@@ -104,14 +104,14 @@ export function QuarterlyPerformanceReviewForm({
       <input type="hidden" name="quarter" value={String(quarter)} />
       <input type="hidden" name="managerScorecard" value={JSON.stringify(roleScorecard)} />
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3">
         <CircularKpiMeter label="System Score" value={employee.systemScore} tone="purple" />
         <CircularKpiMeter label="Manager Score" value={managerScore} tone="gold" />
-        <div className="rounded-[28px] border border-[var(--color-border)] bg-white p-5 shadow-[0_20px_50px_rgba(17,17,17,0.05)]">
+        <div className="overflow-hidden rounded-[28px] border border-[var(--color-border)] bg-white p-5 shadow-[0_20px_50px_rgba(17,17,17,0.05)]">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
             Final Weighted Score
           </p>
-          <p className="mt-3 text-4xl font-semibold text-[var(--color-ink)]">
+          <p className="mt-3 text-3xl font-semibold text-[var(--color-ink)]">
             {finalScore.toFixed(2)}%
           </p>
           <div className="mt-4">
@@ -151,7 +151,7 @@ export function QuarterlyPerformanceReviewForm({
                     Weight {entry.weightPercent}%
                   </p>
                 </div>
-                <div className="min-w-[16rem]">
+                <div className="w-full max-w-sm">
                   <div className="flex items-center justify-between gap-3">
                     <Label htmlFor={`criterion-${entry.id}`}>Score %</Label>
                     <span className="text-sm font-semibold text-[var(--color-primary)]">
@@ -164,6 +164,7 @@ export function QuarterlyPerformanceReviewForm({
                     min="0"
                     max="100"
                     step="5"
+                    className="mt-3 h-1.5 w-full cursor-pointer accent-[var(--color-primary)]"
                     value={entry.scorePercent}
                     onChange={(event) =>
                       setEntries((current) =>
@@ -213,7 +214,7 @@ export function QuarterlyPerformanceReviewForm({
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <div>
           <Label htmlFor="manager-comments">Manager Comments</Label>
           <Textarea

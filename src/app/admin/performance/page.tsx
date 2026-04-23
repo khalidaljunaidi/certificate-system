@@ -293,7 +293,7 @@ export default async function PerformancePage({
         </Card>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+      <section className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
         <CircularKpiMeter
           label="Monthly Completion"
           value={monthlyDashboard.kpis.monthlyCompletionRate}
@@ -318,6 +318,11 @@ export default async function PerformancePage({
           label="Overdue Exposure"
           value={String(monthlyDashboard.kpis.overdueTasks)}
           hint={`${monthlyDashboard.taskSummary.openTasks} open tasks remain`}
+        />
+        <InfoCard
+          label="Open Tasks"
+          value={String(monthlyDashboard.taskSummary.openTasks)}
+          hint="Tasks still in progress for this cycle"
         />
       </section>
 
@@ -462,54 +467,63 @@ export default async function PerformancePage({
           <CardHeader>
             <CardTitle>Monthly Planning Timeline</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 overflow-hidden">
             <p className="text-sm leading-7 text-[var(--color-muted)]">
               Review the due-date distribution across the selected month to spot
               overload and quiet periods quickly.
             </p>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 lg:grid-cols-7">
               {monthlyDashboard.timeline.map((day) => (
                 <div
                   key={day.isoDate}
-                  className={`min-w-0 rounded-[22px] border p-4 ${
+                  className={`group relative flex min-h-[124px] min-w-0 flex-col overflow-hidden rounded-[22px] border p-3 transition-[transform,box-shadow,border-color,background-color] duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_36px_rgba(17,17,17,0.12)] ${
                     day.isToday
-                      ? "border-[rgba(215,132,57,0.3)] bg-[rgba(255,248,238,0.96)]"
-                      : "border-[var(--color-border)] bg-white"
+                      ? day.totalTasks > 0
+                        ? "border-[rgba(91,42,122,0.38)] bg-[linear-gradient(180deg,rgba(91,42,122,0.11)_0%,rgba(255,250,255,0.98)_72%)]"
+                        : "border-[rgba(215,132,57,0.52)] bg-[linear-gradient(180deg,rgba(255,248,238,0.98)_0%,rgba(255,255,255,0.98)_76%)]"
+                      : day.totalTasks > 0
+                        ? "border-[rgba(91,42,122,0.26)] bg-[linear-gradient(180deg,rgba(49,19,71,0.08)_0%,rgba(255,255,255,0.98)_70%)]"
+                        : "border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(250,248,245,0.94)_100%)]"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
                         {day.weekdayShort}
                       </p>
-                      <p className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">
+                      <p className="mt-1 text-lg font-semibold text-[var(--color-ink)]">
                         {day.dayOfMonth}
                       </p>
                     </div>
-                    <span className="rounded-full bg-[var(--color-panel-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--color-primary)]">
+                    <span
+                      className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-[10px] font-bold shadow-[0_8px_18px_rgba(17,17,17,0.08)] ring-1 ring-white/70 ${
+                        day.totalTasks > 0
+                          ? day.isToday
+                            ? "bg-[var(--color-primary)] text-white"
+                            : "bg-[rgba(49,19,71,0.12)] text-[var(--color-primary)]"
+                          : "bg-[var(--color-panel-soft)] text-[var(--color-primary)]"
+                      }`}
+                    >
                       {day.totalTasks}
                     </span>
                   </div>
-                  <div className="mt-4 space-y-2">
-                    {day.assigneeLoads.length > 0 ? (
-                      day.assigneeLoads.map((load) => (
-                        <div
-                          key={`${day.isoDate}-${load.userId}`}
-                          className="flex items-center justify-between gap-3 rounded-full bg-[var(--color-panel-soft)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)]"
-                        >
-                          <span className="truncate">{load.name}</span>
-                          <span>{load.count}</span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-[var(--color-muted)]">No tasks scheduled</p>
-                    )}
+                  <div className="mt-3 space-y-2">
+                    {day.taskTitles.slice(0, 2).map((title, index) => (
+                      <p
+                        key={`${day.isoDate}-${title}`}
+                        className={`min-h-[30px] truncate rounded-full border px-3 py-1.5 text-[12px] font-semibold leading-5 shadow-[0_8px_18px_rgba(17,17,17,0.05)] transition-colors ${
+                          getTimelineTaskChipClass(day, index)
+                        }`}
+                      >
+                        {title}
+                      </p>
+                    ))}
+                    {day.totalTasks > 2 ? (
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">
+                        +{day.totalTasks - 2} more
+                      </p>
+                    ) : null}
                   </div>
-                  {day.taskTitles.length > 0 ? (
-                    <p className="mt-4 text-xs leading-6 text-[var(--color-muted)]">
-                      {day.taskTitles.join(" | ")}
-                    </p>
-                  ) : null}
                 </div>
               ))}
             </div>
@@ -624,7 +638,7 @@ export default async function PerformancePage({
           <Button type="submit">Apply Period</Button>
         </Form>
 
-        <section className="grid grid-cols-1 gap-6 lg:grid-cols-3 xl:grid-cols-4">
+        <section className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
           <CircularKpiMeter
             label="Team Completion Rate"
             value={dashboard.kpis.teamCompletionRate}
@@ -662,10 +676,10 @@ export default async function PerformancePage({
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <Card>
-            <CardHeader>
-              <CardTitle>Workload Distribution</CardTitle>
-            </CardHeader>
+        <Card className="overflow-hidden">
+          <CardHeader>
+            <CardTitle>Workload Distribution</CardTitle>
+          </CardHeader>
             <CardContent className="space-y-4">
               {dashboard.workloadDistribution.map((member) => (
                 <div
@@ -697,7 +711,7 @@ export default async function PerformancePage({
             </CardContent>
           </Card>
 
-        <Card>
+        <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle>Quarterly Trend Comparison</CardTitle>
           </CardHeader>
@@ -728,7 +742,7 @@ export default async function PerformancePage({
                 </div>
               ))
             ) : (
-              <div className="rounded-[20px] border border-dashed border-[var(--color-border)] bg-[var(--color-panel-soft)] p-4 text-sm leading-6 text-[var(--color-muted)]">
+              <div className="rounded-[18px] border border-dashed border-[var(--color-border)] bg-[var(--color-panel-soft)] p-3 text-sm leading-6 text-[var(--color-muted)]">
                 No quarterly trend data is available yet. Finalized reviews will
                 populate this comparison automatically.
               </div>
@@ -827,6 +841,31 @@ export default async function PerformancePage({
       </section>
     </div>
   );
+}
+
+function getTimelineTaskChipClass(
+  day: {
+    totalTasks: number;
+    completedTasks: number;
+    overdueTasks: number;
+  },
+  index: number,
+) {
+  if (day.overdueTasks > 0) {
+    return index === 0
+      ? "border-[rgba(185,28,28,0.2)] bg-[rgba(185,28,28,0.12)] text-[#7f1d1d]"
+      : "border-[rgba(215,132,57,0.22)] bg-[rgba(215,132,57,0.12)] text-[#9a5a18]";
+  }
+
+  if (day.completedTasks > 0 && day.completedTasks === day.totalTasks) {
+    return index === 0
+      ? "border-[rgba(22,101,52,0.2)] bg-[rgba(22,101,52,0.1)] text-[#14532d]"
+      : "border-[rgba(37,99,235,0.2)] bg-[rgba(37,99,235,0.1)] text-[#1d4ed8]";
+  }
+
+  return index === 0
+    ? "border-[rgba(91,42,122,0.2)] bg-[rgba(91,42,122,0.1)] text-[var(--color-primary)]"
+    : "border-[rgba(37,99,235,0.18)] bg-[rgba(37,99,235,0.09)] text-[#1d4ed8]";
 }
 
 function HeroMetric({

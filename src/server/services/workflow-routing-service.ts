@@ -195,43 +195,32 @@ export async function resolveWorkflowEmailRouting(input: {
     ),
     resolvedPrimaryTo,
   );
-  const resolvedFallbackTo = uniqueEmails(
+  const manualToRecipients = uniqueEmails([
+    ...(setting?.toEmails ?? []),
+    ...(input.context.manualToEmails ?? []),
+    ...(input.context.manualRecipientEmails ?? []),
+  ]);
+  const manualCcRecipients = uniqueEmails(
     [
-      ...input.policy.fallbackTo.flatMap((strategy) =>
-        collectEmailsForStrategy(strategy, "to", input.context),
-      ),
-      ...(setting?.includeDefaultTo ?? true ? setting?.toEmails ?? [] : []),
+      ...(setting?.ccEmails ?? []),
+      ...(input.context.manualCcEmails ?? []),
+      ...(input.context.manualRecipientEmails ?? []),
     ],
-    resolvedPrimaryTo,
+    [...resolvedPrimaryTo, ...manualToRecipients, ...resolvedPrimaryCc],
   );
-  const resolvedFallbackCc = uniqueEmails(
-    [
-      ...input.policy.fallbackCc.flatMap((strategy) =>
-        collectEmailsForStrategy(strategy, "cc", input.context),
-      ),
-      ...(setting?.includeDefaultCc ?? true ? setting?.ccEmails ?? [] : []),
-    ],
-    [...resolvedPrimaryTo, ...resolvedFallbackTo, ...resolvedPrimaryCc],
-  );
-
-  const usedFallbackTo = resolvedPrimaryTo.length === 0;
-  const usedFallbackCc = resolvedPrimaryCc.length === 0;
-  const to = usedFallbackTo ? resolvedFallbackTo : resolvedPrimaryTo;
-  const cc = uniqueEmails(
-    usedFallbackCc ? resolvedFallbackCc : resolvedPrimaryCc,
-    to,
-  );
+  const to = uniqueEmails([...resolvedPrimaryTo, ...manualToRecipients]);
+  const cc = uniqueEmails([...resolvedPrimaryCc, ...manualCcRecipients], to);
 
   return {
     enabled: true,
     to,
     cc,
-    usedFallbackTo,
-    usedFallbackCc,
     resolvedPrimaryTo,
     resolvedPrimaryCc,
-    resolvedFallbackTo,
-    resolvedFallbackCc,
+    resolvedFallbackTo: [] as string[],
+    resolvedFallbackCc: [] as string[],
+    usedFallbackTo: false,
+    usedFallbackCc: false,
   };
 }
 

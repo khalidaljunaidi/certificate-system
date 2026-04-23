@@ -128,17 +128,8 @@ export async function resolveWorkflowEmailRecipients(input: {
     };
   }
 
-  const to = uniqueEmails([
-    ...(setting?.includeDefaultTo ?? true ? input.defaultTo : []),
-    ...(setting?.toEmails ?? []),
-  ]);
-  const cc = uniqueEmails(
-    [
-      ...(setting?.includeDefaultCc ?? true ? input.defaultCc ?? [] : []),
-      ...(setting?.ccEmails ?? []),
-    ],
-    to,
-  );
+  const to = uniqueEmails(setting?.toEmails ?? []);
+  const cc = uniqueEmails(setting?.ccEmails ?? [], to);
 
   return {
     enabled: true,
