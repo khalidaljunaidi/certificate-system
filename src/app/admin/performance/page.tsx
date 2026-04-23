@@ -101,7 +101,7 @@ export default async function PerformancePage({
   const selectedCycle = monthlyDashboard.selectedCycle;
 
   return (
-    <div className="space-y-10">
+    <div className="mx-auto max-w-7xl space-y-6 px-4 pb-12 sm:px-6 lg:px-8">
       <section className="tg-reveal overflow-hidden rounded-[32px] border border-[var(--color-border)] bg-[linear-gradient(135deg,rgba(49,19,71,0.98),rgba(70,34,102,0.96)_62%,rgba(215,132,57,0.92))] px-8 py-8 text-white">
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr] xl:items-end">
           <div className="min-w-0">
@@ -366,7 +366,7 @@ export default async function PerformancePage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-5">
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <StatTile label="Assigned Tasks" value={String(member.assignedTasks)} />
                   <StatTile label="Completed" value={String(member.completedTasks)} />
                   <StatTile label="Overdue" value={String(member.overdueTasks)} />
@@ -402,16 +402,22 @@ export default async function PerformancePage({
                 </div>
 
                 <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-                  <div className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-5">
+                  <div className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
                       Trend vs Previous Cycle
                     </p>
-                    <p className="mt-3 text-3xl font-semibold text-[var(--color-ink)]">
-                      {member.trendDelta === null
-                        ? "New baseline"
-                        : `${member.trendDelta >= 0 ? "+" : ""}${member.trendDelta.toFixed(2)}%`}
-                    </p>
-                    <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
+                    {member.trendDelta === null ? (
+                      <div className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                        New baseline
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-2xl font-semibold text-[var(--color-ink)]">
+                        {member.trendDelta >= 0
+                          ? `+${member.trendDelta.toFixed(2)}%`
+                          : `${member.trendDelta.toFixed(2)}%`}
+                      </p>
+                    )}
+                    <p className="mt-3 text-sm leading-6 text-[var(--color-muted)]">
                       {monthlyDashboard.previousCycle
                         ? `Compared with ${monthlyDashboard.previousCycle.label}.`
                         : "A previous cycle comparison will appear once another cycle exists."}
@@ -618,7 +624,7 @@ export default async function PerformancePage({
           <Button type="submit">Apply Period</Button>
         </Form>
 
-        <section className="grid gap-4 xl:grid-cols-4">
+        <section className="grid grid-cols-1 gap-6 lg:grid-cols-3 xl:grid-cols-4">
           <CircularKpiMeter
             label="Team Completion Rate"
             value={dashboard.kpis.teamCompletionRate}
@@ -691,12 +697,13 @@ export default async function PerformancePage({
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Quarterly Trend Comparison</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {dashboard.quarterlyTrend.map((trend) => (
+        <Card>
+          <CardHeader>
+            <CardTitle>Quarterly Trend Comparison</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {dashboard.quarterlyTrend.length > 0 ? (
+              dashboard.quarterlyTrend.map((trend) => (
                 <div
                   key={`${trend.year}-${trend.quarter}`}
                   className="rounded-[22px] border border-[var(--color-border)] bg-white p-4"
@@ -719,9 +726,15 @@ export default async function PerformancePage({
                     />
                   </div>
                 </div>
-              ))}
-            </CardContent>
-          </Card>
+              ))
+            ) : (
+              <div className="rounded-[20px] border border-dashed border-[var(--color-border)] bg-[var(--color-panel-soft)] p-4 text-sm leading-6 text-[var(--color-muted)]">
+                No quarterly trend data is available yet. Finalized reviews will
+                populate this comparison automatically.
+              </div>
+            )}
+          </CardContent>
+        </Card>
         </section>
 
         <section className="space-y-6">
@@ -741,7 +754,7 @@ export default async function PerformancePage({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-5">
-                  <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+                  <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
                     <StatTile label="Active Tasks" value={String(member.activeTasks)} />
                     <StatTile label="Completed" value={String(member.completedTasks)} />
                     <StatTile label="Completion %" value={`${member.completionRate.toFixed(2)}%`} />
@@ -753,7 +766,7 @@ export default async function PerformancePage({
                     />
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
                     <MetricProgressBar label="System Score" value={member.systemScore} tone="purple" />
                     <MetricProgressBar
                       label="Manager Score"
@@ -859,17 +872,17 @@ function InfoCard({
   hint: string;
 }) {
   return (
-    <Card className="h-full overflow-hidden rounded-[28px] border border-[var(--color-border)] bg-white p-5 shadow-[0_20px_50px_rgba(17,17,17,0.05)]">
+    <Card className="h-full overflow-hidden rounded-[28px] border border-[var(--color-border)] bg-white p-4 shadow-[0_20px_50px_rgba(17,17,17,0.05)]">
       <CardContent className="flex h-full min-w-0 flex-col justify-between gap-4 p-0">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
             {label}
           </p>
-          <p className="mt-3 break-words text-4xl font-semibold text-[var(--color-ink)]">
+          <p className="mt-3 break-words text-3xl font-semibold text-[var(--color-ink)]">
             {value}
           </p>
         </div>
-        <p className="break-words text-sm leading-7 text-[var(--color-muted)]">{hint}</p>
+        <p className="break-words text-sm leading-6 text-[var(--color-muted)]">{hint}</p>
       </CardContent>
     </Card>
   );
@@ -881,7 +894,7 @@ function StatTile({ label, value }: { label: string; value: string }) {
       <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
         {label}
       </p>
-      <p className="mt-2 break-words text-lg font-semibold text-[var(--color-ink)]">
+      <p className="mt-2 break-words text-base font-semibold text-[var(--color-ink)] sm:text-lg">
         {value}
       </p>
     </div>

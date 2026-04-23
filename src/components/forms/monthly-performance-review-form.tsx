@@ -57,75 +57,104 @@ export function MonthlyPerformanceReviewForm({
   const isReadOnly = employee.review?.status === "FINALIZED";
 
   return (
-    <form action={formAction} className="space-y-5">
+    <form action={formAction} className="space-y-6">
       {employee.review ? (
         <input type="hidden" name="reviewId" value={employee.review.id} />
       ) : null}
       <input type="hidden" name="cycleId" value={cycleId} />
       <input type="hidden" name="employeeUserId" value={employee.userId} />
 
-      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="grid gap-4 md:grid-cols-2">
-          <CircularKpiMeter
-            label="System Score"
-            value={employee.systemScore}
-            tone="purple"
-          />
-          <div className="rounded-[28px] border border-[var(--color-border)] bg-white p-5 shadow-[0_20px_50px_rgba(17,17,17,0.05)]">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
-              Final Monthly Score
-            </p>
-            <p className="mt-3 text-4xl font-semibold text-[var(--color-ink)]">
-              {finalScore.toFixed(2)}%
-            </p>
-            <div className="mt-4">
-              <PerformanceGradeBadge grade={finalGrade} />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <div className="rounded-[28px] border border-[rgba(215,132,57,0.22)] bg-[linear-gradient(135deg,rgba(255,249,242,0.98),rgba(247,242,255,0.94))] p-6 shadow-[0_20px_50px_rgba(17,17,17,0.05)]">
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                  Final Monthly Score
+                </p>
+                <p className="mt-3 text-3xl font-semibold text-[var(--color-ink)] sm:text-[2.75rem]">
+                  {finalScore.toFixed(2)}%
+                </p>
+                <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--color-muted)]">
+                  Weighted blend of the system KPI base and the manager
+                  adjustment.
+                </p>
+              </div>
+              <div className="shrink-0">
+                <PerformanceGradeBadge grade={finalGrade} />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-[0.95fr_1.05fr]">
+            <CircularKpiMeter
+              label="System Score"
+              value={employee.systemScore}
+              tone="purple"
+            />
+            <div className="rounded-[28px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-4 shadow-[0_20px_50px_rgba(17,17,17,0.04)]">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[var(--color-ink)]">
+                    System Detail
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-[var(--color-muted)]">
+                    KPI mix used as the baseline for the manager-adjusted score.
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-white px-3 py-1 text-sm font-semibold text-[var(--color-primary)]">
+                  {employee.systemScore.toFixed(0)}%
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <MetricProgressBar
+                  label="Completion"
+                  value={employee.completionRate}
+                  tone="green"
+                />
+                <MetricProgressBar
+                  label="On-time"
+                  value={employee.onTimeCompletionRate}
+                  tone="gold"
+                />
+                <MetricProgressBar
+                  label="Overdue"
+                  value={100 - employee.overdueRate}
+                  tone="red"
+                />
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="space-y-4 rounded-[28px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-5">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-[var(--color-ink)]">
-                Manager Score Input
-              </p>
-              <p className="mt-1 text-sm text-[var(--color-muted)]">
-                Khaled can lightly tune the monthly score without replacing the
-                system-generated KPI foundation.
-              </p>
+        <div className="w-full max-w-sm lg:justify-self-end">
+          <div className="rounded-[28px] border border-[var(--color-border)] bg-white p-4 shadow-[0_20px_50px_rgba(17,17,17,0.05)]">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                  Manager Score Input
+                </p>
+                <p className="mt-2 text-sm leading-6 text-[var(--color-muted)]">
+                  Khaled can tune the monthly score without overpowering the
+                  system KPI foundation.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-[var(--color-panel-soft)] px-3 py-1 text-sm font-semibold text-[var(--color-primary)]">
+                {managerScore.toFixed(0)}%
+              </span>
             </div>
-            <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-[var(--color-primary)]">
-              {managerScore.toFixed(0)}%
-            </span>
-          </div>
 
-          <Input
-            type="range"
-            min="0"
-            max="100"
-            step="5"
-            name="managerScorePercent"
-            value={managerScore}
-            onChange={(event) => setManagerScore(Number(event.target.value))}
-            disabled={isPending || isReadOnly}
-          />
-
-          <div className="grid gap-3 md:grid-cols-3">
-            <MetricProgressBar
-              label="Completion"
-              value={employee.completionRate}
-              tone="green"
-            />
-            <MetricProgressBar
-              label="On-time"
-              value={employee.onTimeCompletionRate}
-              tone="gold"
-            />
-            <MetricProgressBar
-              label="Overdue"
-              value={100 - employee.overdueRate}
-              tone="red"
+            <Input
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              name="managerScorePercent"
+              value={managerScore}
+              onChange={(event) => setManagerScore(Number(event.target.value))}
+              disabled={isPending || isReadOnly}
+              className="mt-4 h-1.5 w-full max-w-sm cursor-pointer accent-[var(--color-primary)]"
             />
           </div>
         </div>
@@ -161,7 +190,7 @@ export function MonthlyPerformanceReviewForm({
       <FormStateMessage state={state.error ? state : EMPTY_ACTION_STATE} />
 
       {isReadOnly ? (
-        <div className="rounded-[24px] border border-[rgba(22,101,52,0.18)] bg-[rgba(245,255,248,0.94)] px-5 py-4 text-sm text-[#166534]">
+        <div className="rounded-[24px] border border-[rgba(22,101,52,0.18)] bg-[rgba(245,255,248,0.94)] px-4 py-3 text-sm text-[#166534]">
           This monthly review has been finalized and is now read-only.
         </div>
       ) : (

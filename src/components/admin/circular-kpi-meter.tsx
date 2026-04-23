@@ -35,18 +35,18 @@ export function CircularKpiMeter({
   tone = "purple",
 }: CircularKpiMeterProps) {
   const normalized = Math.min(100, Math.max(0, Number(value.toFixed(2))));
-  const radius = 44;
+  const radius = 40;
   const circumference = 2 * Math.PI * radius;
   const dashOffset = circumference - (normalized / 100) * circumference;
   const palette = TONE_STYLES[tone];
 
   return (
-    <div className="flex h-full min-w-0 flex-col rounded-[28px] border border-[var(--color-border)] bg-white p-5 shadow-[0_20px_50px_rgba(17,17,17,0.05)]">
+    <div className="flex h-full min-w-0 flex-col rounded-[28px] border border-[var(--color-border)] bg-white p-4 shadow-[0_20px_50px_rgba(17,17,17,0.05)]">
       <p className="min-w-0 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
         {label}
       </p>
       <div className="mt-4 flex flex-1 items-center justify-center">
-        <div className="relative h-28 w-28 shrink-0">
+        <div className="relative h-24 w-24 shrink-0">
           <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
             <circle
               cx="60"
@@ -69,7 +69,7 @@ export function CircularKpiMeter({
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <p className="text-2xl font-semibold text-[var(--color-ink)]">
+            <p className="text-xl font-semibold text-[var(--color-ink)] sm:text-2xl">
               {normalized.toFixed(0)}
               {suffix}
             </p>
