@@ -25,6 +25,10 @@ type TaskFilters = {
   cycleId?: string;
 };
 
+type TaskQueryOptions = {
+  limit?: number;
+};
+
 function mapTaskItem(task: {
   id: string;
   title: string;
@@ -241,6 +245,7 @@ export async function getTaskLookupOptions(): Promise<TaskLookupOptions> {
 export async function getOperationalTasksForViewer(
   viewer: TaskViewer,
   filters: TaskFilters = {},
+  options: TaskQueryOptions = {},
 ) {
   await syncOperationalTaskAlerts();
 
@@ -285,7 +290,17 @@ export async function getOperationalTasksForViewer(
   const tasks = await prisma.operationalTask.findMany({
     where,
     orderBy: [{ dueDate: "asc" }, { updatedAt: "desc" }],
-    include: {
+    take: options.limit,
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      type: true,
+      priority: true,
+      status: true,
+      startDate: true,
+      dueDate: true,
+      completedAt: true,
       assignedTo: {
         select: {
           id: true,
@@ -308,6 +323,10 @@ export async function getOperationalTasksForViewer(
           completed: true,
         },
       },
+      executionResult: true,
+      createdAt: true,
+      updatedAt: true,
+      reopenedCount: true,
       project: {
         select: {
           id: true,

@@ -259,6 +259,8 @@ model Project {
 
   @@index([status])
   @@index([isArchived])
+  @@index([createdAt])
+  @@index([updatedAt])
 }
 
 model Vendor {
@@ -284,8 +286,12 @@ model Vendor {
   notificationDispatchLogs NotificationDispatchLog[] @relation("VendorNotificationDispatchLogs")
 
   @@index([status])
+  @@index([status, vendorName])
+  @@index([vendorName])
   @@index([categoryId])
   @@index([subcategoryId])
+  @@index([createdAt])
+  @@index([updatedAt])
 }
 
 model VendorCategory {
@@ -331,6 +337,9 @@ model ProjectVendor {
   @@index([projectId, vendorId])
   @@index([projectId])
   @@index([vendorId])
+  @@index([projectId, createdAt])
+  @@index([vendorId, createdAt])
+  @@index([isActive])
 }
 
 model Certificate {
@@ -379,6 +388,11 @@ model Certificate {
   @@index([vendorId, status])
   @@index([projectVendorId])
   @@index([isArchived])
+  @@index([projectId, updatedAt])
+  @@index([vendorId, updatedAt])
+  @@index([projectVendorId, updatedAt])
+  @@index([createdAt])
+  @@index([updatedAt])
 }
 
 model ApprovalToken {
@@ -421,6 +435,8 @@ model VendorEvaluationCycle {
   @@unique([vendorId, year])
   @@index([status])
   @@index([sourceProjectId])
+  @@index([vendorId, createdAt])
+  @@index([status, createdAt])
 }
 
 model VendorEvaluationSubmission {
@@ -445,6 +461,8 @@ model VendorEvaluationSubmission {
 
   @@unique([cycleId, evaluatorRole])
   @@index([submittedByUserId])
+  @@index([cycleId, submittedAt])
+  @@index([submittedByUserId, submittedAt])
 }
 
 model WorkflowEmailSetting {
@@ -485,6 +503,7 @@ model WorkflowEmailGroupMember {
 
   @@unique([groupId, email])
   @@index([groupId])
+  @@index([groupId, isActive])
   @@index([email])
 }
 
@@ -526,12 +545,18 @@ model OperationalTask {
 
   @@index([assignedToUserId, status])
   @@index([assignedByUserId, createdAt])
+  @@index([assignedToUserId, createdAt])
+  @@index([status])
   @@index([dueDate, status])
   @@index([linkedProjectId])
   @@index([linkedVendorId])
   @@index([linkedProjectVendorId])
   @@index([linkedCertificateId])
   @@index([monthlyCycleId])
+  @@index([monthlyCycleId, dueDate])
+  @@index([monthlyCycleId, status])
+  @@index([createdAt])
+  @@index([updatedAt])
 }
 
 model TaskChecklistItem {
@@ -614,6 +639,8 @@ model Notification {
   dispatchLog          NotificationDispatchLog? @relation(fields: [dispatchLogId], references: [id], onDelete: SetNull)
 
   @@index([userId, read])
+  @@index([userId, createdAt])
+  @@index([userId, read, createdAt])
   @@index([relatedProjectId])
   @@index([relatedCertificateId])
   @@index([relatedVendorId])

@@ -38,6 +38,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
         email: session.user.email,
       },
       params,
+      { limit: 100 },
     ),
     getTaskLookupOptions(),
   ]);
@@ -59,7 +60,8 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
           </h1>
           <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
             Manage execution tasks, SLA exposure, and direct links into project, vendor,
-            assignment, and certificate context.
+            assignment, and certificate context. Results are capped for
+            responsiveness; narrow filters to inspect a smaller set.
           </p>
         </div>
         <Form action="" className="grid gap-3 rounded-[28px] border border-[var(--color-border)] bg-white p-4 xl:grid-cols-5">

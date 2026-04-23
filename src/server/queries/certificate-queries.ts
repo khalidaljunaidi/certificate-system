@@ -11,6 +11,10 @@ type GlobalCertificateFilters = {
   archive?: string;
 };
 
+type GlobalCertificateQueryOptions = {
+  limit?: number;
+};
+
 function getCertificateArchiveWhere(
   archive?: string,
 ): Prisma.CertificateWhereInput {
@@ -99,7 +103,10 @@ export async function getCertificateById(
   };
 }
 
-export async function getGlobalCertificates(filters: GlobalCertificateFilters) {
+export async function getGlobalCertificates(
+  filters: GlobalCertificateFilters,
+  options: GlobalCertificateQueryOptions = {},
+) {
   const where: Prisma.CertificateWhereInput = {
     ...getCertificateArchiveWhere(filters.archive),
     ...(filters.status ? { status: filters.status as never } : {}),
@@ -144,6 +151,7 @@ export async function getGlobalCertificates(filters: GlobalCertificateFilters) {
   return prisma.certificate.findMany({
     where,
     orderBy: { updatedAt: "desc" },
+    take: options.limit,
     select: {
       id: true,
       certificateCode: true,

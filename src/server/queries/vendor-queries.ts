@@ -24,6 +24,10 @@ type VendorRegistryFilters = {
   activeProject?: string;
 };
 
+type VendorRegistryQueryOptions = {
+  limit?: number;
+};
+
 function buildVendorRegistryWhere(
   filters: VendorRegistryFilters,
 ): Prisma.VendorWhereInput {
@@ -90,12 +94,14 @@ function buildVendorRegistryWhere(
 
 export async function getVendorRegistry(
   filters: VendorRegistryFilters = {},
+  options: VendorRegistryQueryOptions = {},
 ): Promise<VendorRegistryItem[]> {
   const vendors = await prisma.vendor.findMany({
     where: buildVendorRegistryWhere(filters),
     orderBy: {
       vendorName: "asc",
     },
+    take: options.limit,
     select: {
       id: true,
       vendorId: true,

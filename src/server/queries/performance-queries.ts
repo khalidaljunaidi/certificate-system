@@ -19,11 +19,12 @@ import type {
 import { roundMetric } from "@/lib/task-metrics";
 import { getCurrentMonthCycle, getCurrentQuarter, getDaysInMonth, getPreviousMonthCycle } from "@/lib/time";
 import {
-  calculateOperationalMetricsForMonthlyCycle,
-  calculateOperationalMetricsForQuarter,
+  calculateOperationalMetricsForMonthlyCycleBatch,
+  calculateOperationalMetricsForQuarterBatch,
   getEvaluatedEmployees,
+  createEmptyOperationalMetrics,
 } from "@/server/services/performance-service";
-import { getNotificationsForUser } from "@/server/queries/notification-queries";
+import { getNotificationPreviewForUser } from "@/server/queries/notification-queries";
 import { getOperationalTasksForViewer } from "@/server/queries/task-queries";
 
 type Viewer = {
@@ -317,50 +318,91 @@ export async function getTeamPerformanceDashboard(
   const employees = isExecutive
     ? allEmployees
     : allEmployees.filter((employee) => employee.email === viewer.email);
-
-  const memberCards = await Promise.all(
-    employees.map(async (employee) => {
-      const metrics = await prisma.$transaction((tx) =>
-        calculateOperationalMetricsForQuarter(tx, {
-          employeeUserId: employee.id,
-          year: currentYear,
-          quarter: currentQuarter,
+  const employeeIds = employees.map((employee) => employee.id);
+  const [currentQuarterMetricsByEmployee, latestReviews] = await Promise.all([
+    prisma.$transaction((tx) =>
+      calculateOperationalMetricsForQuarterBatch(tx, {
+        employeeUserIds: employeeIds,
+        year: currentYear,
+        quarter: currentQuarter,
+      }),
+    ),
+    employeeIds.length === 0
+      ? Promise.resolve([])
+      : prisma.quarterlyPerformanceReview.findMany({
+          where: {
+            employeeUserId: {
+              in: employeeIds,
+            },
+          },
+          orderBy: [
+            {
+              employeeUserId: "asc",
+            },
+            {
+              year: "desc",
+            },
+            {
+              quarter: "desc",
+            },
+            {
+              updatedAt: "desc",
+            },
+          ],
+          select: {
+            id: true,
+            employeeUserId: true,
+            finalScorePercent: true,
+            managerScorePercent: true,
+            grade: true,
+          },
         }),
-      );
-      const latestReview = await prisma.quarterlyPerformanceReview.findFirst({
-        where: {
-          employeeUserId: employee.id,
-        },
-        orderBy: [{ year: "desc" }, { quarter: "desc" }, { updatedAt: "desc" }],
-      });
+  ]);
+  const latestReviewByEmployeeId = new Map<string, {
+    id: string;
+    employeeUserId: string;
+    finalScorePercent: { toNumber(): number };
+    managerScorePercent: { toNumber(): number };
+    grade: TeamPerformanceMemberView["grade"];
+  }>();
 
-      const finalScore = latestReview?.finalScorePercent?.toNumber() ?? null;
-      const managerScore = latestReview?.managerScorePercent?.toNumber() ?? null;
-      const card: TeamPerformanceMemberView = {
-        userId: employee.id,
-        name: employee.name,
-        email: employee.email,
-        title: employee.title,
-        role: employee.role,
-        activeTasks: metrics.activeTasks,
-        completedTasks: metrics.completedTasks,
-        completionRate: metrics.completionRate,
-        onTimeCompletionRate: metrics.onTimeCompletionRate,
-        overdueRate: metrics.overdueRate,
-        averageCompletionHours: metrics.averageCompletionHours,
-        systemScore: metrics.systemScore,
-        managerScore,
-        finalScore,
-        grade: latestReview?.grade ?? null,
-        workloadOpenTasks: metrics.activeTasks,
-        productivityScore: roundMetric(
-          metrics.systemScore * 0.6 + (finalScore ?? metrics.systemScore) * 0.4,
-        ),
-      };
+  for (const review of latestReviews) {
+    if (!latestReviewByEmployeeId.has(review.employeeUserId)) {
+      latestReviewByEmployeeId.set(review.employeeUserId, review);
+    }
+  }
 
-      return card;
-    }),
-  );
+  const memberCards = employees.map((employee) => {
+    const metrics =
+      currentQuarterMetricsByEmployee.get(employee.id) ??
+      createEmptyOperationalMetrics();
+    const latestReview = latestReviewByEmployeeId.get(employee.id) ?? null;
+
+    const finalScore = latestReview?.finalScorePercent?.toNumber() ?? null;
+    const managerScore = latestReview?.managerScorePercent?.toNumber() ?? null;
+
+    return {
+      userId: employee.id,
+      name: employee.name,
+      email: employee.email,
+      title: employee.title,
+      role: employee.role,
+      activeTasks: metrics.activeTasks,
+      completedTasks: metrics.completedTasks,
+      completionRate: metrics.completionRate,
+      onTimeCompletionRate: metrics.onTimeCompletionRate,
+      overdueRate: metrics.overdueRate,
+      averageCompletionHours: metrics.averageCompletionHours,
+      systemScore: metrics.systemScore,
+      managerScore,
+      finalScore,
+      grade: latestReview?.grade ?? null,
+      workloadOpenTasks: metrics.activeTasks,
+      productivityScore: roundMetric(
+        metrics.systemScore * 0.6 + (finalScore ?? metrics.systemScore) * 0.4,
+      ),
+    } satisfies TeamPerformanceMemberView;
+  });
 
   const topPerformer = [...memberCards]
     .sort((left, right) => (right.finalScore ?? right.systemScore) - (left.finalScore ?? left.systemScore))[0]
@@ -391,29 +433,33 @@ export async function getTeamPerformanceDashboard(
 
   for (let index = 3; index >= 0; index -= 1) {
     const quarterOffset = currentQuarter - index;
-    const year = quarterOffset <= 0
-      ? currentYear - 1
-      : currentYear;
+    const year = quarterOffset <= 0 ? currentYear - 1 : currentYear;
     const quarter = quarterOffset <= 0 ? quarterOffset + 4 : quarterOffset;
-    const reviews = await prisma.quarterlyPerformanceReview.findMany({
-      where: {
-        year,
-        quarter,
-      },
-      select: {
-        finalScorePercent: true,
-      },
-    });
-    const completionMetrics = await Promise.all(
-      employees.map((employee) =>
-        prisma.$transaction((tx) =>
-          calculateOperationalMetricsForQuarter(tx, {
-            employeeUserId: employee.id,
-            year,
-            quarter,
-          }),
-        ),
+    const [reviews, completionMetricsByEmployee] = await Promise.all([
+      prisma.quarterlyPerformanceReview.findMany({
+        where: {
+          year,
+          quarter,
+          employeeUserId: {
+            in: employeeIds,
+          },
+        },
+        select: {
+          finalScorePercent: true,
+        },
+      }),
+      prisma.$transaction((tx) =>
+        calculateOperationalMetricsForQuarterBatch(tx, {
+          employeeUserIds: employeeIds,
+          year,
+          quarter,
+        }),
       ),
+    ]);
+
+    const completionMetrics = employeeIds.map(
+      (employeeId) =>
+        completionMetricsByEmployee.get(employeeId) ?? createEmptyOperationalMetrics(),
     );
 
     quarterlyTrend.push({
@@ -438,11 +484,8 @@ export async function getTeamPerformanceDashboard(
 
   const currentUserSummary =
     memberCards.find((card) => card.email === viewer.email) ?? null;
-  const recentTasks = await getOperationalTasksForViewer(viewer, {});
-  const recentNotifications = (await getNotificationsForUser(viewer.id)).slice(
-    0,
-    6,
-  ) as NotificationItem[];
+  const recentTasks = await getOperationalTasksForViewer(viewer, {}, { limit: 8 });
+  const recentNotifications = (await getNotificationPreviewForUser(viewer.id)) as NotificationItem[];
 
   return {
     isExecutive,
@@ -534,14 +577,30 @@ export async function getMonthlyGovernanceDashboard(
   const employees = isExecutive
     ? allEmployees
     : allEmployees.filter((employee) => employee.email === viewer.email);
+  const employeeIds = employees.map((employee) => employee.id);
 
-  const [reviews, previousReviews, tasks] = await Promise.all([
+  const [reviews, previousReviews, tasks, currentCycleMetricsByEmployee] = await Promise.all([
     prisma.monthlyPerformanceReview.findMany({
       where: {
         cycleId: selectedCycle.id,
         employeeUserId: {
-          in: employees.map((employee) => employee.id),
+          in: employeeIds,
         },
+      },
+      select: {
+        id: true,
+        cycleId: true,
+        employeeUserId: true,
+        evaluatorUserId: true,
+        status: true,
+        systemMetrics: true,
+        managerNotes: true,
+        recommendation: true,
+        systemScorePercent: true,
+        managerScorePercent: true,
+        finalScorePercent: true,
+        grade: true,
+        finalizedAt: true,
       },
     }),
     previousCycle
@@ -549,14 +608,24 @@ export async function getMonthlyGovernanceDashboard(
           where: {
             cycleId: previousCycle.id,
             employeeUserId: {
-              in: employees.map((employee) => employee.id),
+              in: employeeIds,
             },
+          },
+          select: {
+            employeeUserId: true,
+            finalScorePercent: true,
           },
         })
       : Promise.resolve([]),
     getOperationalTasksForViewer(viewer, {
       cycleId: selectedCycle.id,
     }),
+    prisma.$transaction((tx) =>
+      calculateOperationalMetricsForMonthlyCycleBatch(tx, {
+        employeeUserIds: employeeIds,
+        cycleId: selectedCycle.id,
+      }),
+    ),
   ]);
   const reviewByEmployeeId = new Map(
     reviews.map((review) => [review.employeeUserId, mapMonthlyReview(review)]),
@@ -565,45 +634,40 @@ export async function getMonthlyGovernanceDashboard(
     previousReviews.map((review) => [review.employeeUserId, review.finalScorePercent.toNumber()]),
   );
 
-  const employeeCards = await Promise.all(
-    employees.map(async (employee) => {
-      const metrics = await prisma.$transaction((tx) =>
-        calculateOperationalMetricsForMonthlyCycle(tx, {
-          employeeUserId: employee.id,
-          cycleId: selectedCycle.id,
-        }),
-      );
-      const review = reviewByEmployeeId.get(employee.id) ?? null;
-      const monthlyScore = review?.finalScorePercent ?? metrics.systemScore;
-      const previousScore = previousReviewByEmployeeId.get(employee.id) ?? null;
-      const workloadPercent = Math.min(100, metrics.activeTasks * 14);
+  const employeeCards = employees.map((employee) => {
+    const metrics =
+      currentCycleMetricsByEmployee.get(employee.id) ??
+      createEmptyOperationalMetrics();
+    const review = reviewByEmployeeId.get(employee.id) ?? null;
+    const monthlyScore = review?.finalScorePercent ?? metrics.systemScore;
+    const previousScore = previousReviewByEmployeeId.get(employee.id) ?? null;
+    const workloadPercent = Math.min(100, metrics.activeTasks * 14);
 
-      return {
-        userId: employee.id,
-        name: employee.name,
-        email: employee.email,
-        title: employee.title,
-        role: employee.role,
-        assignedTasks: metrics.totalTasks,
-        completedTasks: metrics.completedTasks,
-        overdueTasks: metrics.overdueTasks,
-        completionRate: metrics.completionRate,
-        onTimeCompletionRate: metrics.onTimeCompletionRate,
-        overdueRate: metrics.overdueRate,
-        averageCompletionHours: metrics.averageCompletionHours,
-        workloadOpenTasks: metrics.activeTasks,
-        workloadLevel: getWorkloadLevel(metrics.activeTasks),
-        workloadPercent,
-        systemScore: metrics.systemScore,
-        managerScore: review?.managerScorePercent ?? null,
-        monthlyScore,
-        grade: review?.grade ?? null,
-        trendDelta:
-          previousScore === null ? null : roundMetric(monthlyScore - previousScore),
-        review,
-      };
-    }),
-  );
+    return {
+      userId: employee.id,
+      name: employee.name,
+      email: employee.email,
+      title: employee.title,
+      role: employee.role,
+      assignedTasks: metrics.totalTasks,
+      completedTasks: metrics.completedTasks,
+      overdueTasks: metrics.overdueTasks,
+      completionRate: metrics.completionRate,
+      onTimeCompletionRate: metrics.onTimeCompletionRate,
+      overdueRate: metrics.overdueRate,
+      averageCompletionHours: metrics.averageCompletionHours,
+      workloadOpenTasks: metrics.activeTasks,
+      workloadLevel: getWorkloadLevel(metrics.activeTasks),
+      workloadPercent,
+      systemScore: metrics.systemScore,
+      managerScore: review?.managerScorePercent ?? null,
+      monthlyScore,
+      grade: review?.grade ?? null,
+      trendDelta:
+        previousScore === null ? null : roundMetric(monthlyScore - previousScore),
+      review,
+    };
+  });
 
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter((task) => task.status === "COMPLETED").length;
@@ -623,13 +687,29 @@ export async function getMonthlyGovernanceDashboard(
         );
   const daysInMonth = getDaysInMonth(selectedCycle.year, selectedCycle.month);
   const todayIso = new Date().toISOString().slice(0, 10);
+  const tasksByDate = tasks.reduce(
+    (
+      map,
+      task,
+    ) => {
+      const isoDate = task.dueDate.toISOString().slice(0, 10);
+      const existing = map.get(isoDate);
+
+      if (existing) {
+        existing.push(task);
+        return map;
+      }
+
+      map.set(isoDate, [task]);
+      return map;
+    },
+    new Map<string, typeof tasks>(),
+  );
   const timeline = Array.from({ length: daysInMonth }, (_, index) => {
     const dayOfMonth = index + 1;
     const dayDate = new Date(Date.UTC(selectedCycle.year, selectedCycle.month - 1, dayOfMonth));
     const isoDate = dayDate.toISOString().slice(0, 10);
-    const dayTasks = tasks.filter(
-      (task) => task.dueDate.toISOString().slice(0, 10) === isoDate,
-    );
+    const dayTasks = tasksByDate.get(isoDate) ?? [];
     const assigneeLoads = Array.from(
       dayTasks.reduce((map, task) => {
         const existing = map.get(task.assignedTo.id);

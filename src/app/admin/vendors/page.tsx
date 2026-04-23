@@ -32,7 +32,7 @@ type VendorsPageProps = {
 export default async function VendorsPage({ searchParams }: VendorsPageProps) {
   const filters = await searchParams;
   const [vendors, options] = await Promise.all([
-    getVendorRegistry(filters),
+    getVendorRegistry(filters, { limit: 50 }),
     getVendorGovernanceOptions(),
   ]);
   const exportParams = new URLSearchParams(
@@ -91,7 +91,8 @@ export default async function VendorsPage({ searchParams }: VendorsPageProps) {
             <CardTitle>Registry Filters</CardTitle>
             <p className="text-sm leading-7 text-[var(--color-muted)]">
               Filter the registry by governance classification, evaluation
-              performance, and live project activity.
+              performance, and live project activity. Results are capped for
+              responsiveness; use export for the full dataset.
             </p>
           </CardHeader>
           <CardContent className="space-y-3">

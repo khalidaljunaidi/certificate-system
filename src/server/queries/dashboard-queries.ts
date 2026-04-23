@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { NotificationItem } from "@/lib/types";
+import { getNotificationPreviewForUser } from "@/server/queries/notification-queries";
 
 export async function getDashboardData(userId: string) {
   const activeProjectWhere = { isArchived: false } as const;
@@ -14,11 +15,7 @@ export async function getDashboardData(userId: string) {
     totalProjects,
     activeProjects,
     totalCertificates,
-    draftCertificates,
-    pendingPmApproval,
-    approvedCertificates,
-    issuedCertificates,
-    revokedCertificates,
+    certificateStatusCounts,
     recentActivity,
     recentNotifications,
     unreadCount,
@@ -26,20 +23,12 @@ export async function getDashboardData(userId: string) {
     prisma.project.count({ where: activeProjectWhere }),
     prisma.project.count({ where: { ...activeProjectWhere, status: "ACTIVE" } }),
     prisma.certificate.count({ where: activeCertificateWhere }),
-    prisma.certificate.count({
-      where: { ...activeCertificateWhere, status: "DRAFT" },
-    }),
-    prisma.certificate.count({
-      where: { ...activeCertificateWhere, status: "PENDING_PM_APPROVAL" },
-    }),
-    prisma.certificate.count({
-      where: { ...activeCertificateWhere, status: "PM_APPROVED" },
-    }),
-    prisma.certificate.count({
-      where: { ...activeCertificateWhere, status: "ISSUED" },
-    }),
-    prisma.certificate.count({
-      where: { ...activeCertificateWhere, status: "REVOKED" },
+    prisma.certificate.groupBy({
+      by: ["status"],
+      where: activeCertificateWhere,
+      _count: {
+        _all: true,
+      },
     }),
     prisma.auditLog.findMany({
       orderBy: { createdAt: "desc" },
@@ -58,11 +47,7 @@ export async function getDashboardData(userId: string) {
         },
       },
     }),
-    prisma.notification.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      take: 6,
-    }),
+    getNotificationPreviewForUser(userId),
     prisma.notification.count({
       where: {
         userId,
@@ -71,16 +56,20 @@ export async function getDashboardData(userId: string) {
     }),
   ]);
 
+  const certificateCounts = new Map(
+    certificateStatusCounts.map((entry) => [entry.status, entry._count._all]),
+  );
+
   return {
     kpis: {
       totalProjects,
       activeProjects,
       totalCertificates,
-      draftCertificates,
-      pendingPmApproval,
-      approvedCertificates,
-      issuedCertificates,
-      revokedCertificates,
+      draftCertificates: certificateCounts.get("DRAFT") ?? 0,
+      pendingPmApproval: certificateCounts.get("PENDING_PM_APPROVAL") ?? 0,
+      approvedCertificates: certificateCounts.get("PM_APPROVED") ?? 0,
+      issuedCertificates: certificateCounts.get("ISSUED") ?? 0,
+      revokedCertificates: certificateCounts.get("REVOKED") ?? 0,
     },
     recentActivity: recentActivity.map((entry) => ({
       id: entry.id,

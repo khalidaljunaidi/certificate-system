@@ -28,6 +28,47 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+type OperationalTaskMetricSource = {
+  assignedToUserId: string;
+  status:
+    | "NOT_STARTED"
+    | "IN_PROGRESS"
+    | "WAITING"
+    | "BLOCKED"
+    | "COMPLETED"
+    | "OVERDUE";
+  dueDate: Date;
+  completedAt: Date | null;
+  createdAt: Date;
+  reopenedCount: number;
+  requiresChecklistCompletion: boolean;
+  checklistItems: Array<{
+    completed: boolean;
+  }>;
+};
+
+type OperationalTaskMetrics = {
+  totalTasks: number;
+  completedTasks: number;
+  activeTasks: number;
+  overdueTasks: number;
+  completionRate: number;
+  onTimeCompletionRate: number;
+  overdueRate: number;
+  averageCompletionHours: number;
+  workflowCompliance: number;
+  reopenRate: number;
+  systemScore: number;
+  capabilityIndexes: {
+    executionCapability: number;
+    accuracyIndex: number;
+    ownershipIndex: number;
+    followUpDiscipline: number;
+    responseAgility: number;
+    procurementEffectiveness: number;
+  };
+};
+
 export function getQuarterDateRange(year: number, quarter: number) {
   const startMonth = (quarter - 1) * 3;
   const start = new Date(Date.UTC(year, startMonth, 1));
@@ -46,18 +87,8 @@ function isEvaluatedEmployeeEmail(email: string) {
 }
 
 function calculateOperationalMetricsFromTasks(
-  tasks: Array<{
-    status: "NOT_STARTED" | "IN_PROGRESS" | "WAITING" | "BLOCKED" | "COMPLETED" | "OVERDUE";
-    dueDate: Date;
-    completedAt: Date | null;
-    createdAt: Date;
-    reopenedCount: number;
-    requiresChecklistCompletion: boolean;
-    checklistItems: Array<{
-      completed: boolean;
-    }>;
-  }>,
-) {
+  tasks: OperationalTaskMetricSource[],
+): OperationalTaskMetrics {
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter((task) => task.status === "COMPLETED");
   const activeTasks = tasks.filter((task) => task.status !== "COMPLETED").length;
@@ -136,6 +167,35 @@ function calculateOperationalMetricsFromTasks(
   };
 }
 
+export function createEmptyOperationalMetrics(): OperationalTaskMetrics {
+  return calculateOperationalMetricsFromTasks([]);
+}
+
+function groupOperationalMetricsByAssignee(
+  tasks: OperationalTaskMetricSource[],
+) {
+  const groupedTasks = new Map<string, OperationalTaskMetricSource[]>();
+
+  for (const task of tasks) {
+    const existing = groupedTasks.get(task.assignedToUserId);
+
+    if (existing) {
+      existing.push(task);
+      continue;
+    }
+
+    groupedTasks.set(task.assignedToUserId, [task]);
+  }
+
+  const metrics = new Map<string, OperationalTaskMetrics>();
+
+  for (const [assignedToUserId, groupTasks] of groupedTasks.entries()) {
+    metrics.set(assignedToUserId, calculateOperationalMetricsFromTasks(groupTasks));
+  }
+
+  return metrics;
+}
+
 export async function getEvaluatedEmployees() {
   return prisma.user.findMany({
     where: {
@@ -177,8 +237,19 @@ export async function calculateOperationalMetricsForQuarter(
         lt: range.end,
       },
     },
-    include: {
-      checklistItems: true,
+    select: {
+      assignedToUserId: true,
+      status: true,
+      dueDate: true,
+      completedAt: true,
+      createdAt: true,
+      reopenedCount: true,
+      requiresChecklistCompletion: true,
+      checklistItems: {
+        select: {
+          completed: true,
+        },
+      },
     },
   });
 
@@ -197,12 +268,102 @@ export async function calculateOperationalMetricsForMonthlyCycle(
       assignedToUserId: input.employeeUserId,
       monthlyCycleId: input.cycleId,
     },
-    include: {
-      checklistItems: true,
+    select: {
+      assignedToUserId: true,
+      status: true,
+      dueDate: true,
+      completedAt: true,
+      createdAt: true,
+      reopenedCount: true,
+      requiresChecklistCompletion: true,
+      checklistItems: {
+        select: {
+          completed: true,
+        },
+      },
     },
   });
 
   return calculateOperationalMetricsFromTasks(tasks);
+}
+
+export async function calculateOperationalMetricsForQuarterBatch(
+  tx: Prisma.TransactionClient,
+  input: {
+    employeeUserIds: string[];
+    year: number;
+    quarter: number;
+  },
+) {
+  if (input.employeeUserIds.length === 0) {
+    return new Map<string, OperationalTaskMetrics>();
+  }
+
+  const range = getQuarterDateRange(input.year, input.quarter);
+  const tasks = await tx.operationalTask.findMany({
+    where: {
+      assignedToUserId: {
+        in: input.employeeUserIds,
+      },
+      createdAt: {
+        gte: range.start,
+        lt: range.end,
+      },
+    },
+    select: {
+      assignedToUserId: true,
+      status: true,
+      dueDate: true,
+      completedAt: true,
+      createdAt: true,
+      reopenedCount: true,
+      requiresChecklistCompletion: true,
+      checklistItems: {
+        select: {
+          completed: true,
+        },
+      },
+    },
+  });
+
+  return groupOperationalMetricsByAssignee(tasks);
+}
+
+export async function calculateOperationalMetricsForMonthlyCycleBatch(
+  tx: Prisma.TransactionClient,
+  input: {
+    employeeUserIds: string[];
+    cycleId: string;
+  },
+) {
+  if (input.employeeUserIds.length === 0) {
+    return new Map<string, OperationalTaskMetrics>();
+  }
+
+  const tasks = await tx.operationalTask.findMany({
+    where: {
+      assignedToUserId: {
+        in: input.employeeUserIds,
+      },
+      monthlyCycleId: input.cycleId,
+    },
+    select: {
+      assignedToUserId: true,
+      status: true,
+      dueDate: true,
+      completedAt: true,
+      createdAt: true,
+      reopenedCount: true,
+      requiresChecklistCompletion: true,
+      checklistItems: {
+        select: {
+          completed: true,
+        },
+      },
+    },
+  });
+
+  return groupOperationalMetricsByAssignee(tasks);
 }
 
 export async function saveQuarterlyPerformanceReview(input: {

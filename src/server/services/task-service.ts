@@ -690,7 +690,18 @@ export async function syncOperationalTaskAlerts() {
         in: ["NOT_STARTED", "IN_PROGRESS", "WAITING", "BLOCKED", "OVERDUE"],
       },
     },
-    include: {
+    select: {
+      id: true,
+      title: true,
+      dueDate: true,
+      priority: true,
+      status: true,
+      dueSoonNotifiedAt: true,
+      overdueNotifiedAt: true,
+      linkedProjectId: true,
+      linkedVendorId: true,
+      linkedProjectVendorId: true,
+      linkedCertificateId: true,
       assignedTo: {
         select: {
           id: true,

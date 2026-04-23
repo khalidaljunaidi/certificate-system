@@ -24,7 +24,7 @@ export default async function CertificatesPage({
 }: CertificatesPageProps) {
   const filters = await searchParams;
   const [certificates, options] = await Promise.all([
-    getGlobalCertificates(filters),
+    getGlobalCertificates(filters, { limit: 75 }),
     getCertificateFilterOptions(),
   ]);
   const archiveView = filters.archive === "archived" ? "archived" : "active";
@@ -67,6 +67,8 @@ export default async function CertificatesPage({
         </h1>
         <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
           Track every certificate across projects, vendors, statuses, and PO references.
+          Results are capped for responsiveness; use filters or exports for deeper
+          searches.
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Button asChild variant={archiveView === "active" ? "default" : "secondary"}>
