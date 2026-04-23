@@ -22,10 +22,10 @@ export function AdminNavLink({
       href={href}
       prefetch={prefetch}
       className={cn(
-        "rounded-full px-4 py-2 text-sm font-medium transition-colors",
+        "rounded-full px-3.5 py-2 text-sm font-medium transition-colors",
         active
-          ? "bg-[rgba(49,19,71,0.12)] text-[var(--color-primary)]"
-          : "text-[var(--color-muted)] hover:bg-[var(--color-panel-soft)] hover:text-[var(--color-ink)]",
+          ? "bg-[rgba(49,19,71,0.1)] text-[var(--color-primary)] shadow-[inset_0_0_0_1px_rgba(49,19,71,0.08)]"
+          : "text-[var(--color-muted)] hover:bg-[rgba(49,19,71,0.05)] hover:text-[var(--color-ink)]",
       )}
     >
       {label}

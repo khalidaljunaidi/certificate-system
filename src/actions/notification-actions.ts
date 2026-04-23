@@ -50,6 +50,24 @@ export async function markNotificationReadByIdAction(notificationId: string) {
   revalidateNotificationSurfaces();
 }
 
+export async function markNotificationActionedByIdAction(notificationId: string) {
+  const session = await requireAdminSession();
+
+  await prisma.notification.updateMany({
+    where: {
+      id: notificationId,
+      userId: session.user.id,
+    },
+    data: {
+      read: true,
+      readAt: new Date(),
+      actionedAt: new Date(),
+    },
+  });
+
+  revalidateNotificationSurfaces();
+}
+
 export async function markAllNotificationsReadAction() {
   const session = await requireAdminSession();
 
@@ -80,6 +98,7 @@ export async function openNotificationAction(formData: FormData) {
     data: {
       read: true,
       readAt: new Date(),
+      actionedAt: new Date(),
     },
   });
 

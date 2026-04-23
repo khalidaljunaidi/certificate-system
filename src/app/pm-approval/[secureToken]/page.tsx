@@ -1,4 +1,6 @@
 import { PmApprovalForm } from "@/components/forms/pm-approval-form";
+import { PublicDecisionState } from "@/components/public/public-decision-state";
+import { PublicSummaryTile } from "@/components/public/public-summary-tile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, formatSarAmount } from "@/lib/utils";
 import { getPmApprovalViewByToken } from "@/server/queries/public-queries";
@@ -23,23 +25,23 @@ export default async function PmApprovalPage({ params }: PmApprovalPageProps) {
           {view.tokenStatus === "valid" ? (
             <>
               <div className="grid gap-4 md:grid-cols-2">
-                <Summary label="Certificate Code" value={view.certificateCode} />
-                <Summary label="Project" value={view.projectName} />
-                <Summary label="Vendor" value={view.vendorName} />
-                <Summary label="PO Number" value={view.poNumber} />
-                <Summary
+                <PublicSummaryTile label="Certificate Code" value={view.certificateCode} />
+                <PublicSummaryTile label="Project" value={view.projectName} />
+                <PublicSummaryTile label="Vendor" value={view.vendorName} />
+                <PublicSummaryTile label="PO Number" value={view.poNumber} />
+                <PublicSummaryTile
                   label="Contract Number"
                   value={view.contractNumber ?? "Not provided"}
                 />
-                <Summary
+                <PublicSummaryTile
                   label="Completion Date"
                   value={formatDate(view.completionDate)}
                 />
-                <Summary
+                <PublicSummaryTile
                   label="Total Amount"
                   value={formatSarAmount(view.totalAmount)}
                 />
-                <Summary
+                <PublicSummaryTile
                   label="PM Email"
                   value={view.pmEmail ?? "Not provided"}
                 />
@@ -57,27 +59,27 @@ export default async function PmApprovalPage({ params }: PmApprovalPageProps) {
               <PmApprovalForm token={secureToken} />
             </>
           ) : view.decisionStatus === "approved" ? (
-            <DecisionState
+            <PublicDecisionState
               title="Certificate approved successfully"
               body="This approval link has already been completed. Procurement has been notified and the approval form is now locked."
             />
           ) : view.decisionStatus === "rejected" ? (
-            <DecisionState
+            <PublicDecisionState
               title="Certificate rejected and returned"
               body="This rejection has already been recorded. Procurement has been notified and the approval form is now locked."
             />
           ) : view.tokenStatus === "expired" ? (
-            <DecisionState
+            <PublicDecisionState
               title="Approval link expired"
               body="This approval request is no longer active. Please contact the Procurement team if a new approval link is required."
             />
           ) : view.tokenStatus === "used" || view.tokenStatus === "processed" ? (
-            <DecisionState
+            <PublicDecisionState
               title="Approval request already processed"
               body="This approval page is read-only because the certificate is no longer awaiting Project Manager action."
             />
           ) : (
-            <DecisionState
+            <PublicDecisionState
               title="Approval link invalid"
               body="This approval link could not be verified. Please contact the Procurement team if you need assistance."
             />
@@ -85,25 +87,5 @@ export default async function PmApprovalPage({ params }: PmApprovalPageProps) {
         </CardContent>
       </Card>
     </main>
-  );
-}
-
-function Summary({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-4">
-      <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
-        {label}
-      </p>
-      <p className="mt-2 text-sm font-semibold text-[var(--color-ink)]">{value}</p>
-    </div>
-  );
-}
-
-function DecisionState({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-6">
-      <h2 className="text-2xl font-semibold text-[var(--color-ink)]">{title}</h2>
-      <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">{body}</p>
-    </div>
   );
 }

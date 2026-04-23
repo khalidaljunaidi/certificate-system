@@ -145,6 +145,7 @@ export async function getProjectWorkspace(
               vendorId: true,
               vendorName: true,
               vendorEmail: true,
+              status: true,
             },
           },
           certificates: {
@@ -226,9 +227,11 @@ export async function getProjectWorkspace(
     },
     vendors: project.vendorLinks.map((vendorLink) => ({
       id: vendorLink.id,
+      vendorRecordId: vendorLink.vendor.id,
       vendorId: vendorLink.vendor.vendorId,
       vendorName: vendorLink.vendor.vendorName,
       vendorEmail: vendorLink.vendor.vendorEmail,
+      vendorStatus: vendorLink.vendor.status,
       poNumber: vendorLink.poNumber,
       contractNumber: vendorLink.contractNumber,
       isActive: vendorLink.isActive,

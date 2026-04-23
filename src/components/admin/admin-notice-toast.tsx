@@ -52,6 +52,86 @@ const NOTICE_TOASTS: Record<string, ToastConfig> = {
     body: "Password updated successfully.",
     tone: "success",
   },
+  "project-status-updated": {
+    title: "Project status updated",
+    body: "Project status updated successfully.",
+    tone: "success",
+  },
+  "task-created": {
+    title: "Task created",
+    body: "Operational task created successfully.",
+    tone: "success",
+  },
+  "task-updated": {
+    title: "Task updated",
+    body: "Operational task updated successfully.",
+    tone: "success",
+  },
+  "performance-review-saved": {
+    title: "Performance review saved",
+    body: "Quarterly performance review saved successfully.",
+    tone: "success",
+  },
+  "performance-review-finalized": {
+    title: "Performance review finalized",
+    body: "Quarterly performance review finalized successfully.",
+    tone: "success",
+  },
+  "monthly-cycle-created": {
+    title: "Monthly cycle created",
+    body: "The monthly governance cycle was created successfully.",
+    tone: "success",
+  },
+  "monthly-cycle-updated": {
+    title: "Monthly cycle updated",
+    body: "The monthly cycle state was updated successfully.",
+    tone: "success",
+  },
+  "monthly-review-saved": {
+    title: "Monthly review saved",
+    body: "The monthly team review was saved successfully.",
+    tone: "success",
+  },
+  "monthly-review-finalized": {
+    title: "Monthly review finalized",
+    body: "The monthly team review was finalized successfully.",
+    tone: "success",
+  },
+  "vendor-governance-updated": {
+    title: "Vendor updated",
+    body: "Vendor governance details updated successfully.",
+    tone: "success",
+  },
+  "vendor-category-created": {
+    title: "Category created",
+    body: "Vendor category created successfully.",
+    tone: "success",
+  },
+  "vendor-subcategory-created": {
+    title: "Subcategory created",
+    body: "Vendor subcategory created successfully.",
+    tone: "success",
+  },
+  "vendor-saved": {
+    title: "Vendor saved",
+    body: "Vendor record saved successfully.",
+    tone: "success",
+  },
+  "vendor-evaluation-requested": {
+    title: "Evaluation requested",
+    body: "Vendor evaluation request emails were sent successfully.",
+    tone: "success",
+  },
+  "vendor-evaluation-finalized": {
+    title: "Evaluation finalized",
+    body: "Vendor evaluation finalized successfully.",
+    tone: "success",
+  },
+  "workflow-email-routing-saved": {
+    title: "Workflow routing updated",
+    body: "Workflow email routing updated successfully.",
+    tone: "success",
+  },
 };
 
 function getToastIconKey(title: string) {

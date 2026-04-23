@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   projectFormSchema,
   projectVendorFormSchema,
+  updateProjectStatusSchema,
 } from "@/lib/validation";
 import { createAuditLog } from "@/server/services/audit-service";
 
@@ -44,20 +45,42 @@ export async function addVendorToProject(
   input: z.infer<typeof projectVendorFormSchema>,
 ) {
   return prisma.$transaction(async (tx) => {
-    const vendor = await tx.vendor.upsert({
-      where: {
-        vendorId: input.vendorId,
-      },
-      update: {
-        vendorName: input.vendorName,
-        vendorEmail: input.vendorEmail,
-      },
-      create: {
-        vendorId: input.vendorId,
-        vendorName: input.vendorName,
-        vendorEmail: input.vendorEmail,
-      },
-    });
+    if (!input.existingVendorRecordId && input.vendorId) {
+      const duplicateVendor = await tx.vendor.findUnique({
+        where: {
+          vendorId: input.vendorId,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (duplicateVendor) {
+        throw new Error(
+          "This vendor already exists in the master registry. Please select it from the vendor picker.",
+        );
+      }
+    }
+
+    const vendor = input.existingVendorRecordId
+      ? await tx.vendor.findUnique({
+          where: {
+            id: input.existingVendorRecordId,
+          },
+        })
+      : await tx.vendor.create({
+          data: {
+            vendorId: input.vendorId!,
+            vendorName: input.vendorName!,
+            vendorEmail: input.vendorEmail!,
+            vendorPhone: input.vendorPhone || null,
+            status: "ACTIVE",
+          },
+        });
+
+    if (!vendor) {
+      throw new Error("Choose a valid vendor from the registry.");
+    }
 
     const projectVendor = await tx.projectVendor.create({
       data: {
@@ -75,6 +98,7 @@ export async function addVendorToProject(
       projectId: input.projectId,
       userId,
       details: {
+        vendorRecordId: vendor.id,
         vendorId: vendor.vendorId,
         poNumber: input.poNumber,
         contractNumber: input.contractNumber,
@@ -82,5 +106,49 @@ export async function addVendorToProject(
     });
 
     return projectVendor;
+  });
+}
+
+export async function updateProjectStatus(
+  userId: string,
+  input: z.infer<typeof updateProjectStatusSchema>,
+) {
+  return prisma.$transaction(async (tx) => {
+    const project = await tx.project.findUnique({
+      where: {
+        id: input.projectId,
+      },
+    });
+
+    if (!project) {
+      throw new Error("Project not found.");
+    }
+
+    if (project.status === input.status) {
+      return project;
+    }
+
+    const updated = await tx.project.update({
+      where: {
+        id: input.projectId,
+      },
+      data: {
+        status: input.status,
+      },
+    });
+
+    await createAuditLog(tx, {
+      action: "UPDATED",
+      entityType: "Project",
+      entityId: updated.id,
+      projectId: updated.id,
+      userId,
+      details: {
+        previousStatus: project.status,
+        nextStatus: updated.status,
+      },
+    });
+
+    return updated;
   });
 }

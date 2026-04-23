@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { render, toPlainText } from "@react-email/render";
 import { Resend, type ErrorResponse } from "resend";
+import type { VendorEvaluationEvaluatorRole, WorkflowEmailEvent } from "@prisma/client";
 
 import {
   CertificateIssuedEmail,
@@ -8,11 +9,22 @@ import {
   PMApprovalRequestEmail,
   WorkflowUpdateEmail,
 } from "@/emails";
-import { PROCUREMENT_TEAM_EMAILS } from "@/lib/constants";
+import {
+  HEAD_OF_PROJECTS_EMAIL,
+  PROCUREMENT_TEAM_EMAILS,
+  VENDOR_EVALUATION_ROLE_LABELS,
+} from "@/lib/constants";
+import type { WorkflowRoutingPolicy } from "@/lib/workflow-routing";
+import { WORKFLOW_EMAIL_ROUTING_POLICIES } from "@/lib/workflow-routing";
 import { getResendApiKey, getResendFromEmail } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { absoluteUrl, buildPmApprovalUrl, buildVerifyUrl } from "@/lib/utils";
 import { generateCertificatePdfBuffer } from "@/server/services/pdf-service";
+import { resolveWorkflowEmailRecipients } from "@/server/services/workflow-email-settings-service";
+import {
+  resolveWorkflowEmailRouting,
+  type WorkflowRoutingContext,
+} from "@/server/services/workflow-routing-service";
 
 export type EmailTestTemplate =
   | "PM_APPROVAL_REQUEST"
@@ -47,8 +59,6 @@ type FallbackEmailContentInput = {
   actionUrl?: string;
   footerNote?: string;
 };
-
-const HEAD_OF_PROJECTS_EMAIL = "mohamed@thegatheringksa.com";
 
 class EmailDeliveryError extends Error {
   constructor(
@@ -308,6 +318,96 @@ async function getProcurementTeamRecipients(excluded: string[] = []) {
   return recipients;
 }
 
+async function resolveConfiguredWorkflowRecipients(input: {
+  event: WorkflowEmailEvent;
+  defaultTo: string[];
+  defaultCc?: string[];
+}) {
+  const resolved = await resolveWorkflowEmailRecipients({
+    event: input.event,
+    defaultTo: input.defaultTo,
+    defaultCc: input.defaultCc,
+  });
+
+  if (!resolved.enabled) {
+    console.warn("[email] workflow email disabled by settings", {
+      event: input.event,
+    });
+  }
+
+  if (resolved.enabled && resolved.to.length === 0) {
+    console.warn("[email] workflow email has no recipients after settings resolution", {
+      event: input.event,
+    });
+  }
+
+  return resolved;
+}
+
+export async function sendGovernedWorkflowEmail(input: {
+  event: WorkflowEmailEvent;
+  label: string;
+  defaultTo?: string[];
+  defaultCc?: string[];
+  subject: string;
+  heading: string;
+  intro: string;
+  rows?: Array<{
+    label: string;
+    value: string | null | undefined;
+  }>;
+  actionLabel?: string;
+  actionUrl?: string;
+  logContext?: Record<string, unknown>;
+  routingPolicy?: WorkflowRoutingPolicy;
+  routingContext?: WorkflowRoutingContext;
+}) {
+  const routedRecipients =
+    input.routingPolicy && input.routingContext
+      ? await resolveWorkflowEmailRouting({
+          event: input.event,
+          policy: input.routingPolicy,
+          context: input.routingContext,
+        })
+      : await resolveConfiguredWorkflowRecipients({
+          event: input.event,
+          defaultTo: input.defaultTo ?? [],
+          defaultCc: input.defaultCc,
+        });
+
+  if (!routedRecipients.enabled || routedRecipients.to.length === 0) {
+    return {
+      skipped: true,
+      reason: routedRecipients.enabled ? "NO_ROUTED_RECIPIENTS" : "DISABLED_BY_SETTINGS",
+    };
+  }
+
+  return sendResendEmail(input.label, {
+    payload: {
+      from: "",
+      to: routedRecipients.to,
+      cc: routedRecipients.cc,
+      subject: input.subject,
+      react: WorkflowUpdateEmail({
+        preview: input.subject,
+        heading: input.heading,
+        intro: input.intro,
+        rows: input.rows,
+        actionLabel: input.actionLabel,
+        actionUrl: input.actionUrl,
+      }),
+    },
+    fallback: {
+      heading: input.heading,
+      intro: input.intro,
+      rows: input.rows,
+      actionLabel: input.actionLabel,
+      actionUrl: input.actionUrl,
+    },
+    logContext: input.logContext,
+  });
+}
+
 async function sendResendEmail(
   label: string,
   options: {
@@ -460,20 +560,29 @@ export async function sendPmApprovalRequestEmail(input: {
   contractNumber?: string | null;
 }) {
   const to = normalizeEmail(input.to);
+  const procurementRecipients = await getProcurementTeamRecipients([to]);
+  const routedRecipients = await resolveWorkflowEmailRouting({
+    event: "PM_APPROVAL_REQUEST",
+    policy: WORKFLOW_EMAIL_ROUTING_POLICIES.PM_APPROVAL_REQUEST,
+    context: {
+      projectManager: { email: to },
+      procurementChainEmails: procurementRecipients,
+      manualCcEmails: [HEAD_OF_PROJECTS_EMAIL, ...(input.cc ?? [])],
+    },
+  });
 
-  const baseCc = uniqueEmails(
-    [HEAD_OF_PROJECTS_EMAIL, ...(input.cc ?? [])],
-    [to],
-  );
-
-  const procurementRecipients = await getProcurementTeamRecipients([to, ...baseCc]);
-  const finalCc = uniqueEmails([...baseCc, ...procurementRecipients], [to]);
+  if (!routedRecipients.enabled || routedRecipients.to.length === 0) {
+    return {
+      skipped: true,
+      reason: routedRecipients.enabled ? "NO_ROUTED_RECIPIENTS" : "DISABLED_BY_SETTINGS",
+    };
+  }
 
   return sendResendEmail("pm-approval-request", {
     payload: {
       from: "",
-      to,
-      cc: finalCc,
+      to: routedRecipients.to,
+      cc: routedRecipients.cc,
       subject: `Approval Required - ${input.projectName}`,
       react: PMApprovalRequestEmail({
         projectName: input.projectName,
@@ -519,10 +628,26 @@ export async function sendPmDecisionNotificationEmail(input: {
     };
   }
 
+  const routedRecipients = await resolveWorkflowEmailRouting({
+    event: "PM_DECISION_NOTIFICATION",
+    policy: WORKFLOW_EMAIL_ROUTING_POLICIES.PM_DECISION_NOTIFICATION,
+    context: {
+      procurementChainEmails: procurementRecipients,
+    },
+  });
+
+  if (!routedRecipients.enabled || routedRecipients.to.length === 0) {
+    return {
+      skipped: true,
+      reason: routedRecipients.enabled ? "NO_ROUTED_RECIPIENTS" : "DISABLED_BY_SETTINGS",
+    };
+  }
+
   return sendResendEmail("pm-decision-notification", {
     payload: {
       from: "",
-      to: procurementRecipients,
+      to: routedRecipients.to,
+      cc: routedRecipients.cc,
       subject: `Project Manager ${input.statusText === "approved" ? "Approved" : "Rejected"} - ${input.projectName}`,
       react: PMApprovalConfirmationEmail({
         projectName: input.projectName,
@@ -554,15 +679,33 @@ export async function sendIssuedCertificateEmail(input: {
   pdfBuffer: Buffer;
 }) {
   const to = normalizeEmail(input.to);
-  const cc = uniqueEmails(input.cc, [to]);
-  const procurementRecipients = await getProcurementTeamRecipients([to, ...cc]);
-  const finalCc = uniqueEmails([...cc, ...procurementRecipients], [to]);
+  const normalizedCc = uniqueEmails(input.cc, [to]);
+  const procurementRecipients = await getProcurementTeamRecipients([
+    to,
+    ...normalizedCc,
+  ]);
+  const routedRecipients = await resolveWorkflowEmailRouting({
+    event: "FINAL_CERTIFICATE_ISSUED",
+    policy: WORKFLOW_EMAIL_ROUTING_POLICIES.FINAL_CERTIFICATE_ISSUED,
+    context: {
+      manualToEmails: [to],
+      projectManager: { email: normalizedCc[0] ?? null },
+      procurementChainEmails: procurementRecipients,
+    },
+  });
+
+  if (!routedRecipients.enabled || routedRecipients.to.length === 0) {
+    return {
+      skipped: true,
+      reason: routedRecipients.enabled ? "NO_ROUTED_RECIPIENTS" : "DISABLED_BY_SETTINGS",
+    };
+  }
 
   return sendResendEmail("certificate-issued", {
     payload: {
       from: "",
-      to,
-      cc: finalCc,
+      to: routedRecipients.to,
+      cc: routedRecipients.cc,
       subject: `Completion Certificate Issued - ${input.projectName}`,
       react: CertificateIssuedEmail({
         projectName: input.projectName,
@@ -602,6 +745,7 @@ export async function sendCertificateReopenedEmail(input: {
   certificateCode: string;
   reopenedByName: string;
   reopenUrl: string;
+  projectManagerEmail?: string | null;
 }) {
   const procurementRecipients = await getProcurementTeamRecipients();
 
@@ -613,10 +757,27 @@ export async function sendCertificateReopenedEmail(input: {
     };
   }
 
+  const routedRecipients = await resolveWorkflowEmailRouting({
+    event: "CERTIFICATE_REOPENED",
+    policy: WORKFLOW_EMAIL_ROUTING_POLICIES.CERTIFICATE_REOPENED,
+    context: {
+      procurementChainEmails: procurementRecipients,
+      projectManager: { email: input.projectManagerEmail ?? null },
+    },
+  });
+
+  if (!routedRecipients.enabled || routedRecipients.to.length === 0) {
+    return {
+      skipped: true,
+      reason: routedRecipients.enabled ? "NO_ROUTED_RECIPIENTS" : "DISABLED_BY_SETTINGS",
+    };
+  }
+
   return sendResendEmail("certificate-reopened", {
     payload: {
       from: "",
-      to: procurementRecipients,
+      to: routedRecipients.to,
+      cc: routedRecipients.cc,
       subject: `Certificate Reopened for Revision - ${input.projectName}`,
       react: WorkflowUpdateEmail({
         preview: `Certificate reopened for revision under ${input.projectName}`,
@@ -649,6 +810,81 @@ export async function sendCertificateReopenedEmail(input: {
       vendorName: input.vendorName,
       certificateCode: input.certificateCode,
       reopenedByName: input.reopenedByName,
+    },
+  });
+}
+
+export async function sendVendorEvaluationRequestEmail(input: {
+  to: string;
+  evaluatorRole: VendorEvaluationEvaluatorRole;
+  vendorName: string;
+  vendorCode: string;
+  projectName: string;
+  projectCode: string;
+  year: number;
+  evaluationUrl: string;
+}) {
+  const reviewerLabel = VENDOR_EVALUATION_ROLE_LABELS[input.evaluatorRole];
+  const to = normalizeEmail(input.to);
+  const routedRecipients = await resolveWorkflowEmailRouting({
+    event: "VENDOR_EVALUATION_REQUEST",
+    policy: WORKFLOW_EMAIL_ROUTING_POLICIES.VENDOR_EVALUATION_REQUEST,
+    context: {
+      projectManager: { email: to },
+      manualToEmails: [to],
+    },
+  });
+
+  if (!routedRecipients.enabled || routedRecipients.to.length === 0) {
+    return {
+      skipped: true,
+      reason: routedRecipients.enabled ? "NO_ROUTED_RECIPIENTS" : "DISABLED_BY_SETTINGS",
+    };
+  }
+
+  return sendResendEmail("vendor-evaluation-request", {
+    payload: {
+      from: "",
+      to: routedRecipients.to,
+      cc: routedRecipients.cc,
+      subject: `Vendor Evaluation Request - ${input.vendorName} (${input.year})`,
+      react: WorkflowUpdateEmail({
+        preview: `Vendor evaluation request for ${input.vendorName}`,
+        heading: "Vendor Evaluation Request",
+        intro: `Please complete the annual vendor evaluation for ${input.vendorName} as the ${reviewerLabel}.`,
+        rows: [
+          { label: "Vendor", value: input.vendorName },
+          { label: "Vendor Code", value: input.vendorCode },
+          { label: "Project", value: input.projectName },
+          { label: "Project Code", value: input.projectCode },
+          { label: "Evaluation Year", value: String(input.year) },
+          { label: "Reviewer Role", value: reviewerLabel },
+        ],
+        actionLabel: "Open Evaluation",
+        actionUrl: input.evaluationUrl,
+      }),
+    },
+    fallback: {
+      heading: "Vendor Evaluation Request",
+      intro: `Please complete the annual vendor evaluation for ${input.vendorName} as the ${reviewerLabel}.`,
+      rows: [
+        { label: "Vendor", value: input.vendorName },
+        { label: "Vendor Code", value: input.vendorCode },
+        { label: "Project", value: input.projectName },
+        { label: "Project Code", value: input.projectCode },
+        { label: "Evaluation Year", value: String(input.year) },
+        { label: "Reviewer Role", value: reviewerLabel },
+      ],
+      actionLabel: "Open Evaluation",
+      actionUrl: input.evaluationUrl,
+    },
+    logContext: {
+      evaluatorRole: input.evaluatorRole,
+      vendorName: input.vendorName,
+      vendorCode: input.vendorCode,
+      projectName: input.projectName,
+      projectCode: input.projectCode,
+      year: input.year,
     },
   });
 }

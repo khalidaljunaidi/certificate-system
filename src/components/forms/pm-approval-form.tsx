@@ -5,6 +5,7 @@ import { useActionState } from "react";
 import { submitPmDecisionAction } from "@/actions/pm-actions";
 import { EMPTY_ACTION_STATE } from "@/actions/utils";
 import { FormStateMessage } from "@/components/forms/form-state-message";
+import { PublicDecisionState } from "@/components/public/public-decision-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +19,7 @@ export function PmApprovalForm({ token }: { token: string }) {
 
   if (state.decisionStatus === "approved") {
     return (
-      <FinalDecisionState
+      <PublicDecisionState
         title="Certificate approved successfully"
         body="Your approval has been recorded. Procurement has been notified to continue the issuance workflow."
       />
@@ -27,7 +28,7 @@ export function PmApprovalForm({ token }: { token: string }) {
 
   if (state.decisionStatus === "rejected") {
     return (
-      <FinalDecisionState
+      <PublicDecisionState
         title="Certificate rejected and returned"
         body="Your rejection has been recorded. Procurement has been notified to review the certificate and your notes."
       />
@@ -69,20 +70,5 @@ export function PmApprovalForm({ token }: { token: string }) {
         </Button>
       </div>
     </form>
-  );
-}
-
-function FinalDecisionState({
-  title,
-  body,
-}: {
-  title: string;
-  body: string;
-}) {
-  return (
-    <div className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-6">
-      <h2 className="text-2xl font-semibold text-[var(--color-ink)]">{title}</h2>
-      <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">{body}</p>
-    </div>
   );
 }

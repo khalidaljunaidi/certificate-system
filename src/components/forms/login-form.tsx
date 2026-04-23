@@ -60,7 +60,9 @@ export function LoginForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="space-y-2">
-        <Label htmlFor="email">Email address</Label>
+        <Label htmlFor="email" className="text-sm font-semibold text-[var(--color-muted)]">
+          Email address
+        </Label>
         <Input
           id="email"
           type="email"
@@ -69,11 +71,14 @@ export function LoginForm() {
           onChange={(event) => setEmail(event.target.value)}
           placeholder="name@thegatheringksa.com"
           required
+          className="h-12 rounded-xl border border-slate-300 bg-slate-50 px-4 text-base text-slate-950"
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
+        <Label htmlFor="password" className="text-sm font-semibold text-[var(--color-muted)]">
+          Password
+        </Label>
         <div className="relative">
           <Input
             id="password"
@@ -82,7 +87,7 @@ export function LoginForm() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             placeholder="Enter your password"
-            className="pr-28"
+            className="h-12 rounded-xl border border-slate-300 bg-slate-50 px-4 pr-28 text-base text-slate-950"
             required
           />
           <button
@@ -101,8 +106,12 @@ export function LoginForm() {
         </div>
       ) : null}
 
-      <Button type="submit" disabled={loading} className="tg-cta-live w-full">
-        {loading ? "Signing in..." : "Sign in"}
+      <Button
+        type="submit"
+        disabled={loading}
+        className="tg-button-live h-11 w-full rounded-xl bg-[var(--color-primary)] text-base font-semibold transition hover:bg-[var(--color-primary-strong)]"
+      >
+        {loading ? "Signing in..." : "Enter System"}
       </Button>
     </form>
   );

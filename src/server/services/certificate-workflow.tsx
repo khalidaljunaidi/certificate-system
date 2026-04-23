@@ -170,7 +170,15 @@ export async function saveCertificateDraft(input: {
         title: "Certificate updated",
         message: `${projectVendor.vendor.vendorName} certificate details were updated under ${projectVendor.project.projectName}.`,
         projectId: updated.projectId,
+        vendorId: updated.vendorId,
+        projectVendorId: updated.projectVendorId,
         certificateId: updated.id,
+        routingStrategies: ["project_manager", "procurement_chain"],
+        routingContext: {
+          projectManager: {
+            email: updated.pmEmail,
+          },
+        },
       });
 
       if (isReopenedRevision && token) {
@@ -193,7 +201,15 @@ export async function saveCertificateDraft(input: {
           title: "Revision sent for PM approval",
           message: `${projectVendor.vendor.vendorName} revised certificate was sent for PM approval under ${projectVendor.project.projectName}.`,
           projectId: updated.projectId,
+          vendorId: updated.vendorId,
+          projectVendorId: updated.projectVendorId,
           certificateId: updated.id,
+          routingStrategies: ["project_manager", "procurement_chain"],
+          routingContext: {
+            projectManager: {
+              email: updated.pmEmail,
+            },
+          },
         });
       }
 
@@ -265,7 +281,15 @@ export async function saveCertificateDraft(input: {
       title: "Certificate created",
       message: `${projectVendor.vendor.vendorName} draft certificate was created under ${projectVendor.project.projectName}.`,
       projectId: created.projectId,
+      vendorId: created.vendorId,
+      projectVendorId: created.projectVendorId,
       certificateId: created.id,
+      routingStrategies: ["project_manager", "procurement_chain"],
+      routingContext: {
+        projectManager: {
+          email: created.pmEmail,
+        },
+      },
     });
 
     console.info("[certificate-workflow] certificate created", {
@@ -357,7 +381,15 @@ export async function duplicateCertificateDraft(input: {
       title: "Certificate duplicated into draft",
       message: `${source.vendor.vendorName} certificate content was duplicated into a new draft for ${source.project.projectName}.`,
       projectId: duplicate.projectId,
+      vendorId: duplicate.vendorId,
+      projectVendorId: duplicate.projectVendorId,
       certificateId: duplicate.id,
+      routingStrategies: ["project_manager", "procurement_chain"],
+      routingContext: {
+        projectManager: {
+          email: duplicate.pmEmail,
+        },
+      },
     });
 
     return duplicate;
@@ -430,7 +462,15 @@ export async function submitCertificateForPmApproval(input: {
       title: "Sent for PM approval",
       message: `${certificate.vendor.vendorName} certificate was sent for PM approval under ${certificate.project.projectName}.`,
       projectId: certificate.projectId,
+      vendorId: certificate.vendorId,
+      projectVendorId: certificate.projectVendorId,
       certificateId: certificate.id,
+      routingStrategies: ["project_manager", "procurement_chain"],
+      routingContext: {
+        projectManager: {
+          email: certificate.pmEmail,
+        },
+      },
     });
 
     return {
@@ -533,7 +573,15 @@ export async function approveCertificateByToken(input: {
       title: "Project Manager approved certificate",
       message: `${approvalToken.certificate.vendor.vendorName} certificate was approved by the Project Manager under ${approvalToken.certificate.project.projectName}.`,
       projectId: certificate.projectId,
+      vendorId: certificate.vendorId,
+      projectVendorId: certificate.projectVendorId,
       certificateId: certificate.id,
+      routingStrategies: ["project_manager", "procurement_chain"],
+      routingContext: {
+        projectManager: {
+          email: approvalToken.certificate.pmEmail,
+        },
+      },
     });
 
     return {
@@ -629,7 +677,15 @@ export async function rejectCertificateByToken(input: {
       title: "Project Manager rejected certificate",
       message: `${approvalToken.certificate.vendor.vendorName} certificate was rejected by the Project Manager under ${approvalToken.certificate.project.projectName}.`,
       projectId: certificate.projectId,
+      vendorId: certificate.vendorId,
+      projectVendorId: certificate.projectVendorId,
       certificateId: certificate.id,
+      routingStrategies: ["project_manager", "procurement_chain"],
+      routingContext: {
+        projectManager: {
+          email: approvalToken.certificate.pmEmail,
+        },
+      },
     });
 
     return {
@@ -709,7 +765,15 @@ export async function issueCertificate(input: {
       title: isReissue ? "Certificate reissued" : "Certificate issued",
       message: `${certificate.vendor.vendorName} certificate was ${isReissue ? "reissued" : "issued"} under ${certificate.project.projectName}.`,
       projectId: updated.projectId,
+      vendorId: updated.vendorId,
+      projectVendorId: updated.projectVendorId,
       certificateId: updated.id,
+      routingStrategies: ["project_manager", "procurement_chain"],
+      routingContext: {
+        projectManager: {
+          email: certificate.pmEmail,
+        },
+      },
     });
 
     return {
@@ -801,7 +865,15 @@ export async function reopenCertificate(input: {
       title: "Certificate reopened for revision",
       message: `${certificate.vendor.vendorName} certificate was reopened for revision under ${certificate.project.projectName}.`,
       projectId: reopened.projectId,
+      vendorId: reopened.vendorId,
+      projectVendorId: reopened.projectVendorId,
       certificateId: reopened.id,
+      routingStrategies: ["project_manager", "procurement_chain"],
+      routingContext: {
+        projectManager: {
+          email: certificate.pmEmail,
+        },
+      },
     });
 
     return {
@@ -809,6 +881,7 @@ export async function reopenCertificate(input: {
       certificateId: reopened.id,
       projectId: reopened.projectId,
       projectName: certificate.project.projectName,
+      pmEmail: certificate.pmEmail,
       reopenUrl: absoluteUrl(
         `/admin/projects/${reopened.projectId}/certificates/${reopened.id}`,
       ),
@@ -822,6 +895,7 @@ export async function reopenCertificate(input: {
     certificateCode: payload.certificateCode,
     reopenedByName: input.userName,
     reopenUrl: payload.reopenUrl,
+    projectManagerEmail: payload.pmEmail,
   });
 
   return payload;
@@ -886,7 +960,15 @@ export async function revokeCertificate(input: {
       title: "Certificate revoked",
       message: `${certificate.vendor.vendorName} certificate was revoked under ${certificate.project.projectName}.`,
       projectId: revoked.projectId,
+      vendorId: revoked.vendorId,
+      projectVendorId: revoked.projectVendorId,
       certificateId: revoked.id,
+      routingStrategies: ["project_manager", "procurement_chain"],
+      routingContext: {
+        projectManager: {
+          email: certificate.pmEmail,
+        },
+      },
     });
 
     return revoked;

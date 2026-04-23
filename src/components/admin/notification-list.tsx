@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { markNotificationReadByIdAction } from "@/actions/notification-actions";
+import {
+  markNotificationActionedByIdAction,
+  markNotificationReadByIdAction,
+} from "@/actions/notification-actions";
+import { NotificationSeverityBadge } from "@/components/admin/status-badges";
 import { Button } from "@/components/ui/button";
 import { getNotificationHref } from "@/lib/notifications";
 import type { NotificationItem } from "@/lib/types";
@@ -56,8 +60,23 @@ export function NotificationList({
   async function openNotification(notification: NotificationItem) {
     const href = getNotificationHref(notification);
 
-    if (!notification.read) {
-      await markAsRead(notification.id, false);
+    setPendingId(notification.id);
+
+    try {
+      await markNotificationActionedByIdAction(notification.id);
+      setItems((current) =>
+        current.map((item) =>
+          item.id === notification.id
+            ? {
+                ...item,
+                read: true,
+                actionedAt: new Date(),
+              }
+            : item,
+        ),
+      );
+    } finally {
+      setPendingId((current) => (current === notification.id ? null : current));
     }
 
     router.push(href);
@@ -83,7 +102,7 @@ export function NotificationList({
         return (
           <div
             key={notification.id}
-            className="rounded-[24px] border border-[var(--color-border)] bg-white p-5"
+            className="min-w-0 rounded-[24px] border border-[var(--color-border)] bg-white p-5"
           >
             <button
               type="button"
@@ -91,12 +110,13 @@ export function NotificationList({
               disabled={busy}
               className="block w-full rounded-[20px] text-left transition-colors hover:bg-[var(--color-panel-soft)] disabled:cursor-not-allowed disabled:opacity-70"
             >
-              <div className="flex flex-wrap items-start justify-between gap-4 px-1 py-1">
-                <div className="max-w-3xl">
-                  <div className="flex items-center gap-3">
-                    <p className="text-base font-semibold text-[var(--color-ink)]">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-4 px-1 py-1">
+                <div className="min-w-0 max-w-3xl flex-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-3">
+                    <p className="min-w-0 text-base font-semibold text-[var(--color-ink)]">
                       {notification.title}
                     </p>
+                    <NotificationSeverityBadge severity={notification.severity} />
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-semibold ${
                         notification.read
@@ -107,14 +127,14 @@ export function NotificationList({
                       {notification.read ? "Read" : "Unread"}
                     </span>
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-[var(--color-muted)]">
+                  <p className="mt-2 break-words text-sm leading-6 text-[var(--color-muted)]">
                     {notification.message}
                   </p>
                   <p className="mt-3 text-xs font-medium text-[var(--color-primary)]">
-                    View details
+                    {notification.actionedAt ? "Open record" : "View details"}
                   </p>
                 </div>
-                <div className="text-right">
+                <div className="shrink-0 text-right">
                   <p className="text-xs text-[var(--color-muted)]">
                     {formatDateTime(notification.createdAt)}
                   </p>

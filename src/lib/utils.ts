@@ -46,6 +46,10 @@ export function buildPmApprovalUrl(token: string) {
   return absoluteUrl(`/pm-approval/${token}`);
 }
 
+export function buildVendorEvaluationUrl(token: string) {
+  return absoluteUrl(`/vendor-evaluation/${token}`);
+}
+
 export function parsePositiveInt(value: string | null | undefined, fallback = 1) {
   if (!value) {
     return fallback;
@@ -70,4 +74,19 @@ export function nullableString(value: FormDataEntryValue | null) {
 
   const normalized = String(value).trim();
   return normalized.length > 0 ? normalized : undefined;
+}
+
+export function parseEmailList(value: string | null | undefined) {
+  if (!value) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,;]/)
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
 }

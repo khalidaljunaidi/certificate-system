@@ -46,6 +46,15 @@ enum NotificationType {
   CERTIFICATE_ISSUED
   CERTIFICATE_REOPENED
   CERTIFICATE_REVOKED
+  VENDOR_EVALUATION_REQUESTED
+  VENDOR_EVALUATION_READY_FOR_PROCUREMENT
+  VENDOR_EVALUATION_COMPLETED
+  TASK_ASSIGNED
+  TASK_DUE_SOON
+  TASK_OVERDUE
+  TASK_COMPLETED
+  VENDOR_CREATED
+  SYSTEM_ALERT
 }
 
 enum AuditAction {
@@ -61,10 +70,137 @@ enum AuditAction {
   DUPLICATED
   ARCHIVED
   UNARCHIVED
+  TASK_ASSIGNED
+  TASK_UPDATED
+  TASK_COMPLETED
+  TASK_ESCALATED
+  PERFORMANCE_REVIEW_DRAFTED
+  PERFORMANCE_REVIEW_FINALIZED
+  NOTIFICATION_DISPATCHED
 }
 
 enum ApprovalTokenAction {
   PM_APPROVAL
+}
+
+enum VendorEvaluationGrade {
+  A
+  B
+  C
+  D
+}
+
+enum VendorEvaluationCycleStatus {
+  REQUESTED
+  READY_FOR_PROCUREMENT
+  COMPLETED
+}
+
+enum VendorEvaluationEvaluatorRole {
+  PROJECT_MANAGER
+  HEAD_OF_PROJECTS
+  PROCUREMENT
+}
+
+enum VendorStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum WorkflowEmailEvent {
+  PM_APPROVAL_REQUEST
+  PM_DECISION_NOTIFICATION
+  VENDOR_EVALUATION_REQUEST
+  FINAL_CERTIFICATE_ISSUED
+  CERTIFICATE_REOPENED
+  ANNUAL_EVALUATION_REMINDER
+  TASK_ASSIGNED
+  TASK_DUE_SOON
+  TASK_OVERDUE
+  TASK_COMPLETED
+  SYSTEM_ALERT
+  PERFORMANCE_REVIEW_FINALIZED
+}
+
+enum OperationalTaskType {
+  VENDOR
+  PROCUREMENT
+  FINANCE
+  OPERATIONS
+  CUSTOM
+}
+
+enum OperationalTaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum OperationalTaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  WAITING
+  BLOCKED
+  COMPLETED
+  OVERDUE
+}
+
+enum TaskSlaStatus {
+  ON_TRACK
+  AT_RISK
+  OVERDUE
+}
+
+enum MonthlyCycleStatus {
+  DRAFT
+  OPEN
+  CLOSED
+  ARCHIVED
+}
+
+enum NotificationSeverity {
+  INFO
+  ACTION_REQUIRED
+  WARNING
+  CRITICAL
+}
+
+enum NotificationEventKey {
+  CERT_CREATED
+  CERT_SUBMITTED_PM
+  CERT_PM_APPROVED
+  CERT_PM_REJECTED
+  CERT_ISSUED
+  CERT_REOPENED
+  CERT_REVOKED
+  TASK_ASSIGNED
+  TASK_DUE_SOON
+  TASK_OVERDUE
+  TASK_COMPLETED
+  VENDOR_CREATED
+  SYSTEM_ALERT
+  PERFORMANCE_REVIEW_FINALIZED
+}
+
+enum NotificationDeliveryStatus {
+  NOT_REQUESTED
+  SKIPPED
+  SENT
+  FAILED
+  PARTIAL
+}
+
+enum PerformanceReviewStatus {
+  DRAFT
+  FINALIZED
+}
+
+enum PerformanceGrade {
+  A
+  B
+  C
+  D
 }
 
 model User {
@@ -87,6 +223,17 @@ model User {
   notifications       Notification[]
   auditLogs           AuditLog[]
   createdCertificates Certificate[]   @relation("CertificateCreatedBy")
+  createdVendorEvaluationCycles VendorEvaluationCycle[] @relation("VendorEvaluationCycleCreatedBy")
+  finalizedVendorEvaluationCycles VendorEvaluationCycle[] @relation("VendorEvaluationCycleFinalizedBy")
+  vendorEvaluationSubmissions VendorEvaluationSubmission[] @relation("VendorEvaluationSubmissions")
+  updatedWorkflowEmailSettings WorkflowEmailSetting[] @relation("WorkflowEmailSettingUpdatedBy")
+  assignedOperationalTasks OperationalTask[] @relation("OperationalTaskAssignee")
+  createdOperationalTasks OperationalTask[] @relation("OperationalTaskAssigner")
+  createdMonthlyCycles MonthlyCycle[] @relation("MonthlyCycleCreatedBy")
+  performanceReviews QuarterlyPerformanceReview[] @relation("QuarterlyPerformanceEmployee")
+  performanceReviewsGiven QuarterlyPerformanceReview[] @relation("QuarterlyPerformanceEvaluator")
+  monthlyPerformanceReviews MonthlyPerformanceReview[] @relation("MonthlyPerformanceEmployee")
+  monthlyPerformanceReviewsGiven MonthlyPerformanceReview[] @relation("MonthlyPerformanceEvaluator")
 }
 
 model Project {
@@ -104,7 +251,10 @@ model Project {
   updatedAt       DateTime        @updatedAt
   vendorLinks     ProjectVendor[]
   certificates    Certificate[]
+  vendorEvaluationCycles VendorEvaluationCycle[] @relation("SourceProjectVendorEvaluations")
   notifications   Notification[]  @relation("ProjectNotifications")
+  operationalTasks OperationalTask[] @relation("ProjectOperationalTasks")
+  notificationDispatchLogs NotificationDispatchLog[] @relation("ProjectNotificationDispatchLogs")
   auditLogs       AuditLog[]
 
   @@index([status])
@@ -116,10 +266,50 @@ model Vendor {
   vendorName   String
   vendorEmail  String
   vendorId     String          @unique
+  vendorPhone  String?
+  status       VendorStatus    @default(ACTIVE)
+  classification String?
+  notes        String?
+  categoryId   String?
+  subcategoryId String?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
+  category     VendorCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategory  VendorSubcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
   projectLinks ProjectVendor[]
   certificates Certificate[]
+  evaluationCycles VendorEvaluationCycle[]
+  notifications Notification[] @relation("VendorNotifications")
+  operationalTasks OperationalTask[] @relation("VendorOperationalTasks")
+  notificationDispatchLogs NotificationDispatchLog[] @relation("VendorNotificationDispatchLogs")
+
+  @@index([status])
+  @@index([categoryId])
+  @@index([subcategoryId])
+}
+
+model VendorCategory {
+  id          String              @id @default(cuid())
+  name        String              @unique
+  externalKey String?             @unique
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  subcategories VendorSubcategory[]
+  vendors     Vendor[]
+}
+
+model VendorSubcategory {
+  id          String         @id @default(cuid())
+  categoryId  String
+  name        String
+  externalKey String?        @unique
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  category    VendorCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  vendors     Vendor[]
+
+  @@unique([categoryId, name])
+  @@index([categoryId])
 }
 
 model ProjectVendor {
@@ -134,6 +324,9 @@ model ProjectVendor {
   project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   vendor         Vendor        @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   certificates   Certificate[]
+  operationalTasks OperationalTask[] @relation("ProjectVendorOperationalTasks")
+  notifications Notification[] @relation("ProjectVendorNotifications")
+  notificationDispatchLogs NotificationDispatchLog[] @relation("ProjectVendorNotificationDispatchLogs")
 
   @@index([projectId, vendorId])
   @@index([projectId])
@@ -178,6 +371,8 @@ model Certificate {
   createdBy            User              @relation("CertificateCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   approvalTokens       ApprovalToken[]
   notifications        Notification[]    @relation("CertificateNotifications")
+  operationalTasks     OperationalTask[] @relation("CertificateOperationalTasks")
+  notificationDispatchLogs NotificationDispatchLog[] @relation("CertificateNotificationDispatchLogs")
   auditLogs            AuditLog[]
 
   @@index([projectId, status])
@@ -201,24 +396,296 @@ model ApprovalToken {
   @@index([certificateId, expiresAt])
 }
 
+model VendorEvaluationCycle {
+  id                         String                      @id @default(cuid())
+  vendorId                   String
+  sourceProjectId            String
+  year                       Int
+  status                     VendorEvaluationCycleStatus @default(REQUESTED)
+  projectManagerEmail        String
+  headOfProjectsEmail        String
+  finalGrade                 VendorEvaluationGrade?
+  finalScorePercent          Decimal?                    @db.Decimal(5, 2)
+  createdByUserId            String
+  procurementFinalizedByUserId String?
+  finalizedAt                DateTime?
+  createdAt                  DateTime                    @default(now())
+  updatedAt                  DateTime                    @updatedAt
+  vendor                     Vendor                      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  sourceProject              Project                     @relation("SourceProjectVendorEvaluations", fields: [sourceProjectId], references: [id], onDelete: Restrict)
+  createdBy                  User                        @relation("VendorEvaluationCycleCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  procurementFinalizedBy     User?                       @relation("VendorEvaluationCycleFinalizedBy", fields: [procurementFinalizedByUserId], references: [id], onDelete: SetNull)
+  submissions                VendorEvaluationSubmission[]
+  requestTokens              VendorEvaluationRequestToken[]
+
+  @@unique([vendorId, year])
+  @@index([status])
+  @@index([sourceProjectId])
+}
+
+model VendorEvaluationSubmission {
+  id              String                        @id @default(cuid())
+  cycleId         String
+  evaluatorRole   VendorEvaluationEvaluatorRole
+  grade           VendorEvaluationGrade
+  summary         String
+  strengths       String
+  concerns        String
+  totalScorePercent Decimal?                      @db.Decimal(5, 2)
+  criteriaSnapshot Json?
+  recommendation  String?
+  correctiveActions String?
+  submittedByUserId String?
+  evaluatorName   String
+  evaluatorEmail  String
+  submittedAt     DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+  cycle           VendorEvaluationCycle         @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  submittedBy     User?                         @relation("VendorEvaluationSubmissions", fields: [submittedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([cycleId, evaluatorRole])
+  @@index([submittedByUserId])
+}
+
+model WorkflowEmailSetting {
+  id               String             @id @default(cuid())
+  event            WorkflowEmailEvent @unique
+  enabled          Boolean            @default(true)
+  includeDefaultTo Boolean            @default(true)
+  includeDefaultCc Boolean            @default(true)
+  toEmails         String[]           @default([])
+  ccEmails         String[]           @default([])
+  updatedByUserId  String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  updatedBy        User?              @relation("WorkflowEmailSettingUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([updatedByUserId])
+}
+
+model OperationalTask {
+  id                   String                  @id @default(cuid())
+  title                String
+  description          String
+  type                 OperationalTaskType
+  assignedToUserId     String
+  assignedByUserId     String
+  priority             OperationalTaskPriority @default(MEDIUM)
+  status               OperationalTaskStatus   @default(NOT_STARTED)
+  startDate            DateTime?
+  dueDate              DateTime
+  completedAt          DateTime?
+  linkedProjectId      String?
+  linkedVendorId       String?
+  linkedProjectVendorId String?
+  linkedCertificateId  String?
+  monthlyCycleId       String?
+  requiresChecklistCompletion Boolean         @default(true)
+  reopenedCount        Int                     @default(0)
+  dueSoonNotifiedAt    DateTime?
+  overdueNotifiedAt    DateTime?
+  lastStatusChangedAt  DateTime                @default(now())
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  assignedTo           User                    @relation("OperationalTaskAssignee", fields: [assignedToUserId], references: [id], onDelete: Restrict)
+  assignedBy           User                    @relation("OperationalTaskAssigner", fields: [assignedByUserId], references: [id], onDelete: Restrict)
+  project              Project?                @relation("ProjectOperationalTasks", fields: [linkedProjectId], references: [id], onDelete: SetNull)
+  vendor               Vendor?                 @relation("VendorOperationalTasks", fields: [linkedVendorId], references: [id], onDelete: SetNull)
+  projectVendor        ProjectVendor?          @relation("ProjectVendorOperationalTasks", fields: [linkedProjectVendorId], references: [id], onDelete: SetNull)
+  certificate          Certificate?            @relation("CertificateOperationalTasks", fields: [linkedCertificateId], references: [id], onDelete: SetNull)
+  monthlyCycle         MonthlyCycle?           @relation(fields: [monthlyCycleId], references: [id], onDelete: SetNull)
+  checklistItems       TaskChecklistItem[]
+  notifications        Notification[]          @relation("TaskNotifications")
+  notificationDispatchLogs NotificationDispatchLog[] @relation("TaskNotificationDispatchLogs")
+
+  @@index([assignedToUserId, status])
+  @@index([assignedByUserId, createdAt])
+  @@index([dueDate, status])
+  @@index([linkedProjectId])
+  @@index([linkedVendorId])
+  @@index([linkedProjectVendorId])
+  @@index([linkedCertificateId])
+  @@index([monthlyCycleId])
+}
+
+model TaskChecklistItem {
+  id          String          @id @default(cuid())
+  taskId      String
+  label       String
+  completed   Boolean         @default(false)
+  completedAt DateTime?
+  orderIndex  Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  task        OperationalTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, orderIndex])
+}
+
+model VendorEvaluationRequestToken {
+  id            String                        @id @default(cuid())
+  cycleId        String
+  evaluatorRole  VendorEvaluationEvaluatorRole
+  email          String
+  tokenHash      String                       @unique
+  expiresAt      DateTime
+  usedAt         DateTime?
+  invalidatedAt  DateTime?
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
+  cycle          VendorEvaluationCycle        @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+
+  @@index([cycleId, evaluatorRole])
+  @@index([cycleId, expiresAt])
+}
+
+model MonthlyCycle {
+  id              String             @id @default(cuid())
+  month           Int
+  year            Int
+  label           String
+  status          MonthlyCycleStatus @default(DRAFT)
+  isActive        Boolean            @default(false)
+  createdByUserId String
+  activatedAt     DateTime?
+  closedAt        DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  createdBy       User               @relation("MonthlyCycleCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  tasks           OperationalTask[]
+  reviews         MonthlyPerformanceReview[]
+
+  @@unique([month, year])
+  @@index([status, isActive])
+  @@index([year, month])
+}
+
 model Notification {
   id                   String           @id @default(cuid())
   userId               String
   type                 NotificationType
+  eventKey             NotificationEventKey?
+  severity             NotificationSeverity @default(INFO)
   title                String
   message              String
   relatedProjectId     String?
   relatedCertificateId String?
+  relatedVendorId      String?
+  relatedProjectVendorId String?
+  relatedTaskId        String?
+  href                 String?
   read                 Boolean          @default(false)
   readAt               DateTime?
+  actionedAt           DateTime?
+  dispatchLogId        String?
   createdAt            DateTime         @default(now())
   user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   project              Project?         @relation("ProjectNotifications", fields: [relatedProjectId], references: [id], onDelete: SetNull)
   certificate          Certificate?     @relation("CertificateNotifications", fields: [relatedCertificateId], references: [id], onDelete: SetNull)
+  vendor               Vendor?          @relation("VendorNotifications", fields: [relatedVendorId], references: [id], onDelete: SetNull)
+  projectVendor        ProjectVendor?   @relation("ProjectVendorNotifications", fields: [relatedProjectVendorId], references: [id], onDelete: SetNull)
+  task                 OperationalTask? @relation("TaskNotifications", fields: [relatedTaskId], references: [id], onDelete: SetNull)
+  dispatchLog          NotificationDispatchLog? @relation(fields: [dispatchLogId], references: [id], onDelete: SetNull)
 
   @@index([userId, read])
   @@index([relatedProjectId])
   @@index([relatedCertificateId])
+  @@index([relatedVendorId])
+  @@index([relatedProjectVendorId])
+  @@index([relatedTaskId])
+  @@index([eventKey, createdAt])
+}
+
+model NotificationDispatchLog {
+  id                   String                   @id @default(cuid())
+  eventKey             NotificationEventKey
+  type                 NotificationType?
+  severity             NotificationSeverity     @default(INFO)
+  dedupeKey            String?
+  cooldownUntil        DateTime?
+  inAppCreatedCount    Int                      @default(0)
+  emailSentCount       Int                      @default(0)
+  emailDeliveryStatus  NotificationDeliveryStatus @default(NOT_REQUESTED)
+  relatedProjectId     String?
+  relatedVendorId      String?
+  relatedProjectVendorId String?
+  relatedCertificateId String?
+  relatedTaskId        String?
+  linkHref             String?
+  recipientSnapshot    Json?
+  createdAt            DateTime                 @default(now())
+  project              Project?                 @relation("ProjectNotificationDispatchLogs", fields: [relatedProjectId], references: [id], onDelete: SetNull)
+  vendor               Vendor?                  @relation("VendorNotificationDispatchLogs", fields: [relatedVendorId], references: [id], onDelete: SetNull)
+  projectVendor        ProjectVendor?           @relation("ProjectVendorNotificationDispatchLogs", fields: [relatedProjectVendorId], references: [id], onDelete: SetNull)
+  certificate          Certificate?             @relation("CertificateNotificationDispatchLogs", fields: [relatedCertificateId], references: [id], onDelete: SetNull)
+  task                 OperationalTask?         @relation("TaskNotificationDispatchLogs", fields: [relatedTaskId], references: [id], onDelete: SetNull)
+  notifications        Notification[]
+
+  @@index([eventKey, createdAt])
+  @@index([dedupeKey, createdAt])
+  @@index([relatedProjectId])
+  @@index([relatedVendorId])
+  @@index([relatedProjectVendorId])
+  @@index([relatedCertificateId])
+  @@index([relatedTaskId])
+}
+
+model QuarterlyPerformanceReview {
+  id                     String                  @id @default(cuid())
+  employeeUserId         String
+  evaluatorUserId        String
+  year                   Int
+  quarter                Int
+  status                 PerformanceReviewStatus @default(DRAFT)
+  roleSnapshot           UserRole
+  systemMetrics          Json
+  managerScorecard       Json
+  managerComments        String?
+  recommendation         String?
+  systemScorePercent     Decimal                 @db.Decimal(5, 2)
+  managerScorePercent    Decimal                 @db.Decimal(5, 2)
+  finalScorePercent      Decimal                 @db.Decimal(5, 2)
+  grade                  PerformanceGrade
+  executionCapability    Decimal?                @db.Decimal(5, 2)
+  accuracyIndex          Decimal?                @db.Decimal(5, 2)
+  ownershipIndex         Decimal?                @db.Decimal(5, 2)
+  followUpDiscipline     Decimal?                @db.Decimal(5, 2)
+  responseAgility        Decimal?                @db.Decimal(5, 2)
+  procurementEffectiveness Decimal?              @db.Decimal(5, 2)
+  finalizedAt            DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  employee               User                    @relation("QuarterlyPerformanceEmployee", fields: [employeeUserId], references: [id], onDelete: Restrict)
+  evaluator              User                    @relation("QuarterlyPerformanceEvaluator", fields: [evaluatorUserId], references: [id], onDelete: Restrict)
+
+  @@unique([employeeUserId, year, quarter])
+  @@index([status, year, quarter])
+  @@index([evaluatorUserId, year, quarter])
+}
+
+model MonthlyPerformanceReview {
+  id                  String                  @id @default(cuid())
+  cycleId             String
+  employeeUserId      String
+  evaluatorUserId     String
+  status              PerformanceReviewStatus @default(DRAFT)
+  systemMetrics       Json
+  managerNotes        String?
+  recommendation      String?
+  systemScorePercent  Decimal                 @db.Decimal(5, 2)
+  managerScorePercent Decimal                 @db.Decimal(5, 2)
+  finalScorePercent   Decimal                 @db.Decimal(5, 2)
+  grade               PerformanceGrade
+  finalizedAt         DateTime?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  cycle               MonthlyCycle            @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  employee            User                    @relation("MonthlyPerformanceEmployee", fields: [employeeUserId], references: [id], onDelete: Restrict)
+  evaluator           User                    @relation("MonthlyPerformanceEvaluator", fields: [evaluatorUserId], references: [id], onDelete: Restrict)
+
+  @@unique([cycleId, employeeUserId])
+  @@index([cycleId, status])
+  @@index([evaluatorUserId, createdAt])
 }
 
 model AuditLog {

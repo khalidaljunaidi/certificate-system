@@ -4,8 +4,17 @@ import { revalidatePath } from "next/cache";
 
 import type { ActionState } from "@/lib/types";
 import { requireAdminSession } from "@/lib/auth";
-import { projectFormSchema, projectVendorFormSchema } from "@/lib/validation";
-import { createProject, addVendorToProject } from "@/server/services/project-service";
+import { canManageProjectStatus } from "@/lib/permissions";
+import {
+  projectFormSchema,
+  projectVendorFormSchema,
+  updateProjectStatusSchema,
+} from "@/lib/validation";
+import {
+  createProject,
+  addVendorToProject,
+  updateProjectStatus,
+} from "@/server/services/project-service";
 import { EMPTY_ACTION_STATE, toActionState } from "@/actions/utils";
 
 export async function createProjectAction(
@@ -47,9 +56,12 @@ export async function addProjectVendorAction(
     const projectId = String(formData.get("projectId"));
     const values = projectVendorFormSchema.parse({
       projectId,
-      vendorName: formData.get("vendorName"),
-      vendorEmail: formData.get("vendorEmail"),
-      vendorId: formData.get("vendorId"),
+      existingVendorRecordId:
+        formData.get("existingVendorRecordId") || undefined,
+      vendorName: formData.get("vendorName") || undefined,
+      vendorEmail: formData.get("vendorEmail") || undefined,
+      vendorId: formData.get("vendorId") || undefined,
+      vendorPhone: formData.get("vendorPhone") || undefined,
       poNumber: formData.get("poNumber") || undefined,
       contractNumber: formData.get("contractNumber") || undefined,
     });
@@ -61,6 +73,42 @@ export async function addProjectVendorAction(
 
     return {
       success: "Vendor PO record added successfully.",
+    };
+  } catch (error) {
+    return toActionState(error);
+  }
+}
+
+export async function updateProjectStatusAction(
+  prevState: ActionState = EMPTY_ACTION_STATE,
+  formData: FormData,
+): Promise<ActionState> {
+  try {
+    void prevState;
+    const session = await requireAdminSession();
+
+    if (!canManageProjectStatus(session.user.role)) {
+      return {
+        error: "You do not have permission to update project status.",
+      };
+    }
+
+    const values = updateProjectStatusSchema.parse({
+      projectId: formData.get("projectId"),
+      status: formData.get("status"),
+    });
+
+    const project = await updateProjectStatus(session.user.id, values);
+
+    revalidatePath(`/admin/projects/${project.id}`);
+    revalidatePath("/admin/projects");
+    revalidatePath("/admin/dashboard");
+    revalidatePath("/admin", "layout");
+
+    return {
+      success: "Project status updated successfully.",
+      noticeKey: "project-status-updated",
+      redirectTo: `/admin/projects/${project.id}?notice=project-status-updated`,
     };
   } catch (error) {
     return toActionState(error);

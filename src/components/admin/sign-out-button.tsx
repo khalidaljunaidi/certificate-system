@@ -5,17 +5,23 @@ import { signOut } from "next-auth/react";
 
 import { Button } from "@/components/ui/button";
 
-export function SignOutButton() {
+export function SignOutButton({
+  compact = false,
+  className,
+}: {
+  compact?: boolean;
+  className?: string;
+}) {
   return (
     <Button
       type="button"
       variant="ghost"
-      size="sm"
-      className="gap-2"
+      size={compact ? "sm" : "sm"}
+      className={compact ? `w-full justify-start gap-2 ${className ?? ""}` : `gap-2 ${className ?? ""}`}
       onClick={() => signOut({ callbackUrl: "/admin/login" })}
     >
       <LogOut className="h-4 w-4" />
-      Sign out
+      {compact ? "Sign out" : "Sign out"}
     </Button>
   );
 }

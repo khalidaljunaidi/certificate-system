@@ -8,11 +8,15 @@ import {
   CertificateStatusBadge,
   ProjectStatusBadge,
 } from "@/components/admin/status-badges";
+import { ProjectStatusForm } from "@/components/forms/project-status-form";
 import { ProjectVendorForm } from "@/components/forms/project-vendor-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { requireAdminSession } from "@/lib/auth";
+import { canManageProjectStatus } from "@/lib/permissions";
 import { formatDate } from "@/lib/utils";
 import { getProjectWorkspace } from "@/server/queries/project-queries";
+import { getVendorPickerOptions } from "@/server/queries/vendor-queries";
 
 type ProjectDetailPageProps = {
   params: Promise<{
@@ -24,11 +28,17 @@ export default async function ProjectDetailPage({
   params,
 }: ProjectDetailPageProps) {
   const { projectId } = await params;
-  const workspace = await getProjectWorkspace(projectId);
+  const [session, workspace, vendorOptions] = await Promise.all([
+    requireAdminSession(),
+    getProjectWorkspace(projectId),
+    getVendorPickerOptions(),
+  ]);
 
   if (!workspace) {
     notFound();
   }
+
+  const canUpdateProjectStatus = canManageProjectStatus(session.user.role);
 
   const uniqueVendorCount = new Set(
     workspace.vendors.map((vendor) => vendor.vendorId),
@@ -224,20 +234,46 @@ export default async function ProjectDetailPage({
           </CardContent>
         </Card>
 
-        {workspace.project.isArchived ? (
+        <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Vendor Changes Locked</CardTitle>
+              <CardTitle>Project Status Management</CardTitle>
             </CardHeader>
-            <CardContent className="text-sm leading-7 text-[var(--color-muted)]">
-              Archived projects remain available for safe historical access. Add or
-              update vendor links only after the project is restored to the active
-              workspace.
+            <CardContent className="space-y-4">
+              <p className="text-sm leading-7 text-[var(--color-muted)]">
+                Update the lifecycle state for this project without changing the
+                rest of the project record. Status changes are recorded in the
+                audit trail and refresh the main admin views.
+              </p>
+              {canUpdateProjectStatus ? (
+                <ProjectStatusForm
+                  projectId={projectId}
+                  currentStatus={workspace.project.status}
+                />
+              ) : (
+                <div className="rounded-[24px] border border-dashed border-[var(--color-border)] p-5 text-sm leading-7 text-[var(--color-muted)]">
+                  Project status changes are limited to Procurement leadership
+                  and administrators.
+                </div>
+              )}
             </CardContent>
           </Card>
-        ) : (
-          <ProjectVendorForm projectId={projectId} />
-        )}
+
+          {workspace.project.isArchived ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Vendor Changes Locked</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm leading-7 text-[var(--color-muted)]">
+                Archived projects remain available for safe historical access.
+                Add or update vendor links only after the project is restored to
+                the active workspace.
+              </CardContent>
+            </Card>
+          ) : (
+            <ProjectVendorForm projectId={projectId} vendorOptions={vendorOptions} />
+          )}
+        </div>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">

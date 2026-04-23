@@ -24,18 +24,18 @@ export function ActivityFeed({
       {items.map((item) => (
         <div
           key={item.id}
-          className="rounded-[24px] border border-[var(--color-border)] bg-white p-5"
+          className="min-w-0 rounded-[24px] border border-[var(--color-border)] bg-white p-5"
         >
-          <div className="flex items-start justify-between gap-4">
-            <div>
+          <div className="flex min-w-0 items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">
                 {item.action.replaceAll("_", " ")}
               </p>
-              <p className="mt-2 text-base text-[var(--color-ink)]">
+              <p className="mt-2 break-words text-base text-[var(--color-ink)]">
                 {item.actorName ?? "System"} updated {item.entityType}.
               </p>
             </div>
-            <p className="text-xs text-[var(--color-muted)]">
+            <p className="shrink-0 text-xs text-[var(--color-muted)]">
               {formatDateTime(item.createdAt)}
             </p>
           </div>

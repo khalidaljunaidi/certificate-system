@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://certificates.thegatheringksa.com");
 
-const { buildPmApprovalUrl, buildVerifyUrl, compactText } = await import(
+const {
+  buildPmApprovalUrl,
+  buildVendorEvaluationUrl,
+  buildVerifyUrl,
+  compactText,
+} = await import(
   "@/lib/utils"
 );
 
@@ -16,6 +21,12 @@ describe("URL builders", () => {
   it("builds a PM approval URL", () => {
     expect(buildPmApprovalUrl("secure-token")).toBe(
       "https://certificates.thegatheringksa.com/pm-approval/secure-token",
+    );
+  });
+
+  it("builds a vendor evaluation URL", () => {
+    expect(buildVendorEvaluationUrl("evaluation-token")).toBe(
+      "https://certificates.thegatheringksa.com/vendor-evaluation/evaluation-token",
     );
   });
 });

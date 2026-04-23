@@ -4,7 +4,8 @@ import { Bell, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { markNotificationReadByIdAction } from "@/actions/notification-actions";
+import { markNotificationActionedByIdAction, markNotificationReadByIdAction } from "@/actions/notification-actions";
+import { NotificationSeverityBadge } from "@/components/admin/status-badges";
 import { getNotificationHref } from "@/lib/notifications";
 import type { NotificationItem } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
@@ -71,7 +72,15 @@ export function NotificationBell({
 
   async function openNotification(notification: NotificationItem) {
     const targetHref = getNotificationHref(notification);
-    await markAsRead(notification.id, false);
+    setPendingId(notification.id);
+
+    try {
+      await markNotificationActionedByIdAction(notification.id);
+      removeNotification(notification.id);
+    } finally {
+      setPendingId((current) => (current === notification.id ? null : current));
+    }
+
     setOpen(false);
     router.push(targetHref);
   }
@@ -139,6 +148,7 @@ export function NotificationBell({
                               <p className="truncate text-sm font-semibold text-[var(--color-ink)]">
                                 {notification.title}
                               </p>
+                              <NotificationSeverityBadge severity={notification.severity} />
                               <span className="rounded-full bg-[rgba(215,132,57,0.12)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">
                                 New
                               </span>
