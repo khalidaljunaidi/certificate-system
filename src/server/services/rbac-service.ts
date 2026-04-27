@@ -142,81 +142,115 @@ function toUserView(user: {
   };
 }
 
+async function upsertPermission(definition: (typeof PERMISSION_DEFINITIONS)[number]) {
+  return prisma.permission.upsert({
+    where: {
+      key: definition.key,
+    },
+    update: {
+      name: definition.label,
+      category: definition.category,
+      description: definition.description,
+      sortOrder: definition.sortOrder,
+    },
+    create: {
+      key: definition.key,
+      name: definition.label,
+      category: definition.category,
+      description: definition.description,
+      sortOrder: definition.sortOrder,
+    },
+  });
+}
+
+async function upsertRole(definition: (typeof DEFAULT_ROLE_DEFINITIONS)[number]) {
+  return prisma.role.upsert({
+    where: {
+      key: definition.key,
+    },
+    update: {
+      name: definition.name,
+      description: definition.description,
+      isSystem: definition.isSystem,
+    },
+    create: {
+      key: definition.key,
+      name: definition.name,
+      description: definition.description,
+      isSystem: definition.isSystem,
+    },
+  });
+}
+
 export async function ensureDefaultAccessControlCatalog() {
-  const [existingPermissionCount, existingRoleCount] = await Promise.all([
-    prisma.permission.count(),
-    prisma.role.count(),
+  const [existingPermissionKeys, existingRoleKeys] = await Promise.all([
+    prisma.permission.findMany({
+      select: {
+        key: true,
+      },
+    }),
+    prisma.role.findMany({
+      select: {
+        key: true,
+      },
+    }),
   ]);
 
-  if (existingPermissionCount > 0 && existingRoleCount > 0) {
+  const permissionKeySet = new Set(existingPermissionKeys.map((permission) => permission.key));
+  const roleKeySet = new Set(existingRoleKeys.map((role) => role.key));
+
+  const missingPermissionDefinitions = PERMISSION_DEFINITIONS.filter(
+    (definition) => !permissionKeySet.has(definition.key),
+  );
+  const missingRoleDefinitions = DEFAULT_ROLE_DEFINITIONS.filter(
+    (definition) => !roleKeySet.has(definition.key),
+  );
+
+  if (missingPermissionDefinitions.length === 0 && missingRoleDefinitions.length === 0) {
     return;
   }
 
-  await prisma.$transaction(async (tx) => {
-    const permissionRows = await Promise.all(
-      PERMISSION_DEFINITIONS.map((definition) =>
-        tx.permission.upsert({
-          where: {
-            key: definition.key,
-          },
-          update: {
-            name: definition.label,
-            category: definition.category,
-            description: definition.description,
-            sortOrder: definition.sortOrder,
-          },
-          create: {
-            key: definition.key,
-            name: definition.label,
-            category: definition.category,
-            description: definition.description,
-            sortOrder: definition.sortOrder,
-          },
-        }),
-      ),
-    );
+  await Promise.all(missingPermissionDefinitions.map(upsertPermission));
+  await Promise.all(missingRoleDefinitions.map(upsertRole));
 
-    for (const roleDefinition of DEFAULT_ROLE_DEFINITIONS) {
-      const role =
-        (await tx.role.findUnique({
-          where: { key: roleDefinition.key },
-          select: { id: true },
-        })) ??
-        (await tx.role.create({
-          data: {
-            key: roleDefinition.key,
-            name: roleDefinition.name,
-            description: roleDefinition.description,
-            isSystem: roleDefinition.isSystem,
-          },
-          select: { id: true },
-        }));
-
-      type PermissionRow = (typeof permissionRows)[number];
-
-      const permissionIds = roleDefinition.permissions
-        .map((permissionKey) =>
-          permissionRows.find((permission) => permission.key === permissionKey),
-        )
-        .filter((permission): permission is PermissionRow => Boolean(permission))
-        .map((permission) => permission.id);
-
-      const existingLinks = await tx.rolePermission.count({
-        where: {
-          roleId: role.id,
-        },
-      });
-
-      if (existingLinks === 0) {
-        await tx.rolePermission.createMany({
-          data: permissionIds.map((permissionId) => ({
-            roleId: role.id,
-            permissionId,
-          })),
-        });
-      }
-    }
+  const permissionRows = await prisma.permission.findMany({
+    select: {
+      id: true,
+      key: true,
+    },
   });
+  const permissionIdByKey = new Map(permissionRows.map((permission) => [permission.key, permission.id]));
+
+  for (const roleDefinition of DEFAULT_ROLE_DEFINITIONS) {
+    const role = await prisma.role.findUnique({
+      where: {
+        key: roleDefinition.key,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!role) {
+      continue;
+    }
+
+    const rolePermissionIds = roleDefinition.permissions
+      .map((permissionKey) => permissionIdByKey.get(permissionKey))
+      .filter((permissionId): permissionId is string => Boolean(permissionId));
+
+    if (rolePermissionIds.length === 0) {
+      continue;
+    }
+
+    await prisma.rolePermission.createMany({
+      data: rolePermissionIds.map((permissionId) => ({
+        roleId: role.id,
+        permissionId,
+      })),
+      skipDuplicates: true,
+    });
+  }
 }
 
 export async function getPermissionCatalog(): Promise<PermissionGroupView[]> {
