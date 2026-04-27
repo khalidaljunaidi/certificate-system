@@ -100,7 +100,7 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
           <CardHeader>
             <CardTitle>Roles</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 overflow-hidden">
             {data.roles.map((role) => {
               const active = selectedRole?.id === role.id;
 
@@ -108,54 +108,54 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
                 <Link
                   key={role.id}
                   href={`/admin/roles?roleId=${role.id}`}
-                  className={`block rounded-[20px] border px-4 py-4 transition-colors ${
+                  className={`block min-w-0 overflow-hidden rounded-[20px] border px-4 py-4 transition-colors ${
                     active
                       ? "border-[rgba(49,19,71,0.18)] bg-[rgba(49,19,71,0.06)]"
                       : "border-[var(--color-border)] bg-[var(--color-panel-soft)] hover:bg-white"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-[var(--color-ink)]">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold text-[var(--color-ink)]">
                         {role.name}
                       </p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
+                      <p className="mt-1 truncate text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
                         {role.key}
                       </p>
                     </div>
                     {role.isSystem ? (
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-primary)]">
+                      <span className="inline-flex shrink-0 max-w-full items-center rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-primary)] whitespace-nowrap">
                         System
                       </span>
                     ) : (
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                      <span className="inline-flex shrink-0 max-w-full items-center rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)] whitespace-nowrap">
                         Custom
                       </span>
                     )}
                   </div>
-                  <p className="mt-3 text-sm leading-6 text-[var(--color-muted)]">
+                  <p className="mt-3 line-clamp-2 text-sm leading-6 text-[var(--color-muted)]">
                     {role.description ?? "No description provided."}
                   </p>
-                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                    <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-[var(--color-ink)]">
+                  <div className="mt-4 flex min-w-0 flex-wrap gap-2 text-xs">
+                    <span className="inline-flex max-w-full items-center rounded-full bg-white px-2.5 py-1 font-semibold text-[var(--color-ink)] whitespace-nowrap">
                       {role.permissionCount} permissions
                     </span>
-                    <span className="rounded-full bg-white px-2.5 py-1 font-semibold text-[var(--color-ink)]">
+                    <span className="inline-flex max-w-full items-center rounded-full bg-white px-2.5 py-1 font-semibold text-[var(--color-ink)] whitespace-nowrap">
                       {role.userCount} users
                     </span>
                   </div>
                   {role.users.length > 0 ? (
-                    <div className="mt-4 flex flex-wrap gap-2">
+                    <div className="mt-4 flex min-w-0 flex-wrap gap-2 overflow-hidden">
                       {role.users.slice(0, 3).map((user) => (
                         <span
                           key={user.id}
-                          className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-[var(--color-muted)]"
+                          className="inline-flex max-w-full items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-[var(--color-muted)] whitespace-nowrap"
                         >
-                          {user.name}
+                          <span className="truncate">{user.name}</span>
                         </span>
                       ))}
                       {role.users.length > 3 ? (
-                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-[var(--color-muted)]">
+                        <span className="inline-flex max-w-full items-center rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-[var(--color-muted)] whitespace-nowrap">
                           +{role.users.length - 3} more
                         </span>
                       ) : null}
