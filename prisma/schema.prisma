@@ -14,6 +14,15 @@ enum UserRole {
   ADMIN
 }
 
+enum PermissionCategory {
+  VENDORS
+  PROJECTS
+  TASKS
+  CERTIFICATES
+  EVALUATIONS
+  SYSTEM
+}
+
 enum AppLocale {
   EN
   AR
@@ -234,6 +243,8 @@ model User {
   performanceReviewsGiven QuarterlyPerformanceReview[] @relation("QuarterlyPerformanceEvaluator")
   monthlyPerformanceReviews MonthlyPerformanceReview[] @relation("MonthlyPerformanceEmployee")
   monthlyPerformanceReviewsGiven MonthlyPerformanceReview[] @relation("MonthlyPerformanceEvaluator")
+  roleAssignment      UserRoleAssignment?
+  createdRoleAssignments UserRoleAssignment[] @relation("UserRoleAssignmentCreatedBy")
 }
 
 model Project {
@@ -739,6 +750,60 @@ model MonthlyPerformanceReview {
   @@unique([cycleId, employeeUserId])
   @@index([cycleId, status])
   @@index([evaluatorUserId, createdAt])
+}
+
+model Role {
+  id            String             @id @default(cuid())
+  key           String             @unique
+  name          String
+  description   String?
+  isSystem      Boolean            @default(false)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  permissions   RolePermission[]
+  users         UserRoleAssignment[]
+
+  @@index([name])
+  @@index([isSystem])
+}
+
+model Permission {
+  id          String             @id @default(cuid())
+  key         String             @unique
+  name        String
+  category    PermissionCategory
+  description String?
+  sortOrder   Int                @default(0)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  roles       RolePermission[]
+
+  @@index([category, sortOrder])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime          @default(now())
+  role         Role              @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission        @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model UserRoleAssignment {
+  userId          String   @id
+  roleId          String
+  assignedByUserId String?
+  assignedAt      DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role            Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  assignedBy      User?    @relation("UserRoleAssignmentCreatedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([roleId])
+  @@index([assignedByUserId])
 }
 
 model AuditLog {

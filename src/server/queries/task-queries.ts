@@ -15,6 +15,7 @@ type TaskViewer = {
   id: string;
   role: UserRole;
   email: string;
+  permissions?: string[] | null;
 };
 
 type TaskFilters = {
@@ -280,7 +281,7 @@ export async function getOperationalTasksForViewer(
       : {}),
     ...(filters.assignedToUserId ? { assignedToUserId: filters.assignedToUserId } : {}),
     ...(filters.cycleId ? { monthlyCycleId: filters.cycleId } : {}),
-    ...(canManageOperationalTasks(viewer.role)
+    ...(canManageOperationalTasks(viewer)
       ? {}
       : {
           assignedToUserId: viewer.id,
@@ -378,7 +379,7 @@ export async function getOperationalTaskDetail(
   const task = await prisma.operationalTask.findFirst({
     where: {
       id: taskId,
-      ...(canManageOperationalTasks(viewer.role)
+      ...(canManageOperationalTasks(viewer)
         ? {}
         : {
             assignedToUserId: viewer.id,

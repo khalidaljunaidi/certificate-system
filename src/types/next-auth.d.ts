@@ -7,6 +7,10 @@ declare module "next-auth" {
     user: {
       id: string;
       role: UserRole;
+      accessRoleId: string | null;
+      accessRoleKey: string | null;
+      accessRoleName: string | null;
+      permissions: string[];
       locale: AppLocale;
       isActive: boolean;
       title: string;
@@ -22,6 +26,7 @@ declare module "next-auth" {
     isActive: boolean;
     title: string;
     passwordChanged: boolean;
+    permissions?: string[];
   }
 }
 
@@ -29,6 +34,10 @@ declare module "next-auth/jwt" {
   interface JWT {
     id: string;
     role: UserRole;
+    accessRoleId?: string | null;
+    accessRoleKey?: string | null;
+    accessRoleName?: string | null;
+    permissions?: string[];
     locale: AppLocale;
     isActive: boolean;
     title: string;

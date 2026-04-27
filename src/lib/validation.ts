@@ -410,3 +410,15 @@ export const changePasswordSchema = z
     message: "New password must be different from the current password",
     path: ["newPassword"],
   });
+
+export const roleFormSchema = z.object({
+  roleId: z.string().trim().optional(),
+  name: requiredString("Role name").max(120, "Role name must stay concise"),
+  description: z.string().trim().max(500, "Role description must stay concise").optional(),
+  permissionKeys: z.array(z.string().trim()).default([]),
+});
+
+export const userRoleAssignmentSchema = z.object({
+  userId: requiredString("User"),
+  roleId: requiredString("Role"),
+});

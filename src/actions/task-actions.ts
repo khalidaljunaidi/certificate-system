@@ -36,7 +36,7 @@ export async function saveOperationalTaskAction(
       checklistPayload: formData.get("checklistPayload"),
     });
 
-    if (!values.taskId && !canManageOperationalTasks(session.user.role)) {
+    if (!values.taskId && !canManageOperationalTasks(session.user)) {
       return {
         error: "You do not have permission to create operational tasks.",
       };
@@ -48,6 +48,7 @@ export async function saveOperationalTaskAction(
         email: session.user.email,
         name: session.user.name,
         role: session.user.role,
+        permissions: session.user.permissions,
       },
       values,
     });

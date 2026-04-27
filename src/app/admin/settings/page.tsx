@@ -14,7 +14,7 @@ import { getWorkflowEmailSettings } from "@/server/services/workflow-email-setti
 export default async function SettingsPage() {
   const session = await requireAdminSession();
 
-  if (!canManageWorkflowEmailSettings(session.user.role)) {
+  if (!canManageWorkflowEmailSettings(session.user)) {
     return (
       <div className="space-y-4">
         <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-accent)]">

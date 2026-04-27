@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import type { ActionState } from "@/lib/types";
 import { requireAdminSession } from "@/lib/auth";
-import { canManageProjectStatus } from "@/lib/permissions";
+import { canCreateProject, canManageProjectStatus } from "@/lib/permissions";
 import {
   projectFormSchema,
   projectVendorFormSchema,
@@ -24,6 +24,11 @@ export async function createProjectAction(
   try {
     void prevState;
     const session = await requireAdminSession();
+    if (!canCreateProject(session.user)) {
+      return {
+        error: "You do not have permission to create projects.",
+      };
+    }
     const values = projectFormSchema.parse({
       projectCode: formData.get("projectCode"),
       projectName: formData.get("projectName"),
@@ -87,7 +92,7 @@ export async function updateProjectStatusAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canManageProjectStatus(session.user.role)) {
+    if (!canManageProjectStatus(session.user)) {
       return {
         error: "You do not have permission to update project status.",
       };

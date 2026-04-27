@@ -56,9 +56,9 @@ export default async function VendorDetailPage({
     notFound();
   }
 
-  const canManageVendor = canManageVendorGovernance(session.user.role);
-  const canRequestEvaluation = canRequestVendorEvaluation(session.user.role);
-  const canFinalizeEvaluation = canFinalizeVendorEvaluation(session.user.role);
+  const canManageVendor = canManageVendorGovernance(session.user);
+  const canRequestEvaluation = canRequestVendorEvaluation(session.user);
+  const canFinalizeEvaluation = canFinalizeVendorEvaluation(session.user);
   const isKhaled = isPrimaryEvaluator(session.user.email);
   const assignmentCount = vendorView.assignmentGroups.reduce(
     (total, group) => total + group.assignments.length,

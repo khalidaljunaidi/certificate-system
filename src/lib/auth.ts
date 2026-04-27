@@ -6,11 +6,12 @@ import { redirect } from "next/navigation";
 
 import { prisma } from "@/lib/prisma";
 import type { AuthenticatedUser } from "@/lib/types";
+import { resolveUserAccessProfile } from "@/server/services/rbac-service";
 
 async function getAuthenticatedUserById(
   userId: string,
 ): Promise<AuthenticatedUser | null> {
-  return prisma.user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
       id: true,
@@ -23,6 +24,23 @@ async function getAuthenticatedUserById(
       isActive: true,
     },
   });
+
+  if (!user) {
+    return null;
+  }
+
+  const accessProfile = await resolveUserAccessProfile({
+    userId: user.id,
+    legacyRole: user.role,
+  });
+
+  return {
+    ...user,
+    accessRoleId: accessProfile.roleId,
+    accessRoleKey: accessProfile.roleKey,
+    accessRoleName: accessProfile.roleName,
+    permissions: accessProfile.permissions,
+  };
 }
 
 export const authOptions: NextAuthOptions = {
@@ -110,12 +128,26 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = token.id ?? token.sub ?? "";
         session.user.role = token.role;
+        session.user.accessRoleId = token.accessRoleId ?? null;
+        session.user.accessRoleKey = token.accessRoleKey ?? null;
+        session.user.accessRoleName = token.accessRoleName ?? null;
+        session.user.permissions = token.permissions ?? [];
         session.user.locale = token.locale;
         session.user.isActive = token.isActive;
         session.user.title = token.title ?? "";
         session.user.passwordChanged = token.passwordChanged ?? false;
         session.user.name = token.name ?? token.email ?? "Procurement User";
         session.user.email = token.email ?? "";
+
+        const accessProfile = await resolveUserAccessProfile({
+          userId: session.user.id,
+          legacyRole: session.user.role,
+        });
+
+        session.user.accessRoleId = accessProfile.roleId;
+        session.user.accessRoleKey = accessProfile.roleKey;
+        session.user.accessRoleName = accessProfile.roleName;
+        session.user.permissions = accessProfile.permissions;
       }
 
       return session;
@@ -164,6 +196,10 @@ export async function requireAdminSession(options?: {
       name: activeUser.name,
       email: activeUser.email,
       role: activeUser.role,
+      accessRoleId: activeUser.accessRoleId,
+      accessRoleKey: activeUser.accessRoleKey,
+      accessRoleName: activeUser.accessRoleName,
+      permissions: activeUser.permissions,
       title: activeUser.title,
       passwordChanged: activeUser.passwordChanged,
     },

@@ -38,7 +38,7 @@ export default async function ProjectDetailPage({
     notFound();
   }
 
-  const canUpdateProjectStatus = canManageProjectStatus(session.user.role);
+  const canUpdateProjectStatus = canManageProjectStatus(session.user);
 
   const uniqueVendorCount = new Set(
     workspace.vendors.map((vendor) => vendor.vendorId),

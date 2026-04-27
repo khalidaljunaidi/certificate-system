@@ -1,5 +1,6 @@
 import { AdminShell } from "@/components/admin/admin-shell";
 import { requireAdminSession } from "@/lib/auth";
+import { canManageRoles } from "@/lib/permissions";
 import {
   getNotificationPreviewForUser,
   getUnreadNotificationCount,
@@ -31,6 +32,7 @@ export default async function AdminLayout({
       unreadCount={unreadCount}
       notificationPreview={notificationPreview}
       restrictedMode={restrictedMode}
+      canManageRoles={canManageRoles(session.user)}
     >
       {children}
     </AdminShell>

@@ -19,7 +19,7 @@ export async function GET(
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  if (!canEvaluateTeamPerformance(user.role, user.email)) {
+  if (!canEvaluateTeamPerformance(user)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
@@ -29,6 +29,7 @@ export async function GET(
       id: user.id,
       role: user.role,
       email: user.email,
+      permissions: user.permissions,
     },
     cycleId,
   );

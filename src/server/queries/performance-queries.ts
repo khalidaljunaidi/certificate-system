@@ -31,6 +31,7 @@ type Viewer = {
   id: string;
   role: UserRole;
   email: string;
+  permissions?: string[] | null;
 };
 
 type ReviewFilters = {
@@ -198,7 +199,7 @@ export async function getQuarterlyPerformanceReviews(
   viewer: Viewer,
   filters: ReviewFilters,
 ) {
-  if (!canEvaluateTeamPerformance(viewer.role, viewer.email) && !canViewOwnPerformance(viewer.email)) {
+  if (!canEvaluateTeamPerformance(viewer) && !canViewOwnPerformance(viewer.email)) {
     return [];
   }
 
@@ -207,7 +208,7 @@ export async function getQuarterlyPerformanceReviews(
       year: filters.year,
       quarter: filters.quarter,
       ...(filters.employeeUserId ? { employeeUserId: filters.employeeUserId } : {}),
-      ...(canEvaluateTeamPerformance(viewer.role, viewer.email)
+      ...(canEvaluateTeamPerformance(viewer)
         ? {}
         : {
             employee: {
@@ -250,7 +251,7 @@ export async function getQuarterlyPerformanceReviewDetail(
   const review = await prisma.quarterlyPerformanceReview.findFirst({
     where: {
       id: reviewId,
-      ...(canEvaluateTeamPerformance(viewer.role, viewer.email)
+      ...(canEvaluateTeamPerformance(viewer)
         ? {}
         : {
             employee: {
@@ -314,7 +315,7 @@ export async function getTeamPerformanceDashboard(
 ): Promise<TeamDashboardView> {
   const { quarter: currentQuarter, year: currentYear } = getCurrentQuarter();
   const allEmployees = await getEvaluatedEmployees();
-  const isExecutive = canViewExecutiveDashboard(viewer.role, viewer.email);
+  const isExecutive = canViewExecutiveDashboard(viewer);
   const employees = isExecutive
     ? allEmployees
     : allEmployees.filter((employee) => employee.email === viewer.email);
@@ -516,7 +517,7 @@ export async function getMonthlyGovernanceDashboard(
   viewer: Viewer,
   cycleId?: string,
 ): Promise<MonthlyGovernanceDashboardView> {
-  const isExecutive = canEvaluateTeamPerformance(viewer.role, viewer.email);
+  const isExecutive = canEvaluateTeamPerformance(viewer);
   const allCycles = await prisma.monthlyCycle.findMany({
     orderBy: [{ isActive: "desc" }, { year: "desc" }, { month: "desc" }],
     select: {

@@ -14,6 +14,7 @@ export function AdminShell({
   unreadCount,
   notificationPreview,
   restrictedMode = false,
+  canManageRoles = false,
   children,
 }: {
   user: {
@@ -24,8 +25,21 @@ export function AdminShell({
   unreadCount: number;
   notificationPreview: NotificationItem[];
   restrictedMode?: boolean;
+  canManageRoles?: boolean;
   children: React.ReactNode;
 }) {
+  const navItems = ADMIN_NAV_ITEMS.filter((item) => {
+    if (item.href === "/admin/profile") {
+      return false;
+    }
+
+    if (item.href === "/admin/roles" && !canManageRoles) {
+      return false;
+    }
+
+    return true;
+  });
+
   return (
     <div className="flex min-h-screen flex-col bg-[var(--color-background)]">
       <AdminNoticeToast />
@@ -62,7 +76,7 @@ export function AdminShell({
           ) : (
             <div className="flex justify-center">
               <nav className="hidden items-center gap-1 rounded-full border border-[var(--color-border)] bg-white/90 px-2 py-1 shadow-[0_10px_24px_rgba(17,17,17,0.05)] lg:flex">
-                {ADMIN_NAV_ITEMS.filter((item) => item.href !== "/admin/profile").map((item) => (
+                {navItems.map((item) => (
                   <AdminNavLink key={item.href} href={item.href} label={item.label} />
                 ))}
               </nav>

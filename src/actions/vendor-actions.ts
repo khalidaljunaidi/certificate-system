@@ -78,7 +78,7 @@ export async function saveVendorMasterAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canManageVendorGovernance(session.user.role)) {
+    if (!canManageVendorGovernance(session.user)) {
       return {
         error: "You do not have permission to manage vendor master records.",
       };
@@ -125,7 +125,7 @@ export async function updateVendorGovernanceAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canManageVendorGovernance(session.user.role)) {
+    if (!canManageVendorGovernance(session.user)) {
       return {
         error: "You do not have permission to update vendor governance data.",
       };
@@ -160,7 +160,7 @@ export async function createVendorCategoryAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canManageVendorGovernance(session.user.role)) {
+    if (!canManageVendorGovernance(session.user)) {
       return {
         error: "You do not have permission to manage vendor governance data.",
       };
@@ -197,7 +197,7 @@ export async function createVendorSubcategoryAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canManageVendorGovernance(session.user.role)) {
+    if (!canManageVendorGovernance(session.user)) {
       return {
         error: "You do not have permission to manage vendor governance data.",
       };
@@ -235,7 +235,7 @@ export async function createVendorEvaluationCycleAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canRequestVendorEvaluation(session.user.role)) {
+    if (!canRequestVendorEvaluation(session.user)) {
       return {
         error: "You do not have permission to request a vendor evaluation.",
       };
@@ -275,7 +275,7 @@ export async function finalizeVendorEvaluationCycleAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canFinalizeVendorEvaluation(session.user.role)) {
+    if (!canFinalizeVendorEvaluation(session.user)) {
       return {
         error: "You do not have permission to finalize this vendor evaluation.",
       };
@@ -322,7 +322,7 @@ export async function forceFinalizeVendorEvaluationCycleAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canFinalizeVendorEvaluation(session.user.role) || !isPrimaryEvaluator(session.user.email)) {
+    if (!canFinalizeVendorEvaluation(session.user) || !isPrimaryEvaluator(session.user.email)) {
       return {
         error: "Only Khaled can force-finalize vendor evaluations.",
       };
@@ -404,7 +404,7 @@ export async function updateWorkflowEmailSettingAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canManageWorkflowEmailSettings(session.user.role)) {
+    if (!canManageWorkflowEmailSettings(session.user)) {
       return {
         error: "You do not have permission to update workflow email settings.",
       };

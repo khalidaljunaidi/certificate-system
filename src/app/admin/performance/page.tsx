@@ -46,37 +46,34 @@ export default async function PerformancePage({
   const currentMonth = getCurrentMonthCycle();
   const selectedYear = Number(params.year ?? currentQuarter.year);
   const selectedQuarter = Number(params.quarter ?? currentQuarter.quarter);
-  const canEvaluate = canEvaluateTeamPerformance(
-    session.user.role,
-    session.user.email,
-  );
-  const canManageMonthly = canManageMonthlyGovernance(
-    session.user.role,
-    session.user.email,
-  );
+  const canEvaluate = canEvaluateTeamPerformance(session.user);
+  const canManageMonthly = canManageMonthlyGovernance(session.user);
   const [dashboard, monthlyDashboard, reviews] = await Promise.all([
-    getTeamPerformanceDashboard({
-      id: session.user.id,
-      role: session.user.role,
-      email: session.user.email,
-    }),
-    getMonthlyGovernanceDashboard(
-      {
+      getTeamPerformanceDashboard({
         id: session.user.id,
         role: session.user.role,
         email: session.user.email,
-      },
-      params.cycleId,
-    ),
-    getQuarterlyPerformanceReviews(
-      {
-        id: session.user.id,
-        role: session.user.role,
-        email: session.user.email,
-      },
-      {
-        year: selectedYear,
-        quarter: selectedQuarter,
+        permissions: session.user.permissions,
+      }),
+      getMonthlyGovernanceDashboard(
+        {
+          id: session.user.id,
+          role: session.user.role,
+          email: session.user.email,
+          permissions: session.user.permissions,
+        },
+        params.cycleId,
+      ),
+      getQuarterlyPerformanceReviews(
+        {
+          id: session.user.id,
+          role: session.user.role,
+          email: session.user.email,
+          permissions: session.user.permissions,
+        },
+        {
+          year: selectedYear,
+          quarter: selectedQuarter,
         employeeUserId: params.employeeUserId,
       },
     ),
@@ -88,6 +85,7 @@ export default async function PerformancePage({
           id: session.user.id,
           role: session.user.role,
           email: session.user.email,
+          permissions: session.user.permissions,
         },
         review.id,
       ),

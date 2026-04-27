@@ -35,7 +35,7 @@ export async function saveQuarterlyPerformanceReviewAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canEvaluateTeamPerformance(session.user.role, session.user.email)) {
+    if (!canEvaluateTeamPerformance(session.user)) {
       return {
         error: "Only Khaled can create or finalize quarterly performance reviews.",
       };
@@ -88,7 +88,7 @@ export async function createMonthlyCycleAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canManageMonthlyGovernance(session.user.role, session.user.email)) {
+    if (!canManageMonthlyGovernance(session.user)) {
       return {
         error: "Only Khaled can create or activate monthly cycles.",
       };
@@ -135,7 +135,7 @@ export async function updateMonthlyCycleStatusAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canManageMonthlyGovernance(session.user.role, session.user.email)) {
+    if (!canManageMonthlyGovernance(session.user)) {
       return {
         error: "Only Khaled can manage monthly cycle state.",
       };
@@ -180,7 +180,7 @@ export async function saveMonthlyPerformanceReviewAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canEvaluateTeamPerformance(session.user.role, session.user.email)) {
+    if (!canEvaluateTeamPerformance(session.user)) {
       return {
         error: "Only Khaled can create or finalize monthly team reviews.",
       };

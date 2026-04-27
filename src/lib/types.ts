@@ -2,6 +2,7 @@ import type {
   AuditAction,
   CertificateStatus,
   MonthlyCycleStatus,
+  PermissionCategory,
   NotificationEventKey,
   NotificationSeverity,
   NotificationType,
@@ -36,9 +37,75 @@ export type AuthenticatedUser = {
   email: string;
   title: string;
   role: UserRole;
+  accessRoleId: string | null;
+  accessRoleKey: string | null;
+  accessRoleName: string | null;
+  permissions: string[];
   isActive: boolean;
   passwordChanged: boolean;
   passwordUpdatedAt: Date | null;
+};
+
+export type PermissionGroupView = {
+  category: PermissionCategory;
+  label: string;
+  permissions: Array<{
+    key: string;
+    label: string;
+    description: string;
+    sortOrder: number;
+  }>;
+};
+
+export type AccessRolePermissionView = {
+  key: string;
+  label: string;
+  description: string;
+  category: PermissionCategory;
+};
+
+export type AccessRoleUserView = {
+  id: string;
+  name: string;
+  email: string;
+  title: string;
+  legacyRole: UserRole;
+};
+
+export type AccessRoleView = {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  permissionKeys: string[];
+  permissionCount: number;
+  userCount: number;
+  users: AccessRoleUserView[];
+};
+
+export type UserRoleAssignmentView = {
+  userId: string;
+  roleId: string | null;
+  roleKey: string | null;
+  roleName: string | null;
+  roleDescription: string | null;
+  permissions: string[];
+};
+
+export type RoleManagementUserView = {
+  id: string;
+  name: string;
+  email: string;
+  title: string;
+  legacyRole: UserRole;
+  roleAssignment: UserRoleAssignmentView | null;
+};
+
+export type RoleManagementView = {
+  permissionGroups: PermissionGroupView[];
+  roles: AccessRoleView[];
+  users: RoleManagementUserView[];
 };
 
 export type ProjectListItem = {

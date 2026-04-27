@@ -34,7 +34,7 @@ export async function saveNotificationGroupMemberAction(
     void prevState;
     const session = await requireAdminSession();
 
-    if (!canManageWorkflowEmailSettings(session.user.role)) {
+    if (!canManageWorkflowEmailSettings(session.user)) {
       return {
         error: "You do not have permission to manage notification groups.",
       };

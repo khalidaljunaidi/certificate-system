@@ -34,6 +34,7 @@ type SaveOperationalTaskInput = {
     email: string;
     role: UserRole;
     name: string;
+    permissions?: string[] | null;
   };
   values: z.infer<typeof operationalTaskSchema>;
 };
@@ -392,7 +393,7 @@ export async function saveOperationalTask(input: SaveOperationalTaskInput) {
       throw new Error("Operational task not found.");
     }
 
-    if (!canManageOperationalTasks(input.actorUser.role)) {
+    if (!canManageOperationalTasks(input.actorUser)) {
       throw new Error("You do not have permission to create operational tasks.");
     }
 

@@ -64,6 +64,7 @@ export const ADMIN_NAV_ITEMS = [
   { href: "/admin/certificates", label: "Certificates" },
   { href: "/admin/notifications", label: "Notifications" },
   { href: "/admin/settings", label: "Settings" },
+  { href: "/admin/roles", label: "Roles" },
   { href: "/admin/profile", label: "Profile" },
 ] as const;
 

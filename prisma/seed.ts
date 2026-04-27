@@ -4,6 +4,10 @@ import bcrypt from "bcryptjs";
 import { Pool } from "pg";
 
 import { NOTIFICATION_EMAIL_GROUP_DEFINITIONS } from "../src/lib/constants";
+import {
+  DEFAULT_ROLE_DEFINITIONS,
+  PERMISSION_DEFINITIONS,
+} from "../src/lib/rbac";
 
 const connectionString = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 
@@ -287,6 +291,117 @@ async function upsertNotificationEmailGroups() {
   });
 }
 
+async function upsertAccessControlCatalog() {
+  const permissionsByKey = new Map<string, string>();
+
+  for (const permissionInput of PERMISSION_DEFINITIONS) {
+    const permission = await prisma.permission.upsert({
+      where: {
+        key: permissionInput.key,
+      },
+      update: {
+        name: permissionInput.label,
+        category: permissionInput.category,
+        description: permissionInput.description,
+        sortOrder: permissionInput.sortOrder,
+      },
+      create: {
+        key: permissionInput.key,
+        name: permissionInput.label,
+        category: permissionInput.category,
+        description: permissionInput.description,
+        sortOrder: permissionInput.sortOrder,
+      },
+    });
+
+    permissionsByKey.set(permission.key, permission.id);
+  }
+
+  for (const roleInput of DEFAULT_ROLE_DEFINITIONS) {
+    const role = await prisma.role.upsert({
+      where: {
+        key: roleInput.key,
+      },
+      update: {
+        name: roleInput.name,
+        description: roleInput.description,
+        isSystem: roleInput.isSystem,
+      },
+      create: {
+        key: roleInput.key,
+        name: roleInput.name,
+        description: roleInput.description,
+        isSystem: roleInput.isSystem,
+      },
+    });
+
+    await prisma.rolePermission.deleteMany({
+      where: {
+        roleId: role.id,
+      },
+    });
+
+    const rolePermissionIds = roleInput.permissions
+      .map((permissionKey) => permissionsByKey.get(permissionKey))
+      .filter((permissionId): permissionId is string => Boolean(permissionId));
+
+    if (rolePermissionIds.length > 0) {
+      await prisma.rolePermission.createMany({
+        data: rolePermissionIds.map((permissionId) => ({
+          roleId: role.id,
+          permissionId,
+        })),
+      });
+    }
+  }
+
+  for (const user of seededUsers) {
+    const persistedUser = await prisma.user.findUnique({
+      where: {
+        id: user.id,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!persistedUser) {
+      continue;
+    }
+
+    const role = await prisma.role.findUnique({
+      where: {
+        key: user.role,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!role) {
+      continue;
+    }
+
+    await prisma.userRoleAssignment.upsert({
+      where: {
+        userId: persistedUser.id,
+      },
+      update: {
+        roleId: role.id,
+      },
+      create: {
+        userId: persistedUser.id,
+        roleId: role.id,
+      },
+    });
+  }
+
+  console.info("[seed:rbac] Access control catalog upserted", {
+    roles: DEFAULT_ROLE_DEFINITIONS.map((role) => role.name),
+    permissions: PERMISSION_DEFINITIONS.length,
+  });
+}
+
 async function main() {
   const passwordHash = await bcrypt.hash(TEMPORARY_PASSWORD, 12);
 
@@ -322,10 +437,11 @@ async function main() {
   console.info("[seed:users] Procurement users upserted", {
     users: seededUsers.map((user) => normalizeEmail(user.email)),
   });
+  await upsertAccessControlCatalog();
   await upsertNotificationEmailGroups();
   await upsertVendorTaxonomy();
   console.info("[seed:users] Default seed completed", {
-    scope: "core-auth-users-and-vendor-taxonomy",
+    scope: "core-auth-users-rbac-and-vendor-taxonomy",
     reminder: "Users must update their password after first login.",
   });
 }

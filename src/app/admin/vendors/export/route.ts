@@ -63,7 +63,7 @@ export async function GET(request: Request) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  if (!canManageVendorGovernance(user.role)) {
+  if (!canManageVendorGovernance(user)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 

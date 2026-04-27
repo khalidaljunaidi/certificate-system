@@ -29,6 +29,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
         id: session.user.id,
         role: session.user.role,
         email: session.user.email,
+        permissions: session.user.permissions,
       },
       taskId,
     ),
@@ -39,7 +40,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
     notFound();
   }
 
-  const canManage = canManageOperationalTasks(session.user.role);
+  const canManage = canManageOperationalTasks(session.user);
 
   return (
     <div className="space-y-8">

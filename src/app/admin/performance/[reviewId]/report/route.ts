@@ -20,7 +20,7 @@ export async function GET(
   }
 
   if (
-    !canEvaluateTeamPerformance(user.role, user.email) &&
+    !canEvaluateTeamPerformance(user) &&
     !canViewOwnPerformance(user.email)
   ) {
     return new NextResponse("Forbidden", { status: 403 });
@@ -32,6 +32,7 @@ export async function GET(
       id: user.id,
       role: user.role,
       email: user.email,
+      permissions: user.permissions,
     },
     reviewId,
   );

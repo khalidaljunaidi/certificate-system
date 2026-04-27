@@ -36,13 +36,14 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
         id: session.user.id,
         role: session.user.role,
         email: session.user.email,
+        permissions: session.user.permissions,
       },
       params,
       { limit: 100 },
     ),
     getTaskLookupOptions(),
   ]);
-  const canManage = canManageOperationalTasks(session.user.role);
+  const canManage = canManageOperationalTasks(session.user);
   const selectedCycle =
     lookupOptions.monthlyCycles.find((cycle) => cycle.id === params.cycleId) ??
     lookupOptions.monthlyCycles.find((cycle) => cycle.isActive) ??
