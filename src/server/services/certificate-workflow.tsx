@@ -32,6 +32,9 @@ import {
   invalidateOutstandingPmTokens,
 } from "@/server/services/token-service";
 
+const CERTIFICATE_CODE_SUFFIX_WIDTH = 3;
+const CERTIFICATE_CODE_RETRY_LIMIT = 5;
+
 async function getProjectVendorContext(
   tx: Prisma.TransactionClient,
   projectId: string,
@@ -65,13 +68,74 @@ async function generateCertificateCode(
   projectId: string,
   projectCode: string,
 ) {
-  const existingCount = await tx.certificate.count({
-    where: {
+  await tx.$executeRaw`
+    SELECT pg_advisory_xact_lock(hashtext(${projectId})::bigint)
+  `;
+
+  const prefix = `${CERTIFICATE_CODE_PREFIX}-${projectCode}-`;
+  const [row] = await tx.$queryRaw<Array<{ maxSuffix: number }>>`
+    SELECT COALESCE(
+      MAX((regexp_replace("certificateCode", '^.*-(\\d+)$', '\\1'))::int),
+      0
+    ) AS "maxSuffix"
+    FROM "Certificate"
+    WHERE "projectId" = ${projectId}
+      AND "certificateCode" LIKE ${`${prefix}%`}
+  `;
+
+  let suffix = Number(row?.maxSuffix ?? 0);
+  let collisionCount = 0;
+
+  for (let attempt = 1; attempt <= CERTIFICATE_CODE_RETRY_LIMIT; attempt += 1) {
+    const certificateCode = `${prefix}${String(suffix + 1).padStart(
+      CERTIFICATE_CODE_SUFFIX_WIDTH,
+      "0",
+    )}`;
+
+    const existing = await tx.certificate.findUnique({
+      where: {
+        certificateCode,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!existing) {
+      if (collisionCount > 0) {
+        console.warn("[certificate-workflow] certificate code collisions resolved", {
+          projectId,
+          projectCode,
+          collisionCount,
+          generatedCode: certificateCode,
+        });
+      }
+
+      return {
+        certificateCode,
+        collisionCount,
+      };
+    }
+
+    collisionCount += 1;
+    suffix += 1;
+
+    console.warn("[certificate-workflow] certificate code collision detected", {
       projectId,
-    },
+      projectCode,
+      attemptedCode: certificateCode,
+      collisionCount,
+      attempt,
+    });
+  }
+
+  console.error("[certificate-workflow] certificate number generation exhausted retries", {
+    projectId,
+    projectCode,
+    retryLimit: CERTIFICATE_CODE_RETRY_LIMIT,
   });
 
-  return `${CERTIFICATE_CODE_PREFIX}-${projectCode}-${String(existingCount + 1).padStart(3, "0")}`;
+  throw new Error("Could not create certificate number. Please try again.");
 }
 
 export async function saveCertificateDraft(input: {
@@ -236,7 +300,7 @@ export async function saveCertificateDraft(input: {
       };
     }
 
-    const certificateCode = await generateCertificateCode(
+    const certificateCodeResult = await generateCertificateCode(
       tx,
       input.values.projectId,
       projectVendor.project.projectCode,
@@ -244,7 +308,7 @@ export async function saveCertificateDraft(input: {
 
     const created = await tx.certificate.create({
       data: {
-        certificateCode,
+        certificateCode: certificateCodeResult.certificateCode,
         projectId: input.values.projectId,
         vendorId: input.values.vendorId,
         projectVendorId: input.values.projectVendorId,
@@ -266,15 +330,16 @@ export async function saveCertificateDraft(input: {
     await createAuditLog(tx, {
       action: "CREATED",
       entityType: "Certificate",
-      entityId: created.id,
-      certificateId: created.id,
-      projectId: created.projectId,
-      userId: input.userId,
-      details: {
-        certificateCode: created.certificateCode,
-        vendorName: projectVendor.vendor.vendorName,
-      },
-    });
+        entityId: created.id,
+        certificateId: created.id,
+        projectId: created.projectId,
+        userId: input.userId,
+        details: {
+          certificateCode: created.certificateCode,
+          certificateCodeCollisionCount: certificateCodeResult.collisionCount,
+          vendorName: projectVendor.vendor.vendorName,
+        },
+      });
 
     await createWorkflowNotification(tx, {
       type: "CERTIFICATE_CREATED",
@@ -297,6 +362,7 @@ export async function saveCertificateDraft(input: {
       certificateCode: created.certificateCode,
       status: created.status,
       operation: "CREATE",
+      certificateCodeCollisionCount: certificateCodeResult.collisionCount,
     });
 
     return {
@@ -336,7 +402,7 @@ export async function duplicateCertificateDraft(input: {
       throw new Error("Certificate not found.");
     }
 
-    const certificateCode = await generateCertificateCode(
+    const certificateCodeResult = await generateCertificateCode(
       tx,
       source.projectId,
       source.project.projectCode,
@@ -344,7 +410,7 @@ export async function duplicateCertificateDraft(input: {
 
     const duplicate = await tx.certificate.create({
       data: {
-        certificateCode,
+        certificateCode: certificateCodeResult.certificateCode,
         projectId: source.projectId,
         vendorId: source.vendorId,
         projectVendorId: source.projectVendorId,
@@ -366,15 +432,16 @@ export async function duplicateCertificateDraft(input: {
     await createAuditLog(tx, {
       action: "DUPLICATED",
       entityType: "Certificate",
-      entityId: duplicate.id,
-      certificateId: duplicate.id,
-      projectId: duplicate.projectId,
-      userId: input.userId,
-      details: {
-        sourceCertificateId: source.id,
-        sourceCertificateCode: source.certificateCode,
-      },
-    });
+        entityId: duplicate.id,
+        certificateId: duplicate.id,
+        projectId: duplicate.projectId,
+        userId: input.userId,
+        details: {
+          sourceCertificateId: source.id,
+          sourceCertificateCode: source.certificateCode,
+          certificateCodeCollisionCount: certificateCodeResult.collisionCount,
+        },
+      });
 
     await createWorkflowNotification(tx, {
       type: "CERTIFICATE_CREATED",
