@@ -75,7 +75,9 @@ export function VendorGovernanceForm({
           <option value="">Unassigned</option>
           {options.categories.map((category) => (
             <option key={category.id} value={category.id}>
-              {category.name}
+              {category.externalKey
+                ? `${category.name} (${category.externalKey})`
+                : category.name}
             </option>
           ))}
         </Select>
@@ -98,7 +100,9 @@ export function VendorGovernanceForm({
           <option value="">Unassigned</option>
           {subcategoryOptions.map((subcategory) => (
             <option key={subcategory.id} value={subcategory.id}>
-              {subcategory.name}
+              {subcategory.externalKey
+                ? `${subcategory.name} (${subcategory.externalKey})`
+                : subcategory.name}
             </option>
           ))}
         </Select>

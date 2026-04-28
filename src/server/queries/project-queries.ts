@@ -1,7 +1,11 @@
 import type { Prisma } from "@prisma/client";
 
-import type { ProjectListItem, ProjectWorkspaceView } from "@/lib/types";
+import type {
+  ProjectListItem,
+  ProjectWorkspaceView,
+} from "@/lib/types";
 import { prisma } from "@/lib/prisma";
+import { buildPaymentSummary } from "@/server/payments/payment-summary";
 
 type ProjectListFilters = {
   search?: string;
@@ -138,6 +142,15 @@ export async function getProjectWorkspace(
           id: true,
           poNumber: true,
           contractNumber: true,
+          poAmount: true,
+          paymentAmount: true,
+          paymentAmountSource: true,
+          paymentSourceCertificateId: true,
+          paymentSourceCertificate: {
+            select: {
+              certificateCode: true,
+            },
+          },
           isActive: true,
           vendor: {
             select: {
@@ -156,6 +169,43 @@ export async function getProjectWorkspace(
             select: {
               id: true,
               status: true,
+            },
+          },
+          paymentInstallments: {
+            orderBy: [
+              {
+                dueDate: "asc",
+              },
+              {
+                createdAt: "desc",
+              },
+            ],
+            select: {
+              id: true,
+              projectVendorId: true,
+              amount: true,
+              dueDate: true,
+              condition: true,
+              invoiceNumber: true,
+              invoiceStoragePath: true,
+              invoiceDate: true,
+              invoiceAmount: true,
+              invoiceReceivedDate: true,
+              taxInvoiceValidated: true,
+              invoiceStatus: true,
+              financeReviewNotes: true,
+              financeReviewedAt: true,
+              financeReviewedBy: {
+                select: {
+                  name: true,
+                },
+              },
+              scheduledPaymentDate: true,
+              paymentDate: true,
+              status: true,
+              notes: true,
+              createdAt: true,
+              updatedAt: true,
             },
           },
         },
@@ -238,6 +288,18 @@ export async function getProjectWorkspace(
       certificateCount: vendorLink.certificates.length,
       latestCertificateId: vendorLink.certificates[0]?.id ?? null,
       latestCertificateStatus: vendorLink.certificates[0]?.status ?? null,
+      paymentSummary: buildPaymentSummary(
+        vendorLink.id,
+        {
+          poAmount: vendorLink.poAmount,
+          paymentAmount: vendorLink.paymentAmount,
+          paymentAmountSource: vendorLink.paymentAmountSource,
+          paymentSourceCertificateId: vendorLink.paymentSourceCertificateId,
+          paymentSourceCertificateCode:
+            vendorLink.paymentSourceCertificate?.certificateCode ?? null,
+        },
+        vendorLink.paymentInstallments,
+      ),
     })),
     certificates: project.certificates.map((certificate) => ({
       id: certificate.id,

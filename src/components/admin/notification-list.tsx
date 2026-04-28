@@ -8,6 +8,7 @@ import {
   markNotificationReadByIdAction,
 } from "@/actions/notification-actions";
 import { NotificationSeverityBadge } from "@/components/admin/status-badges";
+import { Chip } from "@/components/ui/chip";
 import { Button } from "@/components/ui/button";
 import { getNotificationHref } from "@/lib/notifications";
 import type { NotificationItem } from "@/lib/types";
@@ -86,7 +87,7 @@ export function NotificationList({
     <div className="space-y-4">
       <div className="flex items-center justify-between rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] px-5 py-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">
+          <p className="tg-micro-label tg-micro-label--caps text-[var(--color-accent)]">
             Notification Status
           </p>
           <p className="mt-2 text-sm text-[var(--color-muted)]">
@@ -117,15 +118,12 @@ export function NotificationList({
                       {notification.title}
                     </p>
                     <NotificationSeverityBadge severity={notification.severity} />
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        notification.read
-                          ? "bg-[rgba(49,19,71,0.08)] text-[var(--color-primary)]"
-                          : "bg-[rgba(215,132,57,0.14)] text-[var(--color-accent)]"
-                      }`}
+                    <Chip
+                      tone={notification.read ? "purple" : "orange"}
+                      size="sm"
                     >
                       {notification.read ? "Read" : "Unread"}
-                    </span>
+                    </Chip>
                   </div>
                   <p className="mt-2 break-words text-sm leading-6 text-[var(--color-muted)]">
                     {notification.message}

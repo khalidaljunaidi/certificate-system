@@ -3,10 +3,12 @@ import Link from "next/link";
 import { PageNotice } from "@/components/admin/page-notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Chip } from "@/components/ui/chip";
 import { requireAdminSession } from "@/lib/auth";
 import { canManageRoles } from "@/lib/permissions";
 import { RoleEditorForm } from "@/components/forms/role-editor-form";
 import { UserRoleAssignmentRow } from "@/components/forms/user-role-assignment-row";
+import { PageHeader, PageShell } from "@/components/layout/page-shell";
 import { getRoleManagementData } from "@/server/services/rbac-service";
 
 type RolesPageProps = {
@@ -23,17 +25,13 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
 
   if (!canManageRoles(session.user)) {
     return (
-      <div className="space-y-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-accent)]">
-          System
-        </p>
-        <h1 className="text-4xl font-semibold text-[var(--color-ink)]">
-          Roles & access control
-        </h1>
-        <p className="max-w-2xl text-sm leading-7 text-[var(--color-muted)]">
-          You do not have permission to manage roles and permissions.
-        </p>
-      </div>
+      <PageShell>
+        <PageHeader
+          eyebrow="System"
+          title="Roles & access control"
+          description="You do not have permission to manage roles and permissions."
+        />
+      </PageShell>
     );
   }
 
@@ -45,7 +43,7 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
     : data.roles.find((role) => role.id === params.roleId) ?? data.roles[0] ?? null;
 
   return (
-    <div className="space-y-8">
+    <PageShell>
       {params.notice === "role-created" ? (
         <PageNotice title="Role created successfully." body="The new role is now available for assignment." />
       ) : null}
@@ -56,28 +54,21 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
         <PageNotice title="User role updated successfully." body="The selected user now inherits the role permissions immediately." />
       ) : null}
 
-      <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-accent)]">
-            System
-          </p>
-          <h1 className="mt-2 text-4xl font-semibold text-[var(--color-ink)]">
-            Roles & access control
-          </h1>
-          <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
-            Manage role definitions, granular permissions, and one-role-per-user
-            assignments from a single governance screen.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <Button asChild variant="secondary">
-            <Link href="/admin/roles">Refresh</Link>
-          </Button>
-          <Button asChild>
-            <Link href="/admin/roles?mode=create">Create Role</Link>
-          </Button>
-        </div>
-      </section>
+      <PageHeader
+        eyebrow="System"
+        title="Roles & access control"
+        description="Manage role definitions, granular permissions, and one-role-per-user assignments from a single governance screen."
+        actions={
+          <>
+            <Button asChild variant="secondary">
+              <Link href="/admin/roles">Refresh</Link>
+            </Button>
+            <Button asChild>
+              <Link href="/admin/roles?mode=create">Create Role</Link>
+            </Button>
+          </>
+        }
+      />
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryTile label="Roles" value={data.roles.length.toString()} />
@@ -123,26 +114,20 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
                         {role.key}
                       </p>
                     </div>
-                    {role.isSystem ? (
-                      <span className="inline-flex shrink-0 max-w-full items-center rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-primary)] whitespace-nowrap">
-                        System
-                      </span>
-                    ) : (
-                      <span className="inline-flex shrink-0 max-w-full items-center rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)] whitespace-nowrap">
-                        Custom
-                      </span>
-                    )}
+                    <Chip tone={role.isSystem ? "purple" : "neutral"} size="sm">
+                      {role.isSystem ? "System" : "Custom"}
+                    </Chip>
                   </div>
                   <p className="mt-3 line-clamp-2 text-sm leading-6 text-[var(--color-muted)]">
                     {role.description ?? "No description provided."}
                   </p>
                   <div className="mt-4 flex min-w-0 flex-wrap gap-2 text-xs">
-                    <span className="inline-flex max-w-full items-center rounded-full bg-white px-2.5 py-1 font-semibold text-[var(--color-ink)] whitespace-nowrap">
+                    <Chip tone="neutral" size="sm" className="text-[var(--color-ink)]">
                       {role.permissionCount} permissions
-                    </span>
-                    <span className="inline-flex max-w-full items-center rounded-full bg-white px-2.5 py-1 font-semibold text-[var(--color-ink)] whitespace-nowrap">
+                    </Chip>
+                    <Chip tone="neutral" size="sm" className="text-[var(--color-ink)]">
                       {role.userCount} users
-                    </span>
+                    </Chip>
                   </div>
                   {role.users.length > 0 ? (
                     <div className="mt-4 flex min-w-0 flex-wrap gap-2 overflow-hidden">
@@ -203,7 +188,7 @@ export default async function RolesPage({ searchParams }: RolesPageProps) {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }
 

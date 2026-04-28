@@ -19,36 +19,105 @@ function getSupabaseAdminClient() {
   });
 }
 
-export async function uploadCertificatePdf(
-  certificateCode: string,
-  pdfBuffer: Buffer,
-) {
+function sanitizeStorageSegment(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9._-]+/g, "-")
+    .replaceAll(/-+/g, "-")
+    .replaceAll(/^-|-$/g, "");
+}
+
+async function uploadStorageObject(input: {
+  storagePath: string;
+  pdfBuffer: Buffer;
+  contentType: string;
+  upsert?: boolean;
+}) {
   if (!isStorageConfigured()) {
     return {
       path: null,
     };
   }
 
-  const storagePath = `certificates/${certificateCode}.pdf`;
   const client = getSupabaseAdminClient();
 
   const { error } = await client.storage
     .from(getSupabaseBucket())
-    .upload(storagePath, pdfBuffer, {
-      contentType: "application/pdf",
-      upsert: true,
+    .upload(input.storagePath, input.pdfBuffer, {
+      contentType: input.contentType,
+      upsert: input.upsert ?? true,
     });
 
   if (error) {
-    throw new Error(`Failed to upload certificate PDF: ${error.message}`);
+    throw new Error(`Failed to upload file: ${error.message}`);
   }
 
   return {
-    path: storagePath,
+    path: input.storagePath,
   };
 }
 
-export async function downloadCertificatePdf(storagePath: string) {
+export async function uploadCertificatePdf(
+  certificateCode: string,
+  pdfBuffer: Buffer,
+) {
+  return uploadStorageObject({
+    storagePath: `certificates/${sanitizeStorageSegment(certificateCode)}.pdf`,
+    pdfBuffer,
+    contentType: "application/pdf",
+  });
+}
+
+export async function uploadVendorRegistrationAttachment(input: {
+  requestNumber: string;
+  attachmentType: string;
+  originalFileName: string;
+  buffer: Buffer;
+  mimeType: string;
+}) {
+  const safeName = sanitizeStorageSegment(input.originalFileName) || "document";
+  return uploadStorageObject({
+    storagePath: `vendor-registrations/${sanitizeStorageSegment(
+      input.requestNumber,
+    )}/${sanitizeStorageSegment(input.attachmentType)}/${Date.now()}-${safeName}`,
+    pdfBuffer: input.buffer,
+    contentType: input.mimeType,
+  });
+}
+
+export async function uploadVendorRegistrationCertificatePdf(
+  requestNumber: string,
+  pdfBuffer: Buffer,
+) {
+  return uploadStorageObject({
+    storagePath: `vendor-registration-certificates/${sanitizeStorageSegment(
+      requestNumber,
+    )}.pdf`,
+    pdfBuffer,
+    contentType: "application/pdf",
+  });
+}
+
+export async function uploadProjectVendorPaymentInvoice(input: {
+  projectVendorId: string;
+  installmentId: string;
+  originalFileName: string;
+  buffer: Buffer;
+  mimeType: string;
+}) {
+  const safeName = sanitizeStorageSegment(input.originalFileName) || "invoice";
+
+  return uploadStorageObject({
+    storagePath: `project-vendor-payments/${sanitizeStorageSegment(
+      input.projectVendorId,
+    )}/${sanitizeStorageSegment(input.installmentId)}/${Date.now()}-${safeName}`,
+    pdfBuffer: input.buffer,
+    contentType: input.mimeType,
+  });
+}
+
+export async function downloadStorageObject(storagePath: string) {
   if (!isStorageConfigured()) {
     return null;
   }
@@ -64,4 +133,16 @@ export async function downloadCertificatePdf(storagePath: string) {
 
   const arrayBuffer = await data.arrayBuffer();
   return Buffer.from(arrayBuffer);
+}
+
+export async function downloadCertificatePdf(storagePath: string) {
+  try {
+    return await downloadStorageObject(storagePath);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`Failed to download certificate PDF: ${error.message}`);
+    }
+
+    throw error;
+  }
 }

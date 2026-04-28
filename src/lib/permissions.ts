@@ -203,6 +203,110 @@ export function canCreateProject(
   return hasPermission(subject, ["project.create"], PROCUREMENT_TEAM_ROLES, [PRIMARY_EVALUATOR_EMAIL], email, permissions);
 }
 
+export function canViewPayments(
+  subject: PermissionSubjectInput,
+  email?: string | null,
+  permissions?: string[] | null,
+) {
+  return hasPermission(
+    subject,
+    ["payment.view"],
+    ["ADMIN", "PROCUREMENT_DIRECTOR", "PROCUREMENT_LEAD"],
+    [PRIMARY_EVALUATOR_EMAIL],
+    email,
+    permissions,
+  );
+}
+
+export function canCreatePaymentPlan(
+  subject: PermissionSubjectInput,
+  email?: string | null,
+  permissions?: string[] | null,
+) {
+  return hasPermission(
+    subject,
+    ["payment.create"],
+    ["ADMIN", "PROCUREMENT_DIRECTOR", "PROCUREMENT_LEAD"],
+    [PRIMARY_EVALUATOR_EMAIL],
+    email,
+    permissions,
+  );
+}
+
+export function canUpdatePayments(
+  subject: PermissionSubjectInput,
+  email?: string | null,
+  permissions?: string[] | null,
+) {
+  return hasPermission(
+    subject,
+    ["payment.update"],
+    ["ADMIN", "PROCUREMENT_DIRECTOR", "PROCUREMENT_LEAD"],
+    [PRIMARY_EVALUATOR_EMAIL],
+    email,
+    permissions,
+  );
+}
+
+export function canClosePayments(
+  subject: PermissionSubjectInput,
+  email?: string | null,
+  permissions?: string[] | null,
+) {
+  return hasPermission(
+    subject,
+    ["payment.close"],
+    ["ADMIN", "PROCUREMENT_DIRECTOR"],
+    [PRIMARY_EVALUATOR_EMAIL],
+    email,
+    permissions,
+  );
+}
+
+export function canExportPayments(
+  subject: PermissionSubjectInput,
+  email?: string | null,
+  permissions?: string[] | null,
+) {
+  return hasPermission(
+    subject,
+    ["payment.export"],
+    ["ADMIN", "PROCUREMENT_DIRECTOR", "PROCUREMENT_LEAD"],
+    [PRIMARY_EVALUATOR_EMAIL],
+    email,
+    permissions,
+  );
+}
+
+export function canAssignPaymentFinanceOwner(
+  subject: PermissionSubjectInput,
+  email?: string | null,
+  permissions?: string[] | null,
+) {
+  return hasPermission(
+    subject,
+    ["payment.assignFinanceOwner"],
+    ["ADMIN", "PROCUREMENT_DIRECTOR"],
+    [PRIMARY_EVALUATOR_EMAIL],
+    email,
+    permissions,
+  );
+}
+
+export function shouldScopePaymentsToAssignedRecords(
+  subject: PermissionSubjectInput,
+  email?: string | null,
+  permissions?: string[] | null,
+) {
+  const normalizedSubject = normalizeSubject(subject, email, permissions);
+
+  return (
+    canViewPayments(normalizedSubject) &&
+    !canAssignPaymentFinanceOwner(normalizedSubject) &&
+    !canClosePayments(normalizedSubject)
+  );
+}
+
 export function canExecuteTask(
   subject: PermissionSubjectInput,
   email?: string | null,

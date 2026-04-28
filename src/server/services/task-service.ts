@@ -7,7 +7,7 @@ import { PrismaClient } from "@prisma/client";
 import type { z } from "zod";
 
 import {
-  HEAD_OF_PROJECTS_EMAIL,
+  EXECUTIVE_OVERSIGHT_NAME,
   PRIMARY_EVALUATOR_EMAIL,
   PROCUREMENT_LEAD_EMAIL,
   PROCUREMENT_SPECIALIST_EMAIL,
@@ -309,7 +309,7 @@ async function notifyTaskEvent(
       ...(event === "TASK_COMPLETED" && task.executionResult
         ? [{ label: "Execution Result", value: task.executionResult }]
         : []),
-      { label: "Head of Projects", value: HEAD_OF_PROJECTS_EMAIL },
+      { label: "Executive Oversight", value: EXECUTIVE_OVERSIGHT_NAME },
     ],
     actionLabel: "Open Task",
     actionUrl: buildAdminContextHref({

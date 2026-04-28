@@ -1,3 +1,4 @@
+import bcrypt from "bcryptjs";
 import type { UserRole } from "@prisma/client";
 
 import {
@@ -8,7 +9,9 @@ import {
 } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import type {
+  AccessRoleOptionView,
   AccessRoleView,
+  InternalUserManagementView,
   PermissionGroupView,
   RoleManagementView,
   RoleManagementUserView,
@@ -112,6 +115,43 @@ function toRoleView(role: {
   };
 }
 
+function toAccessRoleOption(role: {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  permissions: Array<{
+    permission: {
+      key: string;
+    };
+  }>;
+}): AccessRoleOptionView {
+  return {
+    id: role.id,
+    key: role.key,
+    name: role.name,
+    description: role.description,
+    permissionKeys: toPermissionKeys(role.permissions),
+  };
+}
+
+function toLegacyRoleKey(roleKey: string): UserRole {
+  switch (roleKey) {
+    case "ADMIN":
+      return "ADMIN";
+    case "PROCUREMENT_DIRECTOR":
+      return "PROCUREMENT_DIRECTOR";
+    case "PROCUREMENT_LEAD":
+      return "PROCUREMENT_LEAD";
+    case "PROCUREMENT_SPECIALIST":
+      return "PROCUREMENT_SPECIALIST";
+    case "PROCUREMENT":
+      return "PROCUREMENT";
+    default:
+      return "PROCUREMENT";
+  }
+}
+
 function toUserView(user: {
   id: string;
   name: string;
@@ -206,12 +246,13 @@ export async function ensureDefaultAccessControlCatalog() {
     (definition) => !roleKeySet.has(definition.key),
   );
 
-  if (missingPermissionDefinitions.length === 0 && missingRoleDefinitions.length === 0) {
-    return;
+  if (missingPermissionDefinitions.length > 0) {
+    await Promise.all(missingPermissionDefinitions.map(upsertPermission));
   }
 
-  await Promise.all(missingPermissionDefinitions.map(upsertPermission));
-  await Promise.all(missingRoleDefinitions.map(upsertRole));
+  if (missingRoleDefinitions.length > 0) {
+    await Promise.all(missingRoleDefinitions.map(upsertRole));
+  }
 
   const permissionRows = await prisma.permission.findMany({
     select: {
@@ -414,6 +455,84 @@ export async function getRoleManagementData(): Promise<RoleManagementView> {
   };
 }
 
+export async function getInternalUserManagementData(): Promise<InternalUserManagementView> {
+  await ensureDefaultAccessControlCatalog();
+
+  const [roles, users] = await Promise.all([
+    prisma.role.findMany({
+      orderBy: [
+        {
+          isSystem: "desc",
+        },
+        {
+          name: "asc",
+        },
+      ],
+      select: {
+        id: true,
+        key: true,
+        name: true,
+        description: true,
+        permissions: {
+          select: {
+            permission: {
+              select: {
+                key: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+    prisma.user.findMany({
+      orderBy: [
+        {
+          createdAt: "desc",
+        },
+      ],
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        title: true,
+        role: true,
+        isActive: true,
+      },
+    }),
+  ]);
+
+  const userAccessProfiles = await Promise.all(
+    users.map(async (user) => ({
+      user,
+      accessProfile: await resolveUserAccessProfile({
+        userId: user.id,
+        legacyRole: user.role,
+      }),
+    })),
+  );
+
+  return {
+    roles: roles.map(toAccessRoleOption),
+    users: userAccessProfiles.map(({ user, accessProfile }) => {
+      const paymentPermissionKeys = accessProfile.permissions.filter((key) =>
+        key.startsWith("payment."),
+      );
+
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        title: user.title,
+        isActive: user.isActive,
+        legacyRole: user.role,
+        accessRoleName: accessProfile.roleName,
+        accessRoleKey: accessProfile.roleKey,
+        paymentPermissionKeys,
+      };
+    }),
+  };
+}
+
 export async function saveRoleDefinition(input: {
   actorUserId: string;
   roleId?: string | null;
@@ -597,5 +716,96 @@ export async function assignUserToRole(input: {
     });
 
     return assignment;
+  });
+}
+
+export async function createInternalUser(input: {
+  actorUserId: string;
+  name: string;
+  email: string;
+  title: string;
+  temporaryPassword: string;
+  roleId: string;
+}) {
+  await ensureDefaultAccessControlCatalog();
+
+  const email = input.email.trim().toLowerCase();
+  const passwordHash = await bcrypt.hash(input.temporaryPassword, 12);
+
+  return prisma.$transaction(async (tx) => {
+    const existingUser = await tx.user.findUnique({
+      where: {
+        email,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (existingUser) {
+      throw new Error("An internal user with this email already exists.");
+    }
+
+    const role = await tx.role.findUnique({
+      where: {
+        id: input.roleId,
+      },
+      select: {
+        id: true,
+        key: true,
+        name: true,
+      },
+    });
+
+    if (!role) {
+      throw new Error("Selected role was not found.");
+    }
+
+    const user = await tx.user.create({
+      data: {
+        name: input.name.trim(),
+        email,
+        title: input.title.trim(),
+        passwordHash,
+        passwordChanged: false,
+        passwordUpdatedAt: null,
+        role: toLegacyRoleKey(role.key),
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+    });
+
+    await tx.userRoleAssignment.create({
+      data: {
+        userId: user.id,
+        roleId: role.id,
+        assignedByUserId: input.actorUserId,
+      },
+    });
+
+    await createAuditLog(tx, {
+      action: "CREATED",
+      entityType: "User",
+      entityId: user.id,
+      userId: input.actorUserId,
+      details: {
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        roleId: role.id,
+        roleKey: role.key,
+        roleName: role.name,
+        title: input.title.trim(),
+      },
+    });
+
+    return {
+      userId: user.id,
+      roleId: role.id,
+    };
   });
 }

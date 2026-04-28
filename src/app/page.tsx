@@ -46,14 +46,14 @@ export default function Home() {
                       The Gathering KSA
                     </p>
                     <p className="text-lg font-light tracking-[0.09em] text-white/85">
-                      Certificate & Operations Platform
+                      Procurement Operations Platform
                     </p>
                   </div>
                 </div>
 
                 <h1 className="mt-8 max-w-3xl text-4xl font-semibold leading-tight md:text-5xl">
-                  The operations cockpit for procurement execution, vendor governance,
-                  and certificate lifecycle control.
+                  The operations cockpit for supplier governance, procurement execution,
+                  and completion certificate control.
                 </h1>
                 <p className="mt-6 max-w-2xl text-base leading-8 text-white/82">
                   Keep the project workspace, vendor assignments, approvals,
@@ -81,7 +81,7 @@ export default function Home() {
                 Private Admin
               </p>
               <h2 className="mt-3 text-2xl font-semibold text-[var(--color-ink)]">
-                Procurement Workspace
+                Procurement Operations Platform
               </h2>
               <p className="mt-3 text-sm leading-7 text-[var(--color-muted)]">
                 Create projects, link vendor assignments, issue and revise certificates,

@@ -13,6 +13,12 @@ import { MonthlyPerformanceReviewForm } from "@/components/forms/monthly-perform
 import { QuarterlyPerformanceReviewForm } from "@/components/forms/quarterly-performance-review-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  PageHeader,
+  PageHeroMetric,
+  PageHeroMetrics,
+  PageShell,
+} from "@/components/layout/page-shell";
 import { requireAdminSession } from "@/lib/auth";
 import { QUARTER_LABELS } from "@/lib/constants";
 import {
@@ -99,25 +105,16 @@ export default async function PerformancePage({
   const selectedCycle = monthlyDashboard.selectedCycle;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 pb-12 sm:px-6 lg:px-8">
-      <section className="tg-reveal overflow-hidden rounded-[32px] border border-[var(--color-border)] bg-[linear-gradient(135deg,rgba(49,19,71,0.98),rgba(70,34,102,0.96)_62%,rgba(215,132,57,0.92))] px-8 py-8 text-white">
-        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr] xl:items-end">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#f7c08b]">
-              Performance
-            </p>
-            <h1 className="mt-3 text-4xl font-semibold leading-tight">
-              Monthly team management and quarterly evaluation governance.
-            </h1>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-[#efe3f5]">
-              Run the monthly operating cycle for Abdulmajeed and Samia, review
-              capacity and delivery risk, then preserve the deeper quarterly
-              review framework underneath it.
-            </p>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <HeroMetric
+    <PageShell className="px-4 pb-12 sm:px-6 lg:px-8">
+      <PageHeader
+        eyebrow="Performance"
+        title="Monthly team management and quarterly evaluation governance."
+        description="Run the monthly operating cycle for Abdulmajeed and Samia, review capacity and delivery risk, then preserve the deeper quarterly review framework underneath it."
+        variant="feature"
+        className="tg-reveal"
+        metrics={
+          <PageHeroMetrics className="md:grid-cols-2">
+            <PageHeroMetric
               label="Active Cycle"
               value={selectedCycle?.label ?? "Not configured"}
               hint={
@@ -125,15 +122,17 @@ export default async function PerformancePage({
                   ? `${selectedCycle.status.replaceAll("_", " ")}${selectedCycle.isActive ? " | Active" : ""}`
                   : "Create a monthly cycle to begin controlled task governance."
               }
+              accent
             />
-            <HeroMetric
+            <PageHeroMetric
               label="Monthly Team Score"
               value={`${monthlyDashboard.kpis.monthlyTeamScore.toFixed(0)}%`}
               hint={`${monthlyDashboard.kpis.completedTasks}/${monthlyDashboard.kpis.totalTasks} tasks completed in the selected cycle`}
+              accent
             />
-          </div>
-        </div>
-      </section>
+          </PageHeroMetrics>
+        }
+      />
 
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <Card className="overflow-hidden">
@@ -837,7 +836,7 @@ export default async function PerformancePage({
           })}
         </section>
       </section>
-    </div>
+    </PageShell>
   );
 }
 

@@ -50,6 +50,10 @@ export function buildVendorEvaluationUrl(token: string) {
   return absoluteUrl(`/vendor-evaluation/${token}`);
 }
 
+export function buildVendorRegistrationVerificationUrl(requestNumber: string) {
+  return absoluteUrl(`/verify/vendor-registration/${requestNumber}`);
+}
+
 export function parsePositiveInt(value: string | null | undefined, fallback = 1) {
   if (!value) {
     return fallback;

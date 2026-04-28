@@ -49,11 +49,10 @@ export function WorkflowUpdateEmail({
 
 const labelStyle = {
   color: "#6e5b67",
-  fontSize: "12px",
-  fontWeight: 700,
-  letterSpacing: "0.08em",
+  fontSize: "11px",
+  fontWeight: 600,
+  letterSpacing: "0.02em",
   margin: "12px 0 4px",
-  textTransform: "uppercase" as const,
 };
 
 const valueStyle = {

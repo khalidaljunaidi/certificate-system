@@ -24,6 +24,7 @@ import {
   sendPmApprovalRequestEmail,
 } from "@/server/services/email-service";
 import { createWorkflowNotification } from "@/server/services/notification-service";
+import { syncProjectVendorPaymentAmount } from "@/server/services/payment-amount-sync-service";
 import { generateCertificatePdfBuffer } from "@/server/services/pdf-service";
 import { uploadCertificatePdf } from "@/server/services/storage-service";
 import {
@@ -611,6 +612,12 @@ export async function forceApproveCertificateByExecutive(input: {
       },
     });
 
+    await syncProjectVendorPaymentAmount(tx, {
+      projectVendorId: updated.projectVendorId,
+      userId: input.userId,
+      reason: "CERTIFICATE_PM_APPROVED",
+    });
+
     await invalidateOutstandingPmTokens(tx, updated.id);
 
     await createAuditLog(tx, {
@@ -705,6 +712,11 @@ export async function approveCertificateByToken(input: {
         approvalNotes: input.values.approvalNotes,
         pmApprovedAt: approvedAt,
       },
+    });
+
+    await syncProjectVendorPaymentAmount(tx, {
+      projectVendorId: certificate.projectVendorId,
+      reason: "CERTIFICATE_PM_APPROVED",
     });
 
     await tx.approvalToken.update({
@@ -909,6 +921,12 @@ export async function issueCertificate(input: {
       },
     });
 
+    await syncProjectVendorPaymentAmount(tx, {
+      projectVendorId: updated.projectVendorId,
+      userId: input.userId,
+      reason: "CERTIFICATE_ISSUED",
+    });
+
     await createAuditLog(tx, {
       action: isReissue ? "REISSUED" : "ISSUED",
       entityType: "Certificate",
@@ -1105,6 +1123,12 @@ export async function revokeCertificate(input: {
       },
     });
 
+    await syncProjectVendorPaymentAmount(tx, {
+      projectVendorId: revoked.projectVendorId,
+      userId: input.userId,
+      reason: "CERTIFICATE_REVOKED",
+    });
+
     await createAuditLog(tx, {
       action: "REVOKED",
       entityType: "Certificate",
@@ -1171,6 +1195,12 @@ export async function archiveCertificate(input: {
       },
     });
 
+    await syncProjectVendorPaymentAmount(tx, {
+      projectVendorId: archived.projectVendorId,
+      userId: input.userId,
+      reason: "CERTIFICATE_ARCHIVED",
+    });
+
     await invalidateOutstandingPmTokens(tx, archived.id);
 
     await createAuditLog(tx, {
@@ -1220,6 +1250,12 @@ export async function unarchiveCertificate(input: {
         isArchived: false,
         archivedAt: null,
       },
+    });
+
+    await syncProjectVendorPaymentAmount(tx, {
+      projectVendorId: unarchived.projectVendorId,
+      userId: input.userId,
+      reason: "CERTIFICATE_UNARCHIVED",
     });
 
     await createAuditLog(tx, {

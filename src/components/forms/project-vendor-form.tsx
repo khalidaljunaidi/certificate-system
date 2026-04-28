@@ -59,7 +59,10 @@ export function ProjectVendorForm({
           <div className="md:col-span-2 rounded-[20px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] px-4 py-3 text-sm leading-6 text-[var(--color-muted)]">
             Select a vendor from the master registry first, then create the
             project-specific PO or contract assignment. Each submission creates
-            a separate assignment row.
+            a separate assignment row. The issued PO / contract amount will
+            synchronize directly into the Payments workspace. Completion
+            certificates remain linked to validate execution, but they do not
+            redefine the payment total.
           </div>
 
           <div className="md:col-span-2 flex flex-wrap gap-3">
@@ -152,6 +155,18 @@ export function ProjectVendorForm({
           <div>
             <Label htmlFor="contractNumber">Contract Number</Label>
             <Input id="contractNumber" name="contractNumber" disabled={isPending} />
+          </div>
+          <div>
+            <Label htmlFor="poAmount">PO / Contract Amount (SAR)</Label>
+            <Input
+              id="poAmount"
+              name="poAmount"
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="Enter the approved PO total"
+              disabled={isPending}
+            />
           </div>
 
           <div className="md:col-span-2">

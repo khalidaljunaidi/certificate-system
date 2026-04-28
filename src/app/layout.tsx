@@ -7,7 +7,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: APP_NAME,
   description:
-    "Project-first completion certificate management system for The Gathering KSA.",
+    "Enterprise procurement operations platform for supplier intake, vendor governance, tasks, projects, and completion certificates.",
 };
 
 export default function RootLayout({

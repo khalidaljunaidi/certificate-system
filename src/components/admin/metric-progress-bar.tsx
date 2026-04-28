@@ -19,15 +19,15 @@ export function MetricProgressBar({
 
   return (
     <div className="space-y-2">
-      <div className="flex min-w-0 items-center justify-between gap-3 text-sm">
+      <div className="flex min-w-0 items-center justify-between gap-3 text-[13px]">
         <span className="min-w-0 truncate font-medium text-[var(--color-ink)]">
           {label}
         </span>
-        <span className="shrink-0 text-[var(--color-muted)]">
+        <span className="shrink-0 text-[11px] font-semibold text-[var(--color-muted)]">
           {normalized.toFixed(0)}%
         </span>
       </div>
-      <div className="h-3 overflow-hidden rounded-full bg-[rgba(49,19,71,0.08)]">
+      <div className="h-2.5 overflow-hidden rounded-full bg-[rgba(49,19,71,0.08)]">
         <div
           className={`h-full rounded-full bg-gradient-to-r ${color}`}
           style={{ width: `${normalized}%` }}

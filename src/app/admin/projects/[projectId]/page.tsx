@@ -9,12 +9,13 @@ import {
   ProjectStatusBadge,
 } from "@/components/admin/status-badges";
 import { ProjectStatusForm } from "@/components/forms/project-status-form";
+import { ProjectVendorAssignmentEditForm } from "@/components/forms/project-vendor-assignment-edit-form";
 import { ProjectVendorForm } from "@/components/forms/project-vendor-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireAdminSession } from "@/lib/auth";
 import { canManageProjectStatus } from "@/lib/permissions";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatSarAmount } from "@/lib/utils";
 import { getProjectWorkspace } from "@/server/queries/project-queries";
 import { getVendorPickerOptions } from "@/server/queries/vendor-queries";
 
@@ -22,12 +23,19 @@ type ProjectDetailPageProps = {
   params: Promise<{
     projectId: string;
   }>;
+  searchParams: Promise<{
+    notice?: string;
+    projectVendorId?: string;
+    editAssignment?: string;
+  }>;
 };
 
 export default async function ProjectDetailPage({
   params,
+  searchParams,
 }: ProjectDetailPageProps) {
   const { projectId } = await params;
+  const feedback = await searchParams;
   const [session, workspace, vendorOptions] = await Promise.all([
     requireAdminSession(),
     getProjectWorkspace(projectId),
@@ -69,9 +77,56 @@ export default async function ProjectDetailPage({
 
     return groups;
   }, []);
+  const paymentTotals = workspace.vendors.reduce(
+    (totals, assignment) => ({
+      totalAmount: totals.totalAmount + assignment.paymentSummary.totalAmount,
+      paidAmount: totals.paidAmount + assignment.paymentSummary.paidAmount,
+      remainingAmount:
+        totals.remainingAmount + assignment.paymentSummary.remainingAmount,
+      installmentCount:
+        totals.installmentCount + assignment.paymentSummary.installmentCount,
+      missingAmountAssignments:
+        totals.missingAmountAssignments +
+        (assignment.paymentSummary.amountMissing ? 1 : 0),
+      overdueAssignments:
+        totals.overdueAssignments +
+        (assignment.paymentSummary.installments.some(
+          (installment) => installment.status === "OVERDUE",
+        )
+          ? 1
+          : 0),
+    }),
+    {
+      totalAmount: 0,
+      paidAmount: 0,
+      remainingAmount: 0,
+      installmentCount: 0,
+      missingAmountAssignments: 0,
+      overdueAssignments: 0,
+    },
+  );
 
   return (
     <div className="space-y-8">
+      {feedback.notice === "payment-saved" ? (
+        <PageNotice
+          title="Payment installment saved"
+          body="The payment tracking record was saved successfully and the assignment summary has been refreshed."
+        />
+      ) : null}
+      {feedback.notice === "payment-fully-paid" ? (
+        <PageNotice
+          title="Assignment fully paid"
+          body="All tracked installments for this vendor assignment have been marked as paid."
+        />
+      ) : null}
+      {feedback.notice === "assignment-updated" ? (
+        <PageNotice
+          title="Assignment updated"
+          body="The PO / contract assignment was updated and the Payments workspace has been refreshed."
+        />
+      ) : null}
+
       {workspace.project.isArchived ? (
         <PageNotice
           tone="warning"
@@ -170,6 +225,7 @@ export default async function ProjectDetailPage({
                         <tr>
                           <th className="px-4 py-3">PO Number</th>
                           <th className="px-4 py-3">Contract Number</th>
+                          <th className="px-4 py-3">Amount</th>
                           <th className="px-4 py-3">Certificate Count</th>
                           <th className="px-4 py-3">Status</th>
                           <th className="px-4 py-3">Actions</th>
@@ -179,6 +235,7 @@ export default async function ProjectDetailPage({
                         {group.assignments.map((assignment) => (
                           <tr
                             key={assignment.id}
+                            id={`assignment-${assignment.id}`}
                             className="border-t border-[var(--color-border)] text-sm"
                           >
                             <td className="px-4 py-4">
@@ -195,6 +252,16 @@ export default async function ProjectDetailPage({
                               </p>
                               <p className="mt-1 text-xs text-[var(--color-muted)]">
                                 Contract reference
+                              </p>
+                            </td>
+                            <td className="px-4 py-4">
+                              <p className="font-medium text-[var(--color-ink)]">
+                                {assignment.paymentSummary.poAmount !== null
+                                  ? formatSarAmount(assignment.paymentSummary.poAmount)
+                                  : "Not set"}
+                              </p>
+                              <p className="mt-1 text-xs text-[var(--color-muted)]">
+                                Issued PO / contract amount
                               </p>
                             </td>
                             <td className="px-4 py-4">
@@ -217,11 +284,24 @@ export default async function ProjectDetailPage({
                               )}
                             </td>
                             <td className="px-4 py-4">
-                              {renderAssignmentAction({
-                                assignment,
-                                projectId,
-                                projectArchived: workspace.project.isArchived,
-                              })}
+                              <div className="flex flex-wrap items-center gap-2">
+                                {renderAssignmentAction({
+                                  assignment,
+                                  projectId,
+                                  projectArchived: workspace.project.isArchived,
+                                })}
+                                {!workspace.project.isArchived ? (
+                                  <ProjectVendorAssignmentEditForm
+                                    projectId={projectId}
+                                    projectVendorId={assignment.id}
+                                    poNumber={assignment.poNumber}
+                                    contractNumber={assignment.contractNumber}
+                                    poAmount={assignment.paymentSummary.poAmount}
+                                    defaultOpen={feedback.editAssignment === assignment.id}
+                                    closeHref={`/admin/projects/${projectId}#assignment-${assignment.id}`}
+                                  />
+                                ) : null}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -273,6 +353,41 @@ export default async function ProjectDetailPage({
           ) : (
             <ProjectVendorForm projectId={projectId} vendorOptions={vendorOptions} />
           )}
+
+          <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle>Payment Summary</CardTitle>
+              <Button asChild variant="secondary" size="sm">
+                <Link href={`/admin/payments?projectId=${projectId}`}>Open Payments</Link>
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm leading-7 text-[var(--color-muted)]">
+                Payment tracking now lives in the dedicated Payments workspace.
+                Use the finance module to manage installment plans, invoice
+                follow-up, ownership, and exports without crowding the project page.
+              </p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <InfoTile label="Total Planned" value={formatSarAmount(paymentTotals.totalAmount)} />
+                <InfoTile label="Total Paid" value={formatSarAmount(paymentTotals.paidAmount)} />
+                <InfoTile label="Remaining" value={formatSarAmount(paymentTotals.remainingAmount)} />
+                <InfoTile label="Installments" value={String(paymentTotals.installmentCount)} />
+              </div>
+              {paymentTotals.missingAmountAssignments > 0 ? (
+                <div className="rounded-[24px] border border-[var(--color-border)] bg-white px-4 py-4 text-sm text-[var(--color-muted)]">
+                  {paymentTotals.missingAmountAssignments} assignment
+                  {paymentTotals.missingAmountAssignments === 1 ? "" : "s"} are still
+                  missing a PO / contract amount before finance totals can become
+                  active.
+                </div>
+              ) : null}
+              <div className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] px-4 py-4 text-sm text-[var(--color-muted)]">
+                {paymentTotals.overdueAssignments > 0
+                  ? `${paymentTotals.overdueAssignments} assignment payment records currently have overdue installments.`
+                  : "No overdue payment assignments are currently flagged for this project."}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </section>
 
@@ -342,11 +457,13 @@ export default async function ProjectDetailPage({
 
 function InfoTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-4">
-      <p className="text-xs uppercase tracking-[0.18em] text-[var(--color-muted)]">
+    <div className="min-w-0 rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-4">
+      <p className="text-[10px] font-semibold uppercase leading-5 tracking-[0.14em] text-[var(--color-muted)] md:text-[11px]">
         {label}
       </p>
-      <p className="mt-2 text-lg font-semibold text-[var(--color-ink)]">{value}</p>
+      <p className="mt-2 break-words text-base font-semibold leading-tight text-[var(--color-ink)] md:text-lg">
+        {value}
+      </p>
     </div>
   );
 }
@@ -371,6 +488,14 @@ function renderAssignmentAction({
   const latestCertificateHref = assignment.latestCertificateId
     ? `/admin/projects/${projectId}/certificates/${assignment.latestCertificateId}`
     : null;
+  const filteredCertificatesHref = `/admin/projects/${projectId}/certificates?projectVendorId=${assignment.id}`;
+  const hasMultipleCertificates = assignment.certificateCount > 1;
+  const viewCertificateHref = hasMultipleCertificates
+    ? filteredCertificatesHref
+    : latestCertificateHref;
+  const viewCertificateLabel = hasMultipleCertificates
+    ? "View Certificates"
+    : "View Certificate";
 
   switch (assignment.latestCertificateStatus) {
     case null:
@@ -403,9 +528,9 @@ function renderAssignmentAction({
         </Button>
       ) : null;
     case "ISSUED":
-      return latestCertificateHref ? (
+      return viewCertificateHref ? (
         <Button asChild variant="secondary" size="sm">
-          <Link href={latestCertificateHref}>View Certificate</Link>
+          <Link href={viewCertificateHref}>{viewCertificateLabel}</Link>
         </Button>
       ) : null;
     case "REOPENED":
@@ -415,15 +540,17 @@ function renderAssignmentAction({
         </Button>
       ) : null;
     case "REVOKED":
-      return latestCertificateHref ? (
+      return viewCertificateHref ? (
         <Button asChild variant="secondary" size="sm">
-          <Link href={latestCertificateHref}>View Certificate</Link>
+          <Link href={viewCertificateHref}>{viewCertificateLabel}</Link>
         </Button>
       ) : null;
     default:
-      return latestCertificateHref ? (
+      return viewCertificateHref ? (
         <Button asChild variant="secondary" size="sm">
-          <Link href={latestCertificateHref}>Open Record</Link>
+          <Link href={viewCertificateHref}>
+            {hasMultipleCertificates ? "View Certificates" : "Open Certificate"}
+          </Link>
         </Button>
       ) : (
         <Button asChild size="sm">
@@ -439,6 +566,7 @@ function renderAssignmentAction({
 
 type ProjectDetailVendorAssignment = {
   id: string;
+  certificateCount: number;
   latestCertificateId: string | null;
   latestCertificateStatus: CertificateStatus | null;
 };

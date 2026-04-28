@@ -6,6 +6,7 @@ import type {
   NotificationEventKey,
   NotificationSeverity,
   NotificationType,
+  NotificationDeliveryStatus,
   OperationalTaskPriority,
   OperationalTaskStatus,
   OperationalTaskType,
@@ -84,6 +85,14 @@ export type AccessRoleView = {
   users: AccessRoleUserView[];
 };
 
+export type AccessRoleOptionView = {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  permissionKeys: string[];
+};
+
 export type UserRoleAssignmentView = {
   userId: string;
   roleId: string | null;
@@ -106,6 +115,21 @@ export type RoleManagementView = {
   permissionGroups: PermissionGroupView[];
   roles: AccessRoleView[];
   users: RoleManagementUserView[];
+};
+
+export type InternalUserManagementView = {
+  roles: AccessRoleOptionView[];
+  users: Array<{
+    id: string;
+    name: string;
+    email: string;
+    title: string;
+    isActive: boolean;
+    legacyRole: UserRole;
+    accessRoleName: string | null;
+    accessRoleKey: string | null;
+    paymentPermissionKeys: string[];
+  }>;
 };
 
 export type ProjectListItem = {
@@ -150,6 +174,7 @@ export type ProjectWorkspaceView = {
     certificateCount: number;
     latestCertificateId: string | null;
     latestCertificateStatus: CertificateStatus | null;
+    paymentSummary: ProjectVendorPaymentSummaryView;
   }>;
   certificates: Array<{
     id: string;
@@ -259,6 +284,7 @@ export type NotificationItem = {
 export type VendorRegistryItem = {
   id: string;
   vendorId: string;
+  supplierId: string | null;
   vendorName: string;
   vendorEmail: string;
   vendorPhone: string | null;
@@ -285,6 +311,7 @@ export type VendorRegistryView = {
   vendor: {
     id: string;
     vendorId: string;
+    supplierId: string | null;
     vendorName: string;
     vendorEmail: string;
     vendorPhone: string | null;
@@ -376,12 +403,147 @@ export type VendorGovernanceOptions = {
   categories: Array<{
     id: string;
     name: string;
+    externalKey: string | null;
     subcategories: Array<{
       id: string;
       name: string;
+      externalKey: string | null;
       categoryId: string;
     }>;
   }>;
+};
+
+export type CountryCatalogOption = {
+  code: string;
+  name: string;
+  regionGroup: string;
+  cities: Array<{
+    id: string;
+    name: string;
+    region: string;
+  }>;
+};
+
+export type VendorRegistrationCategoryOption = {
+  id: string;
+  name: string;
+  code: string | null;
+  subcategories: Array<{
+    id: string;
+    name: string;
+    code: string | null;
+    categoryId: string;
+  }>;
+};
+
+export type VendorRegistrationFormOptions = {
+  countries: CountryCatalogOption[];
+  categories: VendorRegistrationCategoryOption[];
+};
+
+export type VendorRegistrationReferenceView = {
+  id: string;
+  name: string;
+  companyName: string;
+  email: string;
+  phone: string | null;
+  title: string | null;
+};
+
+export type VendorRegistrationAttachmentView = {
+  id: string;
+  type:
+    | "CR"
+    | "VAT"
+    | "COMPANY_PROFILE"
+    | "FINANCIALS"
+    | "BANK_CERTIFICATE"
+    | "SIGNATURE"
+    | "STAMP";
+  fileName: string;
+  mimeType: string;
+  storagePath: string;
+  sizeBytes: number;
+  createdAt: Date;
+};
+
+export type VendorRegistrationRequestView = {
+  id: string;
+  requestNumber: string;
+  companyName: string;
+  legalName: string;
+  companyEmail: string;
+  companyPhone: string;
+  website: string | null;
+  crNumber: string;
+  vatNumber: string;
+  status: "PENDING_REVIEW" | "APPROVED" | "REJECTED";
+  rejectionReason: string | null;
+  coverageScope: "SPECIFIC_CITIES" | "ALL_COUNTRY" | "GCC" | "MENA" | "EU" | "GLOBAL";
+  countryCode: string;
+  countryName: string;
+  categoryId: string;
+  categoryName: string;
+  categoryCode: string | null;
+  primarySubcategoryId: string;
+  primarySubcategoryName: string;
+  primarySubcategoryCode: string | null;
+  selectedSubcategories: Array<{
+    id: string;
+    name: string;
+    externalKey: string | null;
+  }>;
+  selectedCities: Array<{
+    id: string;
+    name: string;
+    region: string | null;
+  }>;
+  addressLine1: string;
+  addressLine2: string | null;
+  district: string;
+  region: string | null;
+  postalCode: string;
+  poBox: string | null;
+  businessDescription: string;
+  yearsInBusiness: number;
+  employeeCount: number;
+  productsServicesSummary: string;
+  bankName: string;
+  accountName: string;
+  iban: string;
+  swiftCode: string;
+  bankAccountNumber: string | null;
+  additionalInformation: string;
+  declarationName: string;
+  declarationTitle: string;
+  declarationAccepted: boolean;
+  declarationSignedAt: Date | null;
+  supplierId: string | null;
+  approvedVendorId: string | null;
+  certificatePdfStoragePath: string | null;
+  submittedAt: Date;
+  reviewedAt: Date | null;
+  reviewedByName: string | null;
+  references: VendorRegistrationReferenceView[];
+  attachments: VendorRegistrationAttachmentView[];
+};
+
+export type SupplierInvitationView = {
+  id: string;
+  supplierCompanyName: string | null;
+  supplierContactName: string | null;
+  supplierContactEmail: string;
+  suggestedCategoryId: string | null;
+  suggestedCategoryName: string | null;
+  internalNote: string | null;
+  customMessage: string | null;
+  registrationUrl: string;
+  invitedByUserId: string;
+  invitedByName: string | null;
+  invitedAt: Date;
+  emailSentAt: Date | null;
+  emailDeliveryStatus: NotificationDeliveryStatus;
+  emailDeliveryError: string | null;
 };
 
 export type VendorEvaluationPublicView = {
@@ -442,6 +604,7 @@ export type WorkflowEmailGroupView = {
 export type VendorPickerOption = {
   id: string;
   vendorId: string;
+  supplierId: string | null;
   vendorName: string;
   vendorEmail: string;
   vendorPhone: string | null;
@@ -576,6 +739,207 @@ export type TaskLookupOptions = {
     certificateCode: string;
     status: CertificateStatus;
   }>;
+};
+
+export type ProjectVendorPaymentInstallmentView = {
+  id: string;
+  projectVendorId: string;
+  amount: number;
+  dueDate: Date;
+  condition: string;
+  invoiceNumber: string | null;
+  invoiceStoragePath: string | null;
+  invoiceDate: Date | null;
+  invoiceAmount: number | null;
+  invoiceReceivedDate: Date | null;
+  taxInvoiceValidated: boolean;
+  invoiceStatus:
+    | "MISSING"
+    | "RECEIVED"
+    | "REJECTED"
+    | "APPROVED_FOR_PAYMENT";
+  financeReviewNotes: string | null;
+  financeReviewedAt: Date | null;
+  financeReviewedByName: string | null;
+  scheduledPaymentDate: Date | null;
+  paymentDate: Date | null;
+  status:
+    | "PLANNED"
+    | "INVOICE_REQUIRED"
+    | "INVOICE_RECEIVED"
+    | "UNDER_REVIEW"
+    | "SCHEDULED"
+    | "PAID"
+    | "OVERDUE"
+    | "CANCELLED";
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type ProjectVendorPaymentSummaryView = {
+  projectVendorId: string;
+  poAmount: number | null;
+  activeAmount: number | null;
+  amountMissing: boolean;
+  amountSource: "PO_CONTRACT" | "APPROVED_CERTIFICATE" | null;
+  amountSourceCertificateId: string | null;
+  amountSourceCertificateCode: string | null;
+  plannedAmount: number;
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  progressPercent: number;
+  installmentCount: number;
+  invoiceReceivedCount: number;
+  approvedInvoiceCount: number;
+  scheduledInstallmentCount: number;
+  paidInstallmentCount: number;
+  pendingInstallmentCount: number;
+  hasOverdueInstallments: boolean;
+  installments: ProjectVendorPaymentInstallmentView[];
+};
+
+export type PaymentRecordStatusView =
+  | "PO_AMOUNT_REQUIRED"
+  | "READY_FOR_INVOICE"
+  | "AWAITING_INVOICE"
+  | "INVOICE_RECEIVED"
+  | "UNDER_FINANCE_REVIEW"
+  | "PAYMENT_SCHEDULED"
+  | "PARTIALLY_PAID"
+  | "FULLY_PAID"
+  | "CLOSED"
+  | "ON_HOLD"
+  | "DISPUTED";
+
+export type PaymentRecordRecommendedActionView =
+  | "SET_PO_AMOUNT"
+  | "ADD_INSTALLMENT"
+  | "ADD_INVOICE"
+  | "REVIEW_INVOICE"
+  | "SCHEDULE_PAYMENT"
+  | "MARK_PAID"
+  | "CLOSE_PAYMENT"
+  | "VIEW_RECORD";
+
+export type PaymentFinanceOwnerView = {
+  id: string;
+  name: string;
+  email: string;
+  title: string;
+};
+
+export type PaymentRecordListItemView = {
+  projectVendorId: string;
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  vendorId: string;
+  vendorRecordId: string;
+  vendorName: string;
+  vendorEmail: string;
+  poNumber: string | null;
+  contractNumber: string | null;
+  poAmount: number | null;
+  activeAmount: number | null;
+  amountMissing: boolean;
+  amountSource: "PO_CONTRACT" | "APPROVED_CERTIFICATE" | null;
+  amountSourceCertificateId: string | null;
+  amountSourceCertificateCode: string | null;
+  plannedAmount: number;
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  progressPercent: number;
+  nextDueDate: Date | null;
+  status: PaymentRecordStatusView;
+  workflowOverrideStatus: "ON_HOLD" | "DISPUTED" | null;
+  workflowOverrideReason: string | null;
+  workflowOverrideAt: Date | null;
+  workflowOverrideByName: string | null;
+  financeOwner: PaymentFinanceOwnerView | null;
+  closedAt: Date | null;
+  closedByName: string | null;
+  paymentNotes: string | null;
+  installmentCount: number;
+  invoiceReceivedCount: number;
+  approvedInvoiceCount: number;
+  scheduledInstallmentCount: number;
+  paidInstallmentCount: number;
+  upcomingInstallmentCount: number;
+  dueThisMonthInstallmentCount: number;
+  overdueInstallmentCount: number;
+  recommendedAction: PaymentRecordRecommendedActionView;
+  nextActionInstallment: ProjectVendorPaymentInstallmentView | null;
+};
+
+export type PaymentWorkspaceView = {
+  filters: {
+    projects: Array<{
+      id: string;
+      projectCode: string;
+      projectName: string;
+    }>;
+    vendors: Array<{
+      id: string;
+      vendorId: string;
+      vendorName: string;
+    }>;
+    financeOwners: PaymentFinanceOwnerView[];
+    statuses: PaymentRecordStatusView[];
+  };
+  kpis: {
+    totalPoAmount: number;
+    totalPaid: number;
+    totalRemaining: number;
+    overduePayments: number;
+    dueThisMonth: number;
+    closedPayments: number;
+  };
+  records: PaymentRecordListItemView[];
+};
+
+export type PaymentRecordDetailView = {
+  record: PaymentRecordListItemView & {
+    projectLocation: string;
+    clientName: string;
+    vendorPhone: string | null;
+    isActive: boolean;
+    certificates: Array<{
+      id: string;
+      certificateCode: string;
+      status: CertificateStatus;
+      totalAmount: number;
+      updatedAt: Date;
+      pmApprovedAt: Date | null;
+      issuedAt: Date | null;
+    }>;
+    installments: ProjectVendorPaymentInstallmentView[];
+    auditTrail: Array<{
+      id: string;
+      action: string;
+      entityType: string;
+      entityId: string;
+      actorName: string | null;
+      createdAt: Date;
+      details: unknown;
+    }>;
+  };
+  financeOwners: PaymentFinanceOwnerView[];
+};
+
+export type SystemErrorLogView = {
+  id: string;
+  userId: string | null;
+  userName: string | null;
+  action: string;
+  errorName: string | null;
+  errorMessage: string;
+  stackTrace: string | null;
+  severity: "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+  context: unknown;
+  createdAt: Date;
 };
 
 export type OperationalTaskSummaryMetrics = {

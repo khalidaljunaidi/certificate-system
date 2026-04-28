@@ -5,6 +5,10 @@ import { Pool } from "pg";
 
 import { NOTIFICATION_EMAIL_GROUP_DEFINITIONS } from "../src/lib/constants";
 import {
+  COUNTRY_CATALOG,
+  VENDOR_TAXONOMY,
+} from "../src/lib/vendor-registration-catalog";
+import {
   DEFAULT_ROLE_DEFINITIONS,
   PERMISSION_DEFINITIONS,
 } from "../src/lib/rbac";
@@ -49,139 +53,6 @@ const seededUsers = [
   },
 ] as const;
 
-const vendorTaxonomy = [
-  {
-    code: "EV-BLD",
-    name: "Build & Infrastructure",
-    subcategories: [
-      { code: "EV-BLD-01", name: "Structures / Gates / Tunnels" },
-      { code: "EV-BLD-02", name: "Booths / Kiosks / Pavilions" },
-      { code: "EV-BLD-03", name: "Scenic / Decor / Backdrops" },
-      { code: "EV-BLD-04", name: "Finishes / Flooring / Painting" },
-      { code: "EV-BLD-05", name: "Signage Fabrication & Install" },
-      { code: "EV-BLD-06", name: "MEP / Temporary Civil Works" },
-    ],
-  },
-  {
-    code: "EV-PRD",
-    name: "Production & Show",
-    subcategories: [
-      { code: "EV-PRD-01", name: "Production Management / PMO" },
-      { code: "EV-PRD-02", name: "Stage / Platforms / Backstage" },
-      { code: "EV-PRD-03", name: "Rigging / Engineering" },
-      { code: "EV-PRD-04", name: "Run of Show / Rehearsals" },
-      { code: "EV-PRD-05", name: "Production Office / Comms" },
-      { code: "EV-PRD-06", name: "Consultants / Advisory" },
-      { code: "EV-PRD-07", name: "Engineering Certification / TUV" },
-      { code: "EV-PRD-08", name: "Submittals / Documentation" },
-      { code: "EV-PRD-09", name: "Testing / Commissioning" },
-    ],
-  },
-  {
-    code: "EV-AVL",
-    name: "Audio Video Lighting",
-    subcategories: [
-      { code: "EV-AVL-01", name: "Audio Systems" },
-      { code: "EV-AVL-02", name: "LED / Screens / Projection" },
-      { code: "EV-AVL-03", name: "Lighting Systems" },
-      { code: "EV-AVL-04", name: "Camera / Broadcast" },
-      { code: "EV-AVL-05", name: "Special Effects / Lasers" },
-      { code: "EV-AVL-06", name: "AV Control / Cabling" },
-    ],
-  },
-  {
-    code: "EV-EXP",
-    name: "Experiences & Activations",
-    subcategories: [
-      { code: "EV-EXP-01", name: "Immersive Experiences" },
-      { code: "EV-EXP-02", name: "Interactive Activities" },
-      { code: "EV-EXP-03", name: "Gaming / VR" },
-      { code: "EV-EXP-04", name: "Workshops / Education" },
-      { code: "EV-EXP-05", name: "Brand Activations" },
-      { code: "EV-EXP-06", name: "Talent / Performers" },
-    ],
-  },
-  {
-    code: "EV-FNB",
-    name: "Food & Beverage",
-    subcategories: [
-      { code: "EV-FNB-01", name: "Catering" },
-      { code: "EV-FNB-02", name: "Food Booths" },
-      { code: "EV-FNB-03", name: "Beverage / Bars" },
-      { code: "EV-FNB-04", name: "Kitchen / Hygiene" },
-      { code: "EV-FNB-05", name: "F&B Payments" },
-      { code: "EV-FNB-06", name: "F&B Consumables" },
-    ],
-  },
-  {
-    code: "EV-OPS",
-    name: "Operations & Logistics",
-    subcategories: [
-      { code: "EV-OPS-01", name: "Site Operations" },
-      { code: "EV-OPS-02", name: "Logistics / Freight" },
-      { code: "EV-OPS-03", name: "Transportation / Fleet" },
-      { code: "EV-OPS-04", name: "Electrical Works & Power" },
-      { code: "EV-OPS-05", name: "Utilities (Water/HVAC)" },
-      { code: "EV-OPS-06", name: "Cleaning / Waste / Toilets" },
-      { code: "EV-OPS-07", name: "IT Connectivity" },
-      { code: "EV-OPS-08", name: "Venue Rental / Site Lease" },
-      { code: "EV-OPS-09", name: "Equipment / Furniture Rental" },
-      { code: "EV-OPS-10", name: "Standby / Emergency Services" },
-    ],
-  },
-  {
-    code: "EV-STA",
-    name: "Staffing & Workforce",
-    subcategories: [
-      { code: "EV-STA-01", name: "Crew / Technicians" },
-      { code: "EV-STA-02", name: "FOH Staff" },
-      { code: "EV-STA-03", name: "Security Manpower" },
-      { code: "EV-STA-04", name: "HR / Scheduling" },
-      { code: "EV-STA-05", name: "Uniforms / IDs" },
-      { code: "EV-STA-06", name: "Freelancers / Specialists" },
-    ],
-  },
-  {
-    code: "EV-HSE",
-    name: "Security, Safety & Compliance",
-    subcategories: [
-      { code: "EV-HSE-01", name: "Security Systems" },
-      { code: "EV-HSE-02", name: "Safety Compliance" },
-      { code: "EV-HSE-03", name: "Medical Services" },
-      { code: "EV-HSE-04", name: "Permits / Civil Defense" },
-      { code: "EV-HSE-05", name: "Risk / Insurance" },
-      { code: "EV-HSE-06", name: "Government Fees" },
-      { code: "EV-HSE-07", name: "Event Insurance" },
-      { code: "EV-HSE-08", name: "Equipment Insurance" },
-      { code: "EV-HSE-09", name: "Sustainability / ESG" },
-    ],
-  },
-  {
-    code: "EV-GST",
-    name: "Guest & Hospitality",
-    subcategories: [
-      { code: "EV-GST-01", name: "VIP Services" },
-      { code: "EV-GST-02", name: "Access / Ticketing" },
-      { code: "EV-GST-03", name: "Travel / Accommodation" },
-      { code: "EV-GST-04", name: "Backstage Hospitality" },
-      { code: "EV-GST-05", name: "Guest Services" },
-      { code: "EV-GST-06", name: "Staff Accreditation" },
-    ],
-  },
-  {
-    code: "EV-COM",
-    name: "Commercial & Business",
-    subcategories: [
-      { code: "EV-COM-01", name: "Marketing / PR" },
-      { code: "EV-COM-02", name: "Sponsorship" },
-      { code: "EV-COM-03", name: "Merchandise" },
-      { code: "EV-COM-04", name: "Procurement / Contracts" },
-      { code: "EV-COM-05", name: "Finance / Cost Control" },
-      { code: "EV-COM-06", name: "Talent Contracts" },
-    ],
-  },
-] as const;
-
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
@@ -189,7 +60,7 @@ function normalizeEmail(email: string) {
 async function upsertVendorTaxonomy() {
   let subcategoryCount = 0;
 
-  for (const categoryInput of vendorTaxonomy) {
+  for (const categoryInput of VENDOR_TAXONOMY) {
     const existingCategory = await prisma.vendorCategory.findFirst({
       where: {
         OR: [
@@ -261,8 +132,59 @@ async function upsertVendorTaxonomy() {
   }
 
   console.info("[seed:taxonomy] Vendor taxonomy upserted", {
-    categories: vendorTaxonomy.length,
+    categories: VENDOR_TAXONOMY.length,
     subcategories: subcategoryCount,
+  });
+}
+
+async function upsertCountryCatalog() {
+  let cityCount = 0;
+
+  for (const countryInput of COUNTRY_CATALOG) {
+    await prisma.country.upsert({
+      where: {
+        code: countryInput.code,
+      },
+      update: {
+        name: countryInput.name,
+        regionGroup: countryInput.regionGroup,
+        isActive: true,
+      },
+      create: {
+        code: countryInput.code,
+        name: countryInput.name,
+        regionGroup: countryInput.regionGroup,
+        isActive: true,
+      },
+    });
+
+    for (const cityInput of countryInput.cities) {
+      await prisma.city.upsert({
+        where: {
+          countryCode_name: {
+            countryCode: countryInput.code,
+            name: cityInput.name,
+          },
+        },
+        update: {
+          region: cityInput.region,
+          isActive: true,
+        },
+        create: {
+          countryCode: countryInput.code,
+          name: cityInput.name,
+          region: cityInput.region,
+          isActive: true,
+        },
+      });
+
+      cityCount += 1;
+    }
+  }
+
+  console.info("[seed:country-catalog] Countries and cities upserted", {
+    countries: COUNTRY_CATALOG.length,
+    cities: cityCount,
   });
 }
 
@@ -440,8 +362,9 @@ async function main() {
   await upsertAccessControlCatalog();
   await upsertNotificationEmailGroups();
   await upsertVendorTaxonomy();
+  await upsertCountryCatalog();
   console.info("[seed:users] Default seed completed", {
-    scope: "core-auth-users-rbac-and-vendor-taxonomy",
+    scope: "core-auth-users-rbac-vendor-taxonomy-and-country-catalog",
     reminder: "Users must update their password after first login.",
   });
 }

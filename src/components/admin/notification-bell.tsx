@@ -90,7 +90,7 @@ export function NotificationBell({
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="relative z-40 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[var(--color-ink)] transition-[transform,box-shadow,background-color,border-color] duration-200 hover:-translate-y-0.5 hover:bg-[var(--color-panel-soft)] hover:shadow-[0_16px_32px_rgba(17,17,17,0.12)]"
+        className="relative z-40 inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[rgba(17,17,17,0.08)] bg-white/88 text-[var(--color-ink)] shadow-[0_12px_28px_rgba(17,17,17,0.08)] transition-[transform,box-shadow,background-color,border-color] duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_18px_34px_rgba(17,17,17,0.12)]"
         aria-label="Open notifications"
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -116,94 +116,94 @@ export function NotificationBell({
             role="dialog"
             aria-label="Notifications"
           >
-          <div className="border-b border-[var(--color-border)] bg-[rgba(49,19,71,0.03)] px-5 py-4">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--color-accent)]">
-                  Notifications
-                </p>
-                <p className="mt-2 text-lg font-semibold text-[var(--color-ink)]">
-                  Workflow alerts
-                </p>
-              </div>
-              <div className="rounded-full bg-[rgba(49,19,71,0.08)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">
-                {unreadCount} unread
+            <div className="border-b border-[var(--color-border)] bg-[rgba(49,19,71,0.03)] px-5 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--color-accent)]">
+                    Notifications
+                  </p>
+                  <p className="mt-2 text-lg font-semibold text-[var(--color-ink)]">
+                    Latest workflow alerts
+                  </p>
+                </div>
+                <div className="rounded-full bg-[rgba(49,19,71,0.08)] px-3 py-1 text-xs font-semibold text-[var(--color-primary)]">
+                  {unreadCount} unread
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="max-h-[24rem] overflow-y-auto px-3 py-3">
-            {items.length === 0 ? (
-              <div className="rounded-[22px] border border-dashed border-[var(--color-border)] px-4 py-6 text-sm leading-6 text-[var(--color-muted)]">
-                No unread notifications right now.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {items.map((notification) => {
-                  const busy = pendingId === notification.id;
+            <div className="max-h-[24rem] overflow-y-auto px-3 py-3">
+              {items.length === 0 ? (
+                <div className="rounded-[22px] border border-dashed border-[var(--color-border)] px-4 py-6 text-sm leading-6 text-[var(--color-muted)]">
+                  No unread notifications right now.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {items.map((notification) => {
+                    const busy = pendingId === notification.id;
 
-                  return (
-                    <div
-                      key={notification.id}
-                      className="rounded-[22px] border border-[var(--color-border)] bg-white px-4 py-4"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void openNotification(notification)}
-                        disabled={busy}
-                        className="block w-full text-left"
+                    return (
+                      <div
+                        key={notification.id}
+                        className="rounded-[22px] border border-[var(--color-border)] bg-white px-4 py-4"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="truncate text-sm font-semibold text-[var(--color-ink)]">
-                                {notification.title}
-                              </p>
-                              <NotificationSeverityBadge severity={notification.severity} />
-                              <span className="rounded-full bg-[rgba(215,132,57,0.12)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">
-                                New
-                              </span>
-                            </div>
-                            <p className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--color-muted)]">
-                              {notification.message}
-                            </p>
-                          </div>
-                          <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-muted)]" />
-                        </div>
-                      </button>
-
-                      <div className="mt-3 flex items-center justify-between gap-3">
-                        <p className="text-xs text-[var(--color-muted)]">
-                          {formatDateTime(notification.createdAt)}
-                        </p>
                         <button
                           type="button"
-                          onClick={() => void markAsRead(notification.id)}
+                          onClick={() => void openNotification(notification)}
                           disabled={busy}
-                          className="rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-panel-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+                          className="block w-full text-left"
                         >
-                          {busy ? "Updating..." : "Mark as read"}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="truncate text-sm font-semibold text-[var(--color-ink)]">
+                                  {notification.title}
+                                </p>
+                                <NotificationSeverityBadge severity={notification.severity} />
+                                <span className="rounded-full bg-[rgba(215,132,57,0.12)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">
+                                  New
+                                </span>
+                              </div>
+                              <p className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--color-muted)]">
+                                {notification.message}
+                              </p>
+                            </div>
+                            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-muted)]" />
+                          </div>
                         </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
 
-          <div className="border-t border-[var(--color-border)] bg-[rgba(255,253,249,0.96)] px-4 py-3">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                router.push("/admin/notifications");
-              }}
-              className="tg-button-live inline-flex w-full items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-primary)] hover:bg-[var(--color-panel-soft)]"
-            >
-              Open notification center
-            </button>
-          </div>
+                        <div className="mt-3 flex items-center justify-between gap-3">
+                          <p className="text-xs text-[var(--color-muted)]">
+                            {formatDateTime(notification.createdAt)}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => void markAsRead(notification.id)}
+                            disabled={busy}
+                            className="rounded-full border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-panel-soft)] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {busy ? "Updating..." : "Mark as read"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-[var(--color-border)] bg-[rgba(255,253,249,0.96)] px-4 py-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  router.push("/admin/notifications");
+                }}
+                className="tg-button-live inline-flex w-full items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-primary)] hover:bg-[var(--color-panel-soft)]"
+              >
+                View all notifications
+              </button>
+            </div>
           </div>
         </>
       ) : null}

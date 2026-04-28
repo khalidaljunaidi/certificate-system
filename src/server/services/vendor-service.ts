@@ -646,7 +646,7 @@ export async function finalizeVendorEvaluationCycle(input: {
       !hasRequiredExternalSubmissions(cycle.submissions)
     ) {
       throw new Error(
-        "Procurement can finalize the evaluation only after the Project Manager and Head of Projects have both submitted.",
+        "Procurement can finalize the evaluation only after the Project Manager and Executive Oversight have both submitted.",
       );
     }
 

@@ -28,7 +28,7 @@ export function ActivityFeed({
         >
           <div className="flex min-w-0 items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--color-accent)]">
+              <p className="tg-micro-label tg-micro-label--caps text-[var(--color-accent)]">
                 {item.action.replaceAll("_", " ")}
               </p>
               <p className="mt-2 break-words text-base text-[var(--color-ink)]">

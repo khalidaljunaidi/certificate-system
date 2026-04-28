@@ -18,7 +18,8 @@ import type {
   WorkflowEmailEvent,
 } from "@prisma/client";
 
-export const APP_NAME = "The Gathering KSA Certificates";
+export const APP_NAME = "THE GATHERING KSA Procurement Operations Platform";
+export const APP_SHORT_NAME = "Procurement Operations Platform";
 export const DEFAULT_PM_TOKEN_TTL_DAYS = 7;
 export const DEFAULT_VENDOR_EVALUATION_TOKEN_TTL_DAYS = 7;
 export const CERTIFICATE_CODE_PREFIX = "TGCC";
@@ -31,6 +32,7 @@ export const PRIMARY_EVALUATOR_EMAIL = "khaledeljenidy@thegatheringksa.com";
 export const PROCUREMENT_LEAD_EMAIL = "abdulmajeed@thegatheringksa.com";
 export const PROCUREMENT_SPECIALIST_EMAIL = "samia@thegatheringksa.com";
 export const HEAD_OF_PROJECTS_EMAIL = "mohamed@thegatheringksa.com";
+export const EXECUTIVE_OVERSIGHT_NAME = "Khalid Al Junaidi";
 
 export const NOTIFICATION_EMAIL_GROUP_DEFINITIONS = [
   {
@@ -59,12 +61,15 @@ export const ADMIN_NAV_ITEMS = [
   { href: "/admin/dashboard", label: "Dashboard" },
   { href: "/admin/projects", label: "Projects" },
   { href: "/admin/vendors", label: "Vendors" },
+  { href: "/admin/payments", label: "Payments" },
+  { href: "/admin/vendor-registrations", label: "Vendor Registrations" },
   { href: "/admin/tasks", label: "Tasks" },
   { href: "/admin/performance", label: "Performance" },
   { href: "/admin/certificates", label: "Certificates" },
   { href: "/admin/notifications", label: "Notifications" },
   { href: "/admin/settings", label: "Settings" },
   { href: "/admin/roles", label: "Roles" },
+  { href: "/admin/system-errors", label: "System Errors" },
   { href: "/admin/profile", label: "Profile" },
 ] as const;
 
@@ -260,7 +265,7 @@ export const VENDOR_EVALUATION_ROLE_LABELS: Record<
   string
 > = {
   PROJECT_MANAGER: "Project Manager",
-  HEAD_OF_PROJECTS: "Head of Projects",
+  HEAD_OF_PROJECTS: "Executive Oversight",
   PROCUREMENT: "Procurement",
 };
 
@@ -293,7 +298,7 @@ export const WORKFLOW_EMAIL_EVENT_OPTIONS: Array<{
     value: "VENDOR_EVALUATION_REQUEST",
     label: "Vendor Evaluation Request",
     description:
-      "Controls routing for Project Manager and Head of Projects evaluation request emails.",
+      "Controls routing for the project manager and executive oversight evaluation request emails.",
   },
   {
     value: "FINAL_CERTIFICATE_ISSUED",

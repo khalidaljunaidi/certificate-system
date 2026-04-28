@@ -2,6 +2,7 @@ import type {
   CertificateStatus,
   NotificationSeverity,
   OperationalTaskStatus,
+  PaymentInstallmentStatus,
   PerformanceGrade,
   ProjectStatus,
   TaskSlaStatus,
@@ -10,7 +11,52 @@ import type {
   VendorEvaluationGrade,
 } from "@prisma/client";
 
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import type { PaymentRecordStatusView } from "@/lib/types";
+
+const STATUS_LABEL_OVERRIDES: Record<string, string> = {
+  NOT_STARTED: "Not Started",
+  IN_PROGRESS: "In Progress",
+  WAITING: "Waiting",
+  BLOCKED: "Blocked",
+  COMPLETED: "Completed",
+  OVERDUE: "Overdue",
+  ON_TRACK: "On Track",
+  AT_RISK: "At Risk",
+  PENDING_PM_APPROVAL: "PM Review",
+  PM_APPROVED: "PM Approved",
+  PM_REJECTED: "PM Rejected",
+  PENDING_REVIEW: "Pending",
+  READY_FOR_PROCUREMENT: "Ready",
+  READY_FOR_INVOICE: "Ready",
+  PO_AMOUNT_REQUIRED: "PO Required",
+  AWAITING_INVOICE: "Awaiting",
+  INVOICE_RECEIVED: "Invoice In",
+  UNDER_FINANCE_REVIEW: "Review",
+  PAYMENT_SCHEDULED: "Scheduled",
+  PARTIALLY_PAID: "Part Paid",
+  FULLY_PAID: "Paid",
+  CLOSED: "Closed",
+  ON_HOLD: "On Hold",
+  DISPUTED: "Disputed",
+  ACTION_REQUIRED: "Action",
+};
+
+function toTitleCaseLabel(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+function humanizeStatusLabel(value: string) {
+  return STATUS_LABEL_OVERRIDES[value] ?? toTitleCaseLabel(value);
+}
+
+function getStatusTitle(value: string) {
+  return toTitleCaseLabel(value);
+}
 
 export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   const variant =
@@ -22,7 +68,13 @@ export function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
           ? "red"
           : "orange";
 
-  return <Badge variant={variant}>{status.replaceAll("_", " ")}</Badge>;
+  return (
+    <StatusBadge
+      tone={variant}
+      label={humanizeStatusLabel(status)}
+      title={getStatusTitle(status)}
+    />
+  );
 }
 
 export function CertificateStatusBadge({
@@ -43,7 +95,13 @@ export function CertificateStatusBadge({
             ? "orange"
             : "neutral";
 
-  return <Badge variant={variant}>{status.replaceAll("_", " ")}</Badge>;
+  return (
+    <StatusBadge
+      tone={variant}
+      label={humanizeStatusLabel(status)}
+      title={getStatusTitle(status)}
+    />
+  );
 }
 
 export function VendorEvaluationStatusBadge({
@@ -58,7 +116,13 @@ export function VendorEvaluationStatusBadge({
         ? "purple"
         : "orange";
 
-  return <Badge variant={variant}>{status.replaceAll("_", " ")}</Badge>;
+  return (
+    <StatusBadge
+      tone={variant}
+      label={humanizeStatusLabel(status)}
+      title={getStatusTitle(status)}
+    />
+  );
 }
 
 export function VendorEvaluationGradeBadge({
@@ -75,7 +139,7 @@ export function VendorEvaluationGradeBadge({
           ? "orange"
           : "red";
 
-  return <Badge variant={variant}>Grade {grade}</Badge>;
+  return <StatusBadge tone={variant} label={`Grade ${grade}`} title={`Grade ${grade}`} />;
 }
 
 export function VendorStatusBadge({
@@ -83,7 +147,13 @@ export function VendorStatusBadge({
 }: {
   status: VendorStatus;
 }) {
-  return <Badge variant={status === "ACTIVE" ? "green" : "neutral"}>{status}</Badge>;
+  return (
+    <StatusBadge
+      tone={status === "ACTIVE" ? "green" : "neutral"}
+      label={humanizeStatusLabel(status)}
+      title={getStatusTitle(status)}
+    />
+  );
 }
 
 export function OperationalTaskStatusBadge({
@@ -102,7 +172,13 @@ export function OperationalTaskStatusBadge({
             ? "purple"
             : "neutral";
 
-  return <Badge variant={variant}>{status.replaceAll("_", " ")}</Badge>;
+  return (
+    <StatusBadge
+      tone={variant}
+      label={humanizeStatusLabel(status)}
+      title={getStatusTitle(status)}
+    />
+  );
 }
 
 export function TaskSlaStatusBadge({
@@ -117,7 +193,13 @@ export function TaskSlaStatusBadge({
         ? "orange"
         : "red";
 
-  return <Badge variant={variant}>{status.replaceAll("_", " ")}</Badge>;
+  return (
+    <StatusBadge
+      tone={variant}
+      label={humanizeStatusLabel(status)}
+      title={getStatusTitle(status)}
+    />
+  );
 }
 
 export function PerformanceGradeBadge({
@@ -134,7 +216,7 @@ export function PerformanceGradeBadge({
           ? "orange"
           : "red";
 
-  return <Badge variant={variant}>Grade {grade}</Badge>;
+  return <StatusBadge tone={variant} label={`Grade ${grade}`} title={`Grade ${grade}`} />;
 }
 
 export function NotificationSeverityBadge({
@@ -151,5 +233,75 @@ export function NotificationSeverityBadge({
           ? "orange"
           : "red";
 
-  return <Badge variant={variant}>{severity.replaceAll("_", " ")}</Badge>;
+  return (
+    <StatusBadge
+      tone={variant}
+      label={humanizeStatusLabel(severity)}
+      title={getStatusTitle(severity)}
+    />
+  );
+}
+
+export function PaymentInstallmentStatusBadge({
+  status,
+}: {
+  status: PaymentInstallmentStatus;
+}) {
+  const variant =
+    status === "PAID"
+      ? "green"
+      : status === "CANCELLED"
+        ? "neutral"
+      : status === "OVERDUE"
+        ? "red"
+        : status === "SCHEDULED"
+          ? "purple"
+          : status === "UNDER_REVIEW"
+            ? "orange"
+            : status === "INVOICE_RECEIVED"
+              ? "purple"
+              : status === "INVOICE_REQUIRED"
+                ? "orange"
+                : status === "PLANNED"
+                  ? "neutral"
+                  : "orange";
+
+  return (
+    <StatusBadge
+      tone={variant}
+      label={humanizeStatusLabel(status)}
+      title={getStatusTitle(status)}
+    />
+  );
+}
+
+export function PaymentRecordStatusBadge({
+  status,
+}: {
+  status: PaymentRecordStatusView;
+}) {
+  const variant =
+    status === "FULLY_PAID"
+      ? "green"
+      : status === "CLOSED"
+        ? "neutral"
+        : status === "DISPUTED"
+          ? "red"
+          : status === "ON_HOLD"
+            ? "orange"
+            : status === "PAYMENT_SCHEDULED" || status === "PARTIALLY_PAID"
+              ? "purple"
+              : status === "INVOICE_RECEIVED" || status === "UNDER_FINANCE_REVIEW"
+                ? "orange"
+                : status === "PO_AMOUNT_REQUIRED"
+                  ? "red"
+                  : "neutral";
+
+  return (
+    <StatusBadge
+      tone={variant}
+      label={humanizeStatusLabel(status)}
+      title={getStatusTitle(status)}
+    />
+  );
 }

@@ -17,6 +17,7 @@ enum UserRole {
 enum PermissionCategory {
   VENDORS
   PROJECTS
+  PAYMENTS
   TASKS
   CERTIFICATES
   EVALUATIONS
@@ -116,6 +117,31 @@ enum VendorStatus {
   INACTIVE
 }
 
+enum VendorRegistrationStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum VendorRegistrationAttachmentType {
+  CR
+  VAT
+  COMPANY_PROFILE
+  FINANCIALS
+  BANK_CERTIFICATE
+  SIGNATURE
+  STAMP
+}
+
+enum VendorRegistrationCityScope {
+  SPECIFIC_CITIES
+  ALL_COUNTRY
+  GCC
+  MENA
+  EU
+  GLOBAL
+}
+
 enum WorkflowEmailEvent {
   PM_APPROVAL_REQUEST
   PM_DECISION_NOTIFICATION
@@ -168,6 +194,34 @@ enum MonthlyCycleStatus {
   ARCHIVED
 }
 
+enum PaymentInstallmentStatus {
+  PLANNED
+  INVOICE_REQUIRED
+  INVOICE_RECEIVED
+  UNDER_REVIEW
+  SCHEDULED
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum PaymentAmountSource {
+  PO_CONTRACT
+  APPROVED_CERTIFICATE
+}
+
+enum PaymentInvoiceStatus {
+  MISSING
+  RECEIVED
+  REJECTED
+  APPROVED_FOR_PAYMENT
+}
+
+enum PaymentWorkflowOverrideStatus {
+  ON_HOLD
+  DISPUTED
+}
+
 enum NotificationSeverity {
   INFO
   ACTION_REQUIRED
@@ -212,6 +266,13 @@ enum PerformanceGrade {
   D
 }
 
+enum SystemErrorSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
 model User {
   id                  String          @id @default(cuid())
   name                String
@@ -245,6 +306,14 @@ model User {
   monthlyPerformanceReviewsGiven MonthlyPerformanceReview[] @relation("MonthlyPerformanceEvaluator")
   roleAssignment      UserRoleAssignment?
   createdRoleAssignments UserRoleAssignment[] @relation("UserRoleAssignmentCreatedBy")
+  reviewedVendorRegistrationRequests VendorRegistrationRequest[] @relation("VendorRegistrationReviewedBy")
+  createdPaymentInstallments ProjectVendorPaymentInstallment[] @relation("ProjectVendorPaymentInstallmentCreatedBy")
+  reviewedPaymentInstallments ProjectVendorPaymentInstallment[] @relation("ProjectVendorPaymentInstallmentFinanceReviewedBy")
+  ownedPaymentRecords ProjectVendor[] @relation("ProjectVendorPaymentFinanceOwner")
+  paymentWorkflowOverrideRecords ProjectVendor[] @relation("ProjectVendorPaymentWorkflowOverrideBy")
+  closedPaymentRecords ProjectVendor[] @relation("ProjectVendorPaymentClosedBy")
+  systemErrorLogs     SystemErrorLog[]
+  supplierInvitations SupplierInvitation[] @relation("SupplierInvitationInvitedBy")
 }
 
 model Project {
@@ -279,6 +348,7 @@ model Vendor {
   vendorName   String
   vendorEmail  String
   vendorId     String          @unique
+  supplierId   String?         @unique
   vendorPhone  String?
   status       VendorStatus    @default(ACTIVE)
   classification String?
@@ -292,6 +362,7 @@ model Vendor {
   projectLinks ProjectVendor[]
   certificates Certificate[]
   evaluationCycles VendorEvaluationCycle[]
+  registrationRequests VendorRegistrationRequest[] @relation("VendorRegistrationApprovedVendor")
   notifications Notification[] @relation("VendorNotifications")
   operationalTasks OperationalTask[] @relation("VendorOperationalTasks")
   notificationDispatchLogs NotificationDispatchLog[] @relation("VendorNotificationDispatchLogs")
@@ -299,10 +370,198 @@ model Vendor {
   @@index([status])
   @@index([status, vendorName])
   @@index([vendorName])
+  @@index([supplierId])
   @@index([categoryId])
   @@index([subcategoryId])
   @@index([createdAt])
   @@index([updatedAt])
+}
+
+model Country {
+  code        String                       @id
+  name        String
+  regionGroup String?
+  isActive    Boolean                      @default(true)
+  createdAt   DateTime                     @default(now())
+  updatedAt   DateTime                     @updatedAt
+  cities      City[]
+  registrations VendorRegistrationRequest[]
+  sequences   SupplierIdSequence[]
+
+  @@index([name])
+  @@index([regionGroup])
+  @@index([isActive])
+}
+
+model City {
+  id          String                         @id @default(cuid())
+  countryCode String
+  name        String
+  region      String?
+  isActive    Boolean                        @default(true)
+  createdAt   DateTime                       @default(now())
+  updatedAt   DateTime                       @updatedAt
+  country     Country                        @relation(fields: [countryCode], references: [code], onDelete: Cascade)
+  registrationCities VendorRegistrationRequestCity[]
+
+  @@unique([countryCode, name])
+  @@index([countryCode])
+  @@index([countryCode, region])
+  @@index([isActive])
+}
+
+model SupplierIdSequence {
+  countryCode  String
+  categoryCode String
+  nextSerial   Int        @default(1)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  country      Country    @relation(fields: [countryCode], references: [code], onDelete: Cascade)
+
+  @@id([countryCode, categoryCode])
+  @@index([categoryCode])
+}
+
+model VendorRegistrationRequest {
+  id                      String                         @id @default(cuid())
+  requestNumber           String                         @unique
+  companyName             String
+  legalName               String
+  companyEmail            String
+  companyPhone            String
+  website                 String?
+  crNumber                String
+  vatNumber               String
+  categoryId              String
+  primarySubcategoryId    String
+  countryCode             String
+  coverageScope           VendorRegistrationCityScope    @default(SPECIFIC_CITIES)
+  addressLine1            String
+  addressLine2            String?
+  district                String
+  region                  String?
+  postalCode              String
+  poBox                   String?
+  businessDescription     String
+  yearsInBusiness         Int
+  employeeCount           Int
+  productsServicesSummary String
+  bankName                String
+  accountName             String
+  iban                    String
+  swiftCode               String
+  bankAccountNumber       String?
+  additionalInformation   String
+  declarationName         String
+  declarationTitle        String
+  declarationAccepted     Boolean                        @default(false)
+  declarationSignedAt     DateTime?
+  formSnapshot            Json
+  status                  VendorRegistrationStatus      @default(PENDING_REVIEW)
+  rejectionReason         String?
+  reviewedByUserId        String?
+  reviewedAt              DateTime?
+  supplierId              String?                        @unique
+  approvedVendorId        String?
+  certificatePdfStoragePath String?
+  submittedAt             DateTime                       @default(now())
+  createdAt               DateTime                       @default(now())
+  updatedAt               DateTime                       @updatedAt
+  country                 Country                        @relation(fields: [countryCode], references: [code], onDelete: Restrict)
+  primaryCategory         VendorCategory                 @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  primarySubcategory      VendorSubcategory              @relation(fields: [primarySubcategoryId], references: [id], onDelete: Restrict)
+  reviewedBy              User?                          @relation("VendorRegistrationReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  approvedVendor          Vendor?                        @relation("VendorRegistrationApprovedVendor", fields: [approvedVendorId], references: [id], onDelete: SetNull)
+  attachments             VendorRegistrationAttachment[]
+  references              VendorRegistrationReference[]
+  selectedSubcategories    VendorRegistrationRequestSubcategory[]
+  selectedCities           VendorRegistrationRequestCity[]
+
+  @@index([status, submittedAt])
+  @@index([companyEmail])
+  @@index([crNumber])
+  @@index([vatNumber])
+  @@index([countryCode])
+  @@index([categoryId])
+  @@index([supplierId])
+}
+
+model VendorRegistrationRequestSubcategory {
+  requestId     String
+  subcategoryId String
+  createdAt     DateTime          @default(now())
+  request       VendorRegistrationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  subcategory   VendorSubcategory @relation(fields: [subcategoryId], references: [id], onDelete: Restrict)
+
+  @@id([requestId, subcategoryId])
+  @@index([subcategoryId])
+}
+
+model VendorRegistrationRequestCity {
+  requestId String
+  cityId    String
+  createdAt DateTime   @default(now())
+  request   VendorRegistrationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  city      City       @relation(fields: [cityId], references: [id], onDelete: Restrict)
+
+  @@id([requestId, cityId])
+  @@index([cityId])
+}
+
+model VendorRegistrationReference {
+  id          String                   @id @default(cuid())
+  requestId   String
+  name        String
+  companyName String
+  email       String
+  phone       String?
+  title       String?
+  createdAt   DateTime                 @default(now())
+  updatedAt   DateTime                 @updatedAt
+  request     VendorRegistrationRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@index([email])
+}
+
+model VendorRegistrationAttachment {
+  id          String                     @id @default(cuid())
+  requestId   String
+  type        VendorRegistrationAttachmentType
+  fileName    String
+  mimeType    String
+  storagePath String
+  sizeBytes   Int
+  createdAt   DateTime                   @default(now())
+  updatedAt   DateTime                   @updatedAt
+  request     VendorRegistrationRequest  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, type])
+  @@index([requestId, type])
+}
+
+model SupplierInvitation {
+  id                    String                     @id @default(cuid())
+  supplierCompanyName    String?
+  supplierContactName    String?
+  supplierContactEmail   String
+  suggestedCategoryId    String?
+  internalNote           String?
+  customMessage          String?
+  registrationUrl        String
+  invitedByUserId        String
+  invitedAt              DateTime                   @default(now())
+  emailSentAt            DateTime?
+  emailDeliveryStatus    NotificationDeliveryStatus @default(NOT_REQUESTED)
+  emailDeliveryError     String?
+  updatedAt              DateTime                   @updatedAt
+  suggestedCategory      VendorCategory?            @relation("SupplierInvitationSuggestedCategory", fields: [suggestedCategoryId], references: [id], onDelete: SetNull)
+  invitedBy              User                       @relation("SupplierInvitationInvitedBy", fields: [invitedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([supplierContactEmail])
+  @@index([suggestedCategoryId])
+  @@index([invitedByUserId, invitedAt])
+  @@index([emailDeliveryStatus, invitedAt])
 }
 
 model VendorCategory {
@@ -313,6 +572,8 @@ model VendorCategory {
   updatedAt   DateTime            @updatedAt
   subcategories VendorSubcategory[]
   vendors     Vendor[]
+  registrationRequests VendorRegistrationRequest[]
+  supplierInvitations SupplierInvitation[] @relation("SupplierInvitationSuggestedCategory")
 }
 
 model VendorSubcategory {
@@ -324,6 +585,8 @@ model VendorSubcategory {
   updatedAt   DateTime       @updatedAt
   category    VendorCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   vendors     Vendor[]
+  registrationRequests VendorRegistrationRequest[]
+  registrationSelections VendorRegistrationRequestSubcategory[]
 
   @@unique([categoryId, name])
   @@index([categoryId])
@@ -335,12 +598,30 @@ model ProjectVendor {
   vendorId       String
   poNumber       String?
   contractNumber String?
+  poAmount       Decimal?      @db.Decimal(12, 2)
+  paymentAmount  Decimal?      @db.Decimal(12, 2)
+  paymentAmountSource PaymentAmountSource?
+  paymentSourceCertificateId String?
+  paymentAmountSyncedAt DateTime?
+  paymentFinanceOwnerUserId String?
+  paymentNotes   String?
+  paymentWorkflowOverrideStatus PaymentWorkflowOverrideStatus?
+  paymentWorkflowOverrideReason String?
+  paymentWorkflowOverrideAt DateTime?
+  paymentWorkflowOverrideByUserId String?
+  paymentClosedAt DateTime?
+  paymentClosedByUserId String?
   isActive       Boolean       @default(true)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   vendor         Vendor        @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  paymentSourceCertificate Certificate? @relation("ProjectVendorPaymentSourceCertificate", fields: [paymentSourceCertificateId], references: [id], onDelete: SetNull)
+  paymentFinanceOwner User?    @relation("ProjectVendorPaymentFinanceOwner", fields: [paymentFinanceOwnerUserId], references: [id], onDelete: SetNull)
+  paymentWorkflowOverrideBy User? @relation("ProjectVendorPaymentWorkflowOverrideBy", fields: [paymentWorkflowOverrideByUserId], references: [id], onDelete: SetNull)
+  paymentClosedBy User?        @relation("ProjectVendorPaymentClosedBy", fields: [paymentClosedByUserId], references: [id], onDelete: SetNull)
   certificates   Certificate[]
+  paymentInstallments ProjectVendorPaymentInstallment[]
   operationalTasks OperationalTask[] @relation("ProjectVendorOperationalTasks")
   notifications Notification[] @relation("ProjectVendorNotifications")
   notificationDispatchLogs NotificationDispatchLog[] @relation("ProjectVendorNotificationDispatchLogs")
@@ -350,7 +631,49 @@ model ProjectVendor {
   @@index([vendorId])
   @@index([projectId, createdAt])
   @@index([vendorId, createdAt])
+  @@index([paymentAmountSource])
+  @@index([paymentSourceCertificateId])
+  @@index([paymentFinanceOwnerUserId])
+  @@index([paymentWorkflowOverrideStatus])
+  @@index([paymentWorkflowOverrideByUserId])
+  @@index([paymentClosedAt])
   @@index([isActive])
+}
+
+model ProjectVendorPaymentInstallment {
+  id              String                 @id @default(cuid())
+  projectVendorId  String
+  amount          Decimal                @db.Decimal(12, 2)
+  dueDate         DateTime
+  condition       String
+  invoiceNumber   String?
+  invoiceStoragePath String?
+  invoiceDate     DateTime?
+  invoiceAmount   Decimal?               @db.Decimal(12, 2)
+  invoiceReceivedDate DateTime?
+  taxInvoiceValidated Boolean            @default(false)
+  invoiceStatus   PaymentInvoiceStatus   @default(MISSING)
+  financeReviewNotes String?
+  financeReviewedAt DateTime?
+  financeReviewedByUserId String?
+  scheduledPaymentDate DateTime?
+  paymentDate     DateTime?
+  status          PaymentInstallmentStatus @default(PLANNED)
+  notes           String?
+  createdByUserId String
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  projectVendor   ProjectVendor          @relation(fields: [projectVendorId], references: [id], onDelete: Cascade)
+  createdBy       User                   @relation("ProjectVendorPaymentInstallmentCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  financeReviewedBy User?                @relation("ProjectVendorPaymentInstallmentFinanceReviewedBy", fields: [financeReviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([projectVendorId, status])
+  @@index([projectVendorId, dueDate])
+  @@index([status, dueDate])
+  @@index([invoiceStatus])
+  @@index([invoiceReceivedDate])
+  @@index([scheduledPaymentDate])
+  @@index([createdAt])
 }
 
 model Certificate {
@@ -388,6 +711,7 @@ model Certificate {
   project              Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
   vendor               Vendor            @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   projectVendor        ProjectVendor     @relation(fields: [projectVendorId], references: [id], onDelete: Restrict)
+  paymentSourceAssignments ProjectVendor[] @relation("ProjectVendorPaymentSourceCertificate")
   createdBy            User              @relation("CertificateCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   approvalTokens       ApprovalToken[]
   notifications        Notification[]    @relation("CertificateNotifications")
@@ -692,6 +1016,23 @@ model NotificationDispatchLog {
   @@index([relatedProjectVendorId])
   @@index([relatedCertificateId])
   @@index([relatedTaskId])
+}
+
+model SystemErrorLog {
+  id          String              @id @default(cuid())
+  userId      String?
+  action      String
+  errorName   String?
+  errorMessage String
+  stackTrace  String?
+  severity    SystemErrorSeverity @default(ERROR)
+  context     Json?
+  createdAt   DateTime            @default(now())
+  user        User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([severity, createdAt])
+  @@index([createdAt])
 }
 
 model QuarterlyPerformanceReview {

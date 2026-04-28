@@ -4,6 +4,7 @@ import { ProjectStatusBadge } from "@/components/admin/status-badges";
 import { ProjectForm } from "@/components/forms/project-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader, PageShell } from "@/components/layout/page-shell";
 import { getProjectList } from "@/server/queries/project-queries";
 
 type ProjectsPageProps = {
@@ -37,21 +38,17 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
   };
 
   return (
-    <div className="space-y-8">
-      <section className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-accent)]">
-            Projects
-          </p>
-          <h1 className="mt-2 text-4xl font-semibold text-[var(--color-ink)]">
-            Project Workspace Directory
-          </h1>
-          <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
-            Browse project operations first, then move into vendor links and
-            certificate workflows from the project context.
-          </p>
-          <div className="mt-5 flex flex-wrap gap-3">
-            <Button asChild variant={archiveView === "active" ? "default" : "secondary"}>
+    <PageShell>
+      <PageHeader
+        eyebrow="Projects"
+        title="Project workspace directory"
+        description="Browse project operations first, then move into vendor links and certificate workflows from the project context."
+        actions={
+          <>
+            <Button
+              asChild
+              variant={archiveView === "active" ? "default" : "secondary"}
+            >
               <Link href={buildArchiveHref("active")}>Active Projects</Link>
             </Button>
             <Button
@@ -60,9 +57,9 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
             >
               <Link href={buildArchiveHref("archived")}>Archived Projects</Link>
             </Button>
-          </div>
-        </div>
-      </section>
+          </>
+        }
+      />
 
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <Card>
@@ -156,6 +153,6 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
 
         <ProjectForm />
       </section>
-    </div>
+    </PageShell>
   );
 }

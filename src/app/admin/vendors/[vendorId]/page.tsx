@@ -18,7 +18,10 @@ import { VendorSubcategoryForm } from "@/components/forms/vendor-subcategory-for
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { requireAdminSession } from "@/lib/auth";
-import { VENDOR_EVALUATION_ROLE_LABELS } from "@/lib/constants";
+import {
+  EXECUTIVE_OVERSIGHT_NAME,
+  VENDOR_EVALUATION_ROLE_LABELS,
+} from "@/lib/constants";
 import {
   canFinalizeVendorEvaluation,
   canManageVendorGovernance,
@@ -427,7 +430,7 @@ export default async function VendorDetailPage({
         </Card>
       ) : null}
 
-      <Card>
+      <Card id="vendor-assignments" className="scroll-mt-28">
         <CardHeader>
           <CardTitle>Project Assignment Families</CardTitle>
         </CardHeader>
@@ -640,9 +643,9 @@ export default async function VendorDetailPage({
                         valueClassName="break-all text-sm leading-7"
                       />
                       <InfoTile
-                        label="Head of Projects"
-                        value={cycle.headOfProjectsEmail}
-                        valueClassName="break-all text-sm leading-7"
+                        label="Executive Oversight"
+                        value={EXECUTIVE_OVERSIGHT_NAME}
+                        valueClassName="text-sm leading-7"
                       />
                       <InfoTile
                         label="Final Score"

@@ -7,6 +7,12 @@ export type PermissionKey =
   | "project.create"
   | "project.edit"
   | "project.status.manage"
+  | "payment.view"
+  | "payment.create"
+  | "payment.update"
+  | "payment.close"
+  | "payment.export"
+  | "payment.assignFinanceOwner"
   | "task.create"
   | "task.edit"
   | "task.execute"
@@ -37,6 +43,7 @@ export type PermissionDefinition = {
 export const PERMISSION_CATEGORY_LABELS: Record<PermissionCategory, string> = {
   VENDORS: "Vendors",
   PROJECTS: "Projects",
+  PAYMENTS: "Payments",
   TASKS: "Tasks",
   CERTIFICATES: "Certificates",
   EVALUATIONS: "Evaluations",
@@ -85,6 +92,48 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     category: "PROJECTS",
     description: "Update project lifecycle status.",
     sortOrder: 30,
+  },
+  {
+    key: "payment.view",
+    label: "View Payments",
+    category: "PAYMENTS",
+    description: "Open the payments workspace and review payment records.",
+    sortOrder: 10,
+  },
+  {
+    key: "payment.create",
+    label: "Create Payment Plans",
+    category: "PAYMENTS",
+    description: "Add installments and start payment records for project assignments.",
+    sortOrder: 20,
+  },
+  {
+    key: "payment.update",
+    label: "Update Payments",
+    category: "PAYMENTS",
+    description: "Edit installment details, invoice data, and payment progress.",
+    sortOrder: 30,
+  },
+  {
+    key: "payment.close",
+    label: "Close Payments",
+    category: "PAYMENTS",
+    description: "Close or reopen payment records with governance notes.",
+    sortOrder: 40,
+  },
+  {
+    key: "payment.export",
+    label: "Export Payments",
+    category: "PAYMENTS",
+    description: "Export payment records to PDF, CSV, or Excel.",
+    sortOrder: 50,
+  },
+  {
+    key: "payment.assignFinanceOwner",
+    label: "Assign Finance Owner",
+    category: "PAYMENTS",
+    description: "Assign or change the finance owner for a payment record.",
+    sortOrder: 60,
   },
   {
     key: "task.create",
@@ -245,6 +294,12 @@ export const DEFAULT_ROLE_DEFINITIONS: DefaultRolePermissionMap[] = [
       "project.create",
       "project.edit",
       "project.status.manage",
+      "payment.view",
+      "payment.create",
+      "payment.update",
+      "payment.close",
+      "payment.export",
+      "payment.assignFinanceOwner",
       "task.create",
       "task.edit",
       "task.execute",
@@ -272,6 +327,10 @@ export const DEFAULT_ROLE_DEFINITIONS: DefaultRolePermissionMap[] = [
       "project.create",
       "project.edit",
       "project.status.manage",
+      "payment.view",
+      "payment.create",
+      "payment.update",
+      "payment.export",
       "task.create",
       "task.edit",
       "task.execute",
@@ -295,6 +354,7 @@ export const DEFAULT_ROLE_DEFINITIONS: DefaultRolePermissionMap[] = [
     sortOrder: 30,
     permissions: [
       "project.create",
+      "payment.view",
       "task.execute",
       "task.complete",
       "certificate.create",
@@ -313,6 +373,7 @@ export const DEFAULT_ROLE_DEFINITIONS: DefaultRolePermissionMap[] = [
     sortOrder: 40,
     permissions: [
       "project.create",
+      "payment.view",
       "task.execute",
       "task.complete",
       "certificate.create",
@@ -321,6 +382,18 @@ export const DEFAULT_ROLE_DEFINITIONS: DefaultRolePermissionMap[] = [
       "certificate.issue",
       "certificate.reopen",
       "certificate.archive",
+    ],
+  },
+  {
+    key: "FINANCE_PAYMENT_USER",
+    name: "Finance Payment User",
+    description: "Finance-focused access for assigned payment records only.",
+    isSystem: true,
+    sortOrder: 50,
+    permissions: [
+      "payment.view",
+      "payment.update",
+      "payment.export",
     ],
   },
 ];
@@ -345,6 +418,7 @@ export function groupPermissionsByCategory() {
       {
         VENDORS: [],
         PROJECTS: [],
+        PAYMENTS: [],
         TASKS: [],
         CERTIFICATES: [],
         EVALUATIONS: [],

@@ -14,6 +14,8 @@ import {
 } from "@/components/admin/status-badges";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Chip } from "@/components/ui/chip";
+import { PageHeader, PageShell } from "@/components/layout/page-shell";
 import { requireAdminSession } from "@/lib/auth";
 import { QUARTER_LABELS } from "@/lib/constants";
 import { getDashboardData } from "@/server/queries/dashboard-queries";
@@ -49,7 +51,7 @@ export default async function AdminDashboardPage({
   ]);
 
   return (
-    <div className="space-y-8">
+    <PageShell>
       {params.notice === "password-updated" ? (
         <PageNotice
           title="Password updated successfully."
@@ -57,19 +59,13 @@ export default async function AdminDashboardPage({
         />
       ) : null}
 
-      <section className="tg-reveal tg-breathe-panel rounded-[32px] border border-[var(--color-border)] bg-[linear-gradient(135deg,rgba(49,19,71,0.98),rgba(77,34,106,0.96)_62%,rgba(215,132,57,0.94))] px-8 py-9 text-white">
-        <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#f7c08b]">
-          Dashboard
-        </p>
-        <h1 className="mt-4 text-4xl font-semibold leading-tight">
-          Project-based certificate governance at a glance.
-        </h1>
-        <p className="mt-4 max-w-3xl text-base leading-8 text-[#efe3f5]">
-          Monitor live project and certificate workload, recent workflow actions,
-          unread operational notifications, and outbound email testing from one
-          internal command center.
-        </p>
-      </section>
+      <PageHeader
+        eyebrow="Dashboard"
+        title="Procurement operations, vendor governance, and delivery control at a glance."
+        description="Monitor live project workload, supplier intake, certificate actions, unread operational notifications, and outbound email testing from one internal command center."
+        variant="feature"
+        className="tg-reveal tg-breathe-panel"
+      />
 
       <section className="grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
@@ -183,7 +179,7 @@ export default async function AdminDashboardPage({
                     <p className="text-sm font-semibold text-[var(--color-ink)]">
                       {performanceDashboard.currentUserSummary.name}
                     </p>
-                    <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
+                    <p className="tg-micro-label tg-micro-label--caps">
                       {performanceDashboard.currentUserSummary.title}
                     </p>
                   </div>
@@ -322,9 +318,13 @@ export default async function AdminDashboardPage({
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-[var(--color-panel-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-primary)]">
+                      <Chip
+                        tone="purple"
+                        size="sm"
+                        className="normal-case tracking-[0.08em]"
+                      >
                         {member.workloadLevel}
-                      </span>
+                      </Chip>
                       {member.grade ? (
                         <PerformanceGradeBadge grade={member.grade} />
                       ) : null}
@@ -401,16 +401,31 @@ export default async function AdminDashboardPage({
                   href={`/admin/tasks/${task.id}`}
                   className="block rounded-[24px] border border-[var(--color-border)] bg-white p-5 transition-colors hover:bg-[var(--color-panel-soft)]"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-[var(--color-ink)]">{task.title}</p>
-                      <p className="mt-2 text-sm text-[var(--color-muted)]">
-                        {task.assignedTo.name} | Due {formatDate(task.dueDate)}
-                      </p>
+                  <div className="grid min-h-[132px] grid-rows-[auto_1fr] gap-4">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                      <div className="min-w-0">
+                        <p className="line-clamp-2 text-base font-semibold leading-7 text-[var(--color-ink)]">
+                          {task.title}
+                        </p>
+                      </div>
+                      <div className="flex max-w-[12rem] flex-wrap justify-end gap-2">
+                        <OperationalTaskStatusBadge status={task.status} />
+                        <TaskSlaStatusBadge status={task.slaStatus} />
+                      </div>
                     </div>
-                    <div className="space-y-2 text-right">
-                      <OperationalTaskStatusBadge status={task.status} />
-                      <TaskSlaStatusBadge status={task.slaStatus} />
+
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+                      <div className="min-w-0 self-end">
+                        <p className="text-sm text-[var(--color-muted)]">
+                          {task.assignedTo.name} | Due {formatDate(task.dueDate)}
+                        </p>
+                      </div>
+                      <div className="tg-micro-stack items-end text-right">
+                        <p className="tg-micro-label">Checklist</p>
+                        <p className="text-sm font-semibold text-[var(--color-ink)]">
+                          {task.completedChecklistItemsCount}/{task.checklistItemsCount}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </Link>
@@ -450,14 +465,14 @@ export default async function AdminDashboardPage({
       <section className="tg-reveal tg-delay-2">
         <EmailTestPanel defaultRecipientEmail={session.user.email} />
       </section>
-    </div>
+    </PageShell>
   );
 }
 
 function InfoTile({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-[22px] border border-[var(--color-border)] bg-white p-4">
-      <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
+      <p className="tg-micro-label tg-micro-label--caps">
         {label}
       </p>
       <p className="mt-2 break-words text-lg font-semibold text-[var(--color-ink)]">

@@ -27,6 +27,10 @@ export const projectVendorFormSchema = z.object({
   vendorPhone: z.string().trim().optional(),
   poNumber: z.string().trim().optional(),
   contractNumber: z.string().trim().optional(),
+  poAmount: z.preprocess(
+    (value) => (value === "" || value === null ? undefined : value),
+    z.coerce.number().positive("PO amount must be greater than zero").optional(),
+  ),
 }).superRefine((values, context) => {
   if (values.existingVendorRecordId) {
     return;
@@ -60,6 +64,17 @@ export const projectVendorFormSchema = z.object({
 export const updateProjectStatusSchema = z.object({
   projectId: requiredString("Project"),
   status: z.enum(["PLANNED", "ACTIVE", "COMPLETED", "ON_HOLD", "CANCELLED"]),
+});
+
+export const updateProjectVendorAssignmentSchema = z.object({
+  projectId: requiredString("Project"),
+  projectVendorId: requiredString("Project vendor assignment"),
+  poNumber: z.string().trim().optional(),
+  contractNumber: z.string().trim().optional(),
+  poAmount: z.preprocess(
+    (value) => (value === "" || value === null ? undefined : value),
+    z.coerce.number().nonnegative("PO amount must be zero or greater").optional(),
+  ),
 });
 
 export const vendorGovernanceSchema = z
@@ -112,6 +127,224 @@ export const vendorMasterSchema = z
     message: "Choose a category before selecting a subcategory.",
     path: ["subcategoryId"],
   });
+
+const vendorRegistrationCoverageScopeSchema = z.enum([
+  "SPECIFIC_CITIES",
+  "ALL_COUNTRY",
+  "GCC",
+  "MENA",
+  "EU",
+  "GLOBAL",
+]);
+
+const vendorRegistrationReferenceSchema = z.object({
+  name: requiredString("Reference name").max(120),
+  companyName: requiredString("Reference company name").max(120),
+  email: z.email("Enter a valid reference email"),
+  phone: requiredString("Reference phone").max(40),
+  title: requiredString("Reference title").max(120),
+});
+
+export const vendorRegistrationSubmissionSchema = z
+  .object({
+    companyName: requiredString("Company name").max(200),
+    legalName: requiredString("Legal name").max(200),
+    companyEmail: z.email("Enter a valid company email"),
+    companyPhone: requiredString("Company phone").max(40),
+    website: requiredString("Website").max(200),
+    crNumber: requiredString("CR number").max(120),
+    vatNumber: requiredString("VAT number").max(120),
+    countryCode: requiredString("Country"),
+    coverageScope: vendorRegistrationCoverageScopeSchema,
+    cityIds: z.array(z.string().trim()).min(1, "Select at least one city"),
+    categoryId: requiredString("Main category"),
+    subcategoryIds: z.array(z.string().trim()).min(1, "Select at least one subcategory"),
+    addressLine1: requiredString("Address line 1").max(240),
+    addressLine2: requiredString("Address line 2").max(240),
+    district: requiredString("District").max(120),
+    region: requiredString("Region").max(120),
+    postalCode: requiredString("Postal code").max(40),
+    poBox: requiredString("P.O. Box").max(60),
+    businessDescription: requiredString("Business description").max(1200),
+    servicesOverview: requiredString("Products / services").max(1200),
+    yearsInBusiness: z.coerce.number().int().min(0).max(200),
+    employeeCount: z.coerce.number().int().min(1).max(100000),
+    reference1: vendorRegistrationReferenceSchema,
+    reference2: vendorRegistrationReferenceSchema,
+    reference3: vendorRegistrationReferenceSchema,
+    bankName: requiredString("Bank name").max(120),
+    accountName: requiredString("Account name").max(160),
+    iban: requiredString("IBAN").max(64),
+    swiftCode: requiredString("SWIFT code").max(24),
+    bankAccountNumber: requiredString("Bank account number").max(64),
+    additionalInformation: z.string().trim().max(2000).optional(),
+    declarationName: requiredString("Declaration name").max(160),
+    declarationTitle: requiredString("Declaration title").max(160),
+    declarationAccepted: z.literal("on"),
+  })
+  .refine((values) => values.coverageScope !== "SPECIFIC_CITIES" || values.cityIds.length > 0, {
+    message: "Select at least one city for a specific city coverage selection.",
+    path: ["cityIds"],
+  });
+
+export const vendorRegistrationReviewSchema = z
+  .object({
+    requestId: requiredString("Vendor registration request"),
+    decision: z.enum(["APPROVE", "REJECT"]),
+    rejectionReason: z.string().trim().max(1200).optional(),
+  })
+  .refine((values) => values.decision !== "REJECT" || Boolean(values.rejectionReason), {
+    message: "A rejection reason is required when rejecting a registration.",
+    path: ["rejectionReason"],
+  });
+
+export const supplierInvitationSchema = z.object({
+  supplierCompanyName: z.string().trim().max(200).optional(),
+  supplierContactEmail: z.email("Enter a valid supplier email"),
+  supplierContactName: z.string().trim().max(200).optional(),
+  suggestedCategoryId: z.string().trim().optional(),
+  internalNote: z.string().trim().max(2000).optional(),
+  customMessage: z.string().trim().max(4000).optional(),
+});
+
+export const projectVendorPaymentInstallmentSchema = z.object({
+  projectId: requiredString("Project"),
+  projectVendorId: requiredString("Project vendor"),
+  installmentId: z.string().trim().optional(),
+  workflowIntent: z.enum([
+    "CREATE_PLAN",
+    "EDIT_PLAN",
+    "ADD_INVOICE",
+    "REVIEW_INVOICE",
+    "SCHEDULE_PAYMENT",
+    "MARK_PAID",
+  ]),
+  amount: z.coerce.number().positive("Amount must be greater than zero"),
+  dueDate: z.coerce.date(),
+  condition: requiredString("Payment condition").max(500),
+  invoiceNumber: z.string().trim().max(120).optional(),
+  invoiceDate: z.coerce.date().optional(),
+  invoiceAmount: z.preprocess(
+    (value) => (value === "" || value === null ? undefined : value),
+    z.coerce.number().positive("Invoice amount must be greater than zero").optional(),
+  ),
+  invoiceReceivedDate: z.coerce.date().optional(),
+  taxInvoiceValidated: z.preprocess(
+    (value) => value === "on" || value === true,
+    z.boolean(),
+  ),
+  invoiceStatus: z
+    .enum(["MISSING", "RECEIVED", "REJECTED", "APPROVED_FOR_PAYMENT"])
+    .optional(),
+  financeReviewNotes: z.string().trim().max(2000).optional(),
+  scheduledPaymentDate: z.coerce.date().optional(),
+  paymentDate: z.coerce.date().optional(),
+  notes: z.string().trim().max(1200).optional(),
+}).superRefine((values, context) => {
+  if (values.workflowIntent === "ADD_INVOICE") {
+    if (!values.invoiceNumber) {
+      context.addIssue({
+        code: "custom",
+        path: ["invoiceNumber"],
+        message: "Invoice number is required.",
+      });
+    }
+
+    if (!values.invoiceDate) {
+      context.addIssue({
+        code: "custom",
+        path: ["invoiceDate"],
+        message: "Invoice date is required.",
+      });
+    }
+
+    if (!values.invoiceAmount) {
+      context.addIssue({
+        code: "custom",
+        path: ["invoiceAmount"],
+        message: "Invoice amount is required.",
+      });
+    }
+
+    if (!values.invoiceReceivedDate) {
+      context.addIssue({
+        code: "custom",
+        path: ["invoiceReceivedDate"],
+        message: "Invoice received date is required.",
+      });
+    }
+  }
+
+  if (values.workflowIntent === "REVIEW_INVOICE") {
+    if (!values.invoiceStatus || values.invoiceStatus === "MISSING") {
+      context.addIssue({
+        code: "custom",
+        path: ["invoiceStatus"],
+        message: "Select a finance review decision.",
+      });
+    }
+  }
+
+  if (values.workflowIntent === "SCHEDULE_PAYMENT" && !values.scheduledPaymentDate) {
+    context.addIssue({
+      code: "custom",
+      path: ["scheduledPaymentDate"],
+      message: "Scheduled payment date is required.",
+    });
+  }
+
+  if (values.workflowIntent === "MARK_PAID" && !values.paymentDate) {
+    context.addIssue({
+      code: "custom",
+      path: ["paymentDate"],
+      message: "Payment date is required when marking an installment as paid.",
+    });
+  }
+});
+
+export const paymentRecordGovernanceSchema = z.object({
+  projectVendorId: requiredString("Payment record"),
+  financeOwnerUserId: z.string().trim().optional(),
+  paymentNotes: z.string().trim().max(4000).optional(),
+  paymentWorkflowOverrideStatus: z
+    .enum(["ON_HOLD", "DISPUTED"])
+    .optional()
+    .or(z.literal("")),
+  paymentWorkflowOverrideReason: z.string().trim().max(2000).optional(),
+}).refine(
+  (values) =>
+    !values.paymentWorkflowOverrideStatus ||
+    Boolean(values.paymentWorkflowOverrideReason),
+  {
+    message: "An override reason is required when placing a record on hold or dispute.",
+    path: ["paymentWorkflowOverrideReason"],
+  },
+);
+
+export const paymentRecordCloseSchema = z.object({
+  projectVendorId: requiredString("Payment record"),
+  closeAction: z.enum(["CLOSE", "REOPEN"]),
+  overrideClosure: z.preprocess(
+    (value) => value === "on" || value === true,
+    z.boolean(),
+  ),
+  closeReason: z.string().trim().max(2000).optional(),
+}).refine(
+  (values) =>
+    values.closeAction !== "CLOSE" ||
+    !values.overrideClosure ||
+    Boolean(values.closeReason),
+  {
+    message: "An override reason is required before forcing payment closure.",
+    path: ["closeReason"],
+  },
+).refine(
+  (values) => values.closeAction !== "REOPEN" || Boolean(values.closeReason),
+  {
+    message: "A reopening note is required before reopening the payment record.",
+    path: ["closeReason"],
+  },
+);
 
 export const workflowEmailSettingSchema = z.object({
   event: z.enum([
@@ -420,5 +653,18 @@ export const roleFormSchema = z.object({
 
 export const userRoleAssignmentSchema = z.object({
   userId: requiredString("User"),
+  roleId: requiredString("Role"),
+});
+
+export const internalUserCreateSchema = z.object({
+  name: requiredString("Full name").max(160, "Name must stay concise"),
+  email: z.email("Enter a valid email address"),
+  title: requiredString("Title").max(160, "Title must stay concise"),
+  temporaryPassword: z
+    .string()
+    .min(10, "Temporary password must be at least 10 characters long")
+    .regex(/[A-Z]/, "Temporary password must include at least one uppercase letter")
+    .regex(/[a-z]/, "Temporary password must include at least one lowercase letter")
+    .regex(/[0-9]/, "Temporary password must include at least one number"),
   roleId: requiredString("Role"),
 });

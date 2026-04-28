@@ -41,8 +41,8 @@ export function CircularKpiMeter({
   const palette = TONE_STYLES[tone];
 
   return (
-    <div className="flex h-full min-w-0 flex-col rounded-[28px] border border-[var(--color-border)] bg-white p-4 shadow-[0_20px_50px_rgba(17,17,17,0.05)]">
-      <p className="min-w-0 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
+    <div className="flex h-full min-w-0 flex-col rounded-[26px] border border-[var(--color-border)] bg-white p-4 shadow-[0_18px_44px_rgba(17,17,17,0.05)]">
+      <p className="min-w-0 truncate text-[11px] font-medium uppercase tracking-[0.10em] text-[var(--color-muted)]">
         {label}
       </p>
       <div className="mt-4 flex flex-1 items-center justify-center">
@@ -69,18 +69,18 @@ export function CircularKpiMeter({
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <p className="text-xl font-semibold text-[var(--color-ink)] sm:text-2xl">
+            <p className="text-[clamp(1.25rem,1.4vw,1.65rem)] font-semibold text-[var(--color-ink)]">
               {normalized.toFixed(0)}
               {suffix}
             </p>
-            <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--color-muted)]">
+            <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.10em] text-[var(--color-muted)]">
               KPI
             </p>
           </div>
         </div>
       </div>
       <p
-        className="mt-4 text-center text-xs font-medium uppercase tracking-[0.16em]"
+        className="mt-4 text-center text-[11px] font-medium uppercase tracking-[0.10em]"
         style={{ color: palette.text }}
       >
         Live cycle signal

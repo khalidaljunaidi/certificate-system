@@ -132,6 +132,21 @@ const NOTICE_TOASTS: Record<string, ToastConfig> = {
     body: "Executive override applied successfully and the evaluation was closed.",
     tone: "warning",
   },
+  "supplier-invitation-sent": {
+    title: "Invitation sent",
+    body: "The public supplier registration link was emailed successfully.",
+    tone: "success",
+  },
+  "supplier-invitation-skipped": {
+    title: "Invitation recorded",
+    body: "The invitation was saved, but email delivery was skipped in this environment.",
+    tone: "warning",
+  },
+  "supplier-invitation-failed": {
+    title: "Invitation delivery failed",
+    body: "The invitation was saved, but the email provider rejected the send request.",
+    tone: "warning",
+  },
   "certificate-override-approved": {
     title: "Certificate force-approved",
     body: "Executive override applied successfully and the certificate workflow advanced.",
@@ -140,6 +155,31 @@ const NOTICE_TOASTS: Record<string, ToastConfig> = {
   "workflow-email-routing-saved": {
     title: "Workflow routing updated",
     body: "Workflow email routing updated successfully.",
+    tone: "success",
+  },
+  "payment-saved": {
+    title: "Payment installment saved",
+    body: "The installment timeline was updated successfully.",
+    tone: "success",
+  },
+  "payment-fully-paid": {
+    title: "Payment schedule completed",
+    body: "The payment record is now fully paid.",
+    tone: "success",
+  },
+  "payment-record-updated": {
+    title: "Payment record updated",
+    body: "Finance owner and payment governance notes were saved successfully.",
+    tone: "success",
+  },
+  "payment-record-closed": {
+    title: "Payment record closed",
+    body: "The payment record was closed successfully.",
+    tone: "warning",
+  },
+  "payment-record-reopened": {
+    title: "Payment record reopened",
+    body: "The payment record is active again.",
     tone: "success",
   },
 };

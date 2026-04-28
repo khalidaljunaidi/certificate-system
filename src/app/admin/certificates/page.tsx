@@ -3,6 +3,7 @@ import Link from "next/link";
 import { CertificateStatusBadge } from "@/components/admin/status-badges";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader, PageShell } from "@/components/layout/page-shell";
 import { formatDate } from "@/lib/utils";
 import {
   getCertificateFilterOptions,
@@ -57,31 +58,28 @@ export default async function CertificatesPage({
   };
 
   return (
-    <div className="space-y-8">
-      <section>
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--color-accent)]">
-          Certificates
-        </p>
-        <h1 className="mt-2 text-4xl font-semibold text-[var(--color-ink)]">
-          Cross-project certificate search
-        </h1>
-        <p className="mt-3 max-w-3xl text-sm leading-7 text-[var(--color-muted)]">
-          Track every certificate across projects, vendors, statuses, and PO references.
-          Results are capped for responsiveness; use filters or exports for deeper
-          searches.
-        </p>
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Button asChild variant={archiveView === "active" ? "default" : "secondary"}>
-            <Link href={buildArchiveHref("active")}>Active Certificates</Link>
-          </Button>
-          <Button
-            asChild
-            variant={archiveView === "archived" ? "default" : "secondary"}
-          >
-            <Link href={buildArchiveHref("archived")}>Archived Certificates</Link>
-          </Button>
-        </div>
-      </section>
+    <PageShell>
+      <PageHeader
+        eyebrow="Certificates"
+        title="Cross-project certificate search"
+        description="Track every certificate across projects, vendors, statuses, and PO references. Results are capped for responsiveness; use filters or exports for deeper searches."
+        actions={
+          <>
+            <Button
+              asChild
+              variant={archiveView === "active" ? "default" : "secondary"}
+            >
+              <Link href={buildArchiveHref("active")}>Active Certificates</Link>
+            </Button>
+            <Button
+              asChild
+              variant={archiveView === "archived" ? "default" : "secondary"}
+            >
+              <Link href={buildArchiveHref("archived")}>Archived Certificates</Link>
+            </Button>
+          </>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -198,6 +196,6 @@ export default async function CertificatesPage({
           </div>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

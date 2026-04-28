@@ -8,14 +8,30 @@ import { canCreateProject, canManageProjectStatus } from "@/lib/permissions";
 import {
   projectFormSchema,
   projectVendorFormSchema,
+  updateProjectVendorAssignmentSchema,
   updateProjectStatusSchema,
 } from "@/lib/validation";
 import {
   createProject,
   addVendorToProject,
+  updateProjectVendorAssignment,
   updateProjectStatus,
 } from "@/server/services/project-service";
 import { EMPTY_ACTION_STATE, toActionState } from "@/actions/utils";
+
+function withNoticeRedirect(
+  redirectTo: FormDataEntryValue | null,
+  fallbackPath: string,
+  notice: string,
+) {
+  if (!redirectTo || typeof redirectTo !== "string" || !redirectTo.startsWith("/")) {
+    return `${fallbackPath}?notice=${notice}`;
+  }
+
+  const url = new URL(redirectTo, "https://thegatheringksa.local");
+  url.searchParams.set("notice", notice);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
 
 export async function createProjectAction(
   prevState: ActionState = EMPTY_ACTION_STATE,
@@ -69,12 +85,14 @@ export async function addProjectVendorAction(
       vendorPhone: formData.get("vendorPhone") || undefined,
       poNumber: formData.get("poNumber") || undefined,
       contractNumber: formData.get("contractNumber") || undefined,
+      poAmount: formData.get("poAmount") || undefined,
     });
 
     await addVendorToProject(session.user.id, values);
     revalidatePath(`/admin/projects/${projectId}`);
     revalidatePath(`/admin/projects/${projectId}/certificates`);
     revalidatePath("/admin/projects");
+    revalidatePath("/admin/payments");
 
     return {
       success: "Vendor PO record added successfully.",
@@ -114,6 +132,51 @@ export async function updateProjectStatusAction(
       success: "Project status updated successfully.",
       noticeKey: "project-status-updated",
       redirectTo: `/admin/projects/${project.id}?notice=project-status-updated`,
+    };
+  } catch (error) {
+    return toActionState(error);
+  }
+}
+
+export async function updateProjectVendorAssignmentAction(
+  prevState: ActionState = EMPTY_ACTION_STATE,
+  formData: FormData,
+): Promise<ActionState> {
+  try {
+    void prevState;
+    const session = await requireAdminSession();
+
+    if (!canCreateProject(session.user)) {
+      return {
+        error: "You do not have permission to update project vendor assignments.",
+      };
+    }
+
+    const values = updateProjectVendorAssignmentSchema.parse({
+      projectId: formData.get("projectId"),
+      projectVendorId: formData.get("projectVendorId"),
+      poNumber: formData.get("poNumber") || undefined,
+      contractNumber: formData.get("contractNumber") || undefined,
+      poAmount: formData.get("poAmount") || undefined,
+    });
+
+    const assignment = await updateProjectVendorAssignment(session.user.id, values);
+    const redirectTo = formData.get("redirectTo");
+
+    revalidatePath(`/admin/projects/${assignment.projectId}`);
+    revalidatePath(`/admin/projects/${assignment.projectId}/certificates`);
+    revalidatePath("/admin/projects");
+    revalidatePath("/admin/payments");
+    revalidatePath(`/admin/payments/${assignment.id}`);
+
+    return {
+      success: "Assignment updated successfully.",
+      noticeKey: "assignment-updated",
+      redirectTo: withNoticeRedirect(
+        redirectTo,
+        `/admin/projects/${assignment.projectId}`,
+        "assignment-updated",
+      ),
     };
   } catch (error) {
     return toActionState(error);

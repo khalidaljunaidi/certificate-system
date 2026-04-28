@@ -51,7 +51,9 @@ export function VendorSubcategoryForm({
           <option value="">Select category</option>
           {options.categories.map((category) => (
             <option key={category.id} value={category.id}>
-              {category.name}
+              {category.externalKey
+                ? `${category.name} (${category.externalKey})`
+                : category.name}
             </option>
           ))}
         </Select>

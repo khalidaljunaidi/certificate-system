@@ -13,6 +13,7 @@ import type {
 } from "@/lib/types";
 import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/server/services/token-service";
+import { ensureVendorCatalogData } from "@/server/services/vendor-catalog-service";
 
 type VendorRegistryFilters = {
   search?: string;
@@ -105,6 +106,7 @@ export async function getVendorRegistry(
     select: {
       id: true,
       vendorId: true,
+      supplierId: true,
       vendorName: true,
       vendorEmail: true,
       vendorPhone: true,
@@ -184,6 +186,7 @@ export async function getVendorRegistry(
     return {
       id: vendor.id,
       vendorId: vendor.vendorId,
+      supplierId: vendor.supplierId,
       vendorName: vendor.vendorName,
       vendorEmail: vendor.vendorEmail,
       vendorPhone: vendor.vendorPhone,
@@ -213,6 +216,8 @@ export async function getVendorRegistry(
 }
 
 export async function getVendorGovernanceOptions(): Promise<VendorGovernanceOptions> {
+  await ensureVendorCatalogData();
+
   const categories = await prisma.vendorCategory.findMany({
     orderBy: {
       name: "asc",
@@ -220,6 +225,7 @@ export async function getVendorGovernanceOptions(): Promise<VendorGovernanceOpti
     select: {
       id: true,
       name: true,
+      externalKey: true,
       subcategories: {
         orderBy: {
           name: "asc",
@@ -227,6 +233,7 @@ export async function getVendorGovernanceOptions(): Promise<VendorGovernanceOpti
         select: {
           id: true,
           name: true,
+          externalKey: true,
           categoryId: true,
         },
       },
@@ -248,6 +255,7 @@ export async function getVendorRegistryView(
     select: {
       id: true,
       vendorId: true,
+      supplierId: true,
       vendorName: true,
       vendorEmail: true,
       vendorPhone: true,
@@ -424,6 +432,7 @@ export async function getVendorRegistryView(
     vendor: {
       id: vendor.id,
       vendorId: vendor.vendorId,
+      supplierId: vendor.supplierId,
       vendorName: vendor.vendorName,
       vendorEmail: vendor.vendorEmail,
       vendorPhone: vendor.vendorPhone,
@@ -604,6 +613,7 @@ export async function getVendorPickerOptions(): Promise<VendorPickerOption[]> {
     select: {
       id: true,
       vendorId: true,
+      supplierId: true,
       vendorName: true,
       vendorEmail: true,
       vendorPhone: true,
@@ -624,6 +634,7 @@ export async function getVendorPickerOptions(): Promise<VendorPickerOption[]> {
   return vendors.map((vendor) => ({
     id: vendor.id,
     vendorId: vendor.vendorId,
+    supplierId: vendor.supplierId,
     vendorName: vendor.vendorName,
     vendorEmail: vendor.vendorEmail,
     vendorPhone: vendor.vendorPhone,

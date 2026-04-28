@@ -19,10 +19,10 @@ export function KpiCard({
           className="absolute inset-x-0 top-0 h-1"
           style={{ backgroundColor: accent ?? "var(--color-primary)" }}
         />
-        <p className="min-w-0 text-sm font-medium leading-6 text-[var(--color-muted)]">
+        <p className="min-w-0 truncate text-[11px] font-medium uppercase tracking-[0.10em] text-[var(--color-muted)]">
           {label}
         </p>
-        <p className="truncate text-3xl font-semibold tracking-tight text-[var(--color-ink)]">
+        <p className="truncate text-[clamp(1.7rem,1.8vw,2.35rem)] font-semibold tracking-tight text-[var(--color-ink)]">
           {value}
         </p>
       </CardContent>
