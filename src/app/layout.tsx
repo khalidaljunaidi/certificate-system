@@ -22,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="min-h-full">
+      <body className="theme-public min-h-full">
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

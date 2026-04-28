@@ -34,10 +34,10 @@ function PageHeader({
   return (
     <section
       className={cn(
-        "overflow-hidden rounded-[30px] border px-7 py-7 shadow-[0_24px_72px_rgba(17,17,17,0.06)]",
+        "overflow-hidden rounded-[30px] border px-7 py-7 shadow-[0_24px_72px_rgba(27,16,51,0.07)]",
         feature
-          ? "border-[rgba(255,255,255,0.08)] bg-[linear-gradient(135deg,rgba(49,19,71,0.98),rgba(70,34,102,0.96)_62%,rgba(215,132,57,0.92))] text-white"
-          : "border-[var(--color-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,252,247,0.96))] text-[var(--color-ink)]",
+          ? "border-[rgba(229,201,138,0.16)] [background:var(--tg-dark-gradient)] text-white"
+          : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-main)]",
         className,
       )}
     >
@@ -46,7 +46,7 @@ function PageHeader({
           <p
             className={cn(
               "text-[11px] font-medium uppercase tracking-[0.09em]",
-              feature ? "text-[#f7c08b]" : "text-[var(--color-accent)]",
+              feature ? "text-[var(--tg-gold-soft)]" : "text-[var(--accent)]",
             )}
           >
             {eyebrow}
@@ -54,7 +54,7 @@ function PageHeader({
           <h1
             className={cn(
               "max-w-4xl text-3xl font-semibold leading-tight tracking-tight",
-              feature ? "text-white" : "text-[var(--color-ink)]",
+              feature ? "text-white" : "text-[var(--text-main)]",
             )}
           >
             {title}
@@ -63,7 +63,7 @@ function PageHeader({
             <p
               className={cn(
                 "max-w-3xl text-sm leading-7",
-                feature ? "text-[#efe3f5]" : "text-[var(--color-muted)]",
+                feature ? "text-[rgba(248,247,251,0.74)]" : "text-[var(--text-muted)]",
               )}
             >
               {description}
@@ -108,14 +108,14 @@ function PageHeroMetric({
       className={cn(
         "min-w-0 rounded-[24px] border px-4 py-4 backdrop-blur-sm",
         accent
-          ? "border-white/12 bg-white/12 text-white"
-          : "border-[var(--color-border)] bg-[var(--color-panel-soft)] text-[var(--color-ink)]",
+          ? "border-[rgba(229,201,138,0.16)] bg-white/12 text-white"
+          : "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-main)]",
       )}
     >
           <p
             className={cn(
               "truncate text-[11px] font-medium uppercase tracking-[0.09em]",
-              accent ? "text-[#f7c08b]" : "text-[var(--color-muted)]",
+              accent ? "text-[var(--tg-gold-soft)]" : "text-[var(--text-muted)]",
             )}
       >
         {label}
@@ -125,7 +125,7 @@ function PageHeroMetric({
         <p
           className={cn(
             "mt-2 text-xs leading-5",
-            accent ? "text-[#efe3f5]" : "text-[var(--color-muted)]",
+            accent ? "text-[rgba(248,247,251,0.74)]" : "text-[var(--text-muted)]",
           )}
         >
           {hint}

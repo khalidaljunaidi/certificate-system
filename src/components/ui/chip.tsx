@@ -10,11 +10,11 @@ const chipVariants = cva(
     variants: {
       tone: {
         neutral:
-          "border-[rgba(17,17,17,0.08)] bg-[var(--color-panel-soft)] text-[var(--color-muted)]",
+          "border-[var(--border)] bg-[var(--surface-soft)] text-[var(--text-muted)]",
         purple:
-          "border-[rgba(49,19,71,0.08)] bg-[rgba(49,19,71,0.08)] text-[var(--color-primary)]",
+          "border-[rgba(27,16,51,0.12)] bg-[rgba(27,16,51,0.09)] text-[var(--primary)]",
         orange:
-          "border-[rgba(215,132,57,0.14)] bg-[rgba(215,132,57,0.12)] text-[var(--color-accent)]",
+          "border-[rgba(200,164,92,0.24)] bg-[rgba(200,164,92,0.16)] text-[var(--primary)]",
         green:
           "border-[rgba(21,128,61,0.14)] bg-[rgba(21,128,61,0.1)] text-[#166534]",
         red:

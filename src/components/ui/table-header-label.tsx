@@ -12,7 +12,7 @@ function TableHeaderLabel({
   return (
     <span
       className={cn(
-        "block whitespace-nowrap text-[11px] font-medium uppercase tracking-[0.10em] text-[var(--color-muted)]",
+        "block whitespace-nowrap text-[11px] font-medium uppercase tracking-[0.10em] text-[var(--text-muted)]",
         className,
       )}
     >

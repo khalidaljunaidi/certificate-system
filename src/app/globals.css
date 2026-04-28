@@ -5,19 +5,105 @@
 @import "tailwindcss";
 
 :root {
-  --color-background: #fbf8f4;
-  --color-panel: #fffdf9;
-  --color-panel-soft: #f4ede5;
-  --color-border: #e3d8cc;
-  --color-ink: #161113;
-  --color-muted: #6d6166;
-  --color-primary: #311347;
-  --color-primary-strong: #220d31;
-  --color-accent: #d78439;
+  --tg-primary: #1b1033;
+  --tg-primary-2: #2a1b4d;
+  --tg-dark: #0b0b14;
+  --tg-gold: #c8a45c;
+  --tg-gold-soft: #e5c98a;
+  --tg-light: #f8f7fb;
+  --tg-muted: #9ca3af;
+  --tg-text-dark: #22161f;
+  --tg-dark-gradient: linear-gradient(135deg, #0b0b14 0%, #1b1033 55%, #2a1b4d 100%);
+
+  --page-bg: #ffffff;
+  --surface: #ffffff;
+  --surface-soft: #f8f7fb;
+  --text-main: #1f2937;
+  --text-muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: var(--tg-gold);
+  --primary: var(--tg-primary);
+  --primary-2: var(--tg-primary-2);
+
+  --color-background: var(--page-bg);
+  --color-panel: var(--surface);
+  --color-panel-soft: var(--surface-soft);
+  --color-border: var(--border);
+  --color-ink: var(--text-main);
+  --color-muted: var(--text-muted);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-2);
+  --color-accent: var(--accent);
   --color-success: #166534;
   --font-sans: "Public Sans", "Segoe UI", Tahoma, sans-serif;
   --font-serif: "Amiri", Georgia, serif;
   --motion-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.theme-public {
+  --page-bg: #ffffff;
+  --surface: #ffffff;
+  --surface-soft: #f8f7fb;
+  --text-main: #1f2937;
+  --text-muted: #6b7280;
+  --border: #e5e7eb;
+  --accent: var(--tg-gold);
+  --primary: var(--tg-primary);
+  --primary-2: var(--tg-primary-2);
+
+  --color-background: var(--page-bg);
+  --color-panel: var(--surface);
+  --color-panel-soft: var(--surface-soft);
+  --color-border: var(--border);
+  --color-ink: var(--text-main);
+  --color-muted: var(--text-muted);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-2);
+  --color-accent: var(--accent);
+}
+
+.theme-admin {
+  --page-bg: #f8f7fb;
+  --surface: #ffffff;
+  --surface-soft: #f2eff7;
+  --text-main: var(--tg-text-dark);
+  --text-muted: #6c6574;
+  --border: rgba(27, 16, 51, 0.14);
+  --accent: var(--tg-gold);
+  --primary: var(--tg-primary);
+  --primary-2: var(--tg-primary-2);
+
+  --color-background: var(--page-bg);
+  --color-panel: var(--surface);
+  --color-panel-soft: var(--surface-soft);
+  --color-border: var(--border);
+  --color-ink: var(--text-main);
+  --color-muted: var(--text-muted);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-2);
+  --color-accent: var(--accent);
+}
+
+.theme-landing {
+  --page-bg: var(--tg-dark);
+  --surface: rgba(255, 255, 255, 0.08);
+  --surface-soft: rgba(255, 255, 255, 0.12);
+  --text-main: var(--tg-light);
+  --text-muted: rgba(248, 247, 251, 0.7);
+  --border: rgba(229, 201, 138, 0.18);
+  --accent: var(--tg-gold-soft);
+  --primary: var(--tg-gold);
+  --primary-2: var(--tg-gold-soft);
+
+  --color-background: var(--page-bg);
+  --color-panel: var(--surface);
+  --color-panel-soft: var(--surface-soft);
+  --color-border: var(--border);
+  --color-ink: var(--text-main);
+  --color-muted: var(--text-muted);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-2);
+  --color-accent: var(--accent);
 }
 
 * {
@@ -26,10 +112,8 @@
 
 html,
 body {
-  background:
-    radial-gradient(circle at top left, rgba(215, 132, 57, 0.08), transparent 28%),
-    linear-gradient(180deg, #fffaf4 0%, #fbf8f4 34%, #f7f1ea 100%);
-  color: var(--color-ink);
+  background: var(--page-bg);
+  color: var(--text-main);
   font-family: var(--font-sans);
   min-height: 100%;
   max-width: 100%;
@@ -60,7 +144,7 @@ thead th {
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--color-muted);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -69,7 +153,7 @@ tbody td {
 }
 
 ::selection {
-  background: rgba(49, 19, 71, 0.14);
+  background: rgba(200, 164, 92, 0.24);
 }
 
 @keyframes tg-rise-in {
@@ -126,12 +210,12 @@ tbody td {
   0%,
   100% {
     transform: translate3d(0, 0, 0) scale(1);
-    box-shadow: 0 12px 28px rgba(17, 17, 17, 0.08);
+    box-shadow: 0 12px 28px rgba(27, 16, 51, 0.08);
   }
 
   50% {
     transform: translate3d(0, -3px, 0) scale(1.018);
-    box-shadow: 0 18px 40px rgba(17, 17, 17, 0.14);
+    box-shadow: 0 18px 40px rgba(27, 16, 51, 0.14);
   }
 }
 
@@ -216,7 +300,7 @@ tbody td {
 
 .tg-button-live:hover {
   transform: translate3d(0, -3px, 0) scale(1.018);
-  box-shadow: 0 22px 46px rgba(17, 17, 17, 0.16);
+  box-shadow: 0 22px 46px rgba(27, 16, 51, 0.16);
 }
 
 .tg-button-live:hover::after {
@@ -225,7 +309,7 @@ tbody td {
 
 .tg-button-live:active {
   transform: translate3d(0, 0, 0) scale(0.985);
-  box-shadow: 0 10px 22px rgba(17, 17, 17, 0.1);
+  box-shadow: 0 10px 22px rgba(27, 16, 51, 0.1);
 }
 
 .tg-cta-live {
@@ -243,8 +327,8 @@ tbody td {
 
 .tg-surface-live:hover {
   transform: translate3d(0, -4px, 0);
-  box-shadow: 0 28px 70px rgba(17, 17, 17, 0.11);
-  border-color: rgba(49, 19, 71, 0.14);
+  box-shadow: 0 28px 70px rgba(27, 16, 51, 0.11);
+  border-color: var(--accent);
 }
 
 .tg-page-stack {
@@ -264,7 +348,7 @@ tbody td {
   max-width: 48rem;
   font-size: 0.925rem;
   line-height: 1.75;
-  color: var(--color-muted);
+  color: var(--text-muted);
 }
 
 .tg-meta-label {
@@ -272,7 +356,7 @@ tbody td {
   font-weight: 500;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--color-muted);
+  color: var(--text-muted);
 }
 
 .tg-micro-stack {
@@ -287,7 +371,7 @@ tbody td {
   font-weight: 500;
   line-height: 1.35;
   letter-spacing: 0.08em;
-  color: var(--color-muted);
+  color: var(--text-muted);
 }
 
 .tg-micro-label--caps {
@@ -300,13 +384,13 @@ tbody td {
   font-size: 0.975rem;
   font-weight: 600;
   line-height: 1.4;
-  color: var(--color-ink);
+  color: var(--text-main);
 }
 
 .tg-helper-text {
   font-size: 12px;
   line-height: 1.5;
-  color: var(--color-muted);
+  color: var(--text-muted);
 }
 
 :where(
@@ -326,12 +410,12 @@ tbody td {
 }
 
 .tg-empty-state {
-  border: 1px dashed var(--color-border);
+  border: 1px dashed var(--border);
   border-radius: 24px;
   padding: 1.5rem;
   font-size: 14px;
   line-height: 1.75;
-  color: var(--color-muted);
+  color: var(--text-muted);
 }
 
 .tg-notification-shell {
@@ -342,12 +426,12 @@ tbody td {
 .tg-header-shell {
   position: relative;
   overflow: visible;
-  border: 1px solid rgba(17, 17, 17, 0.08);
+  border: 1px solid rgba(27, 16, 51, 0.1);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 252, 247, 0.86)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(248, 247, 251, 0.88)),
     rgba(255, 255, 255, 0.8);
   box-shadow:
-    0 20px 48px rgba(17, 17, 17, 0.08),
+    0 20px 48px rgba(27, 16, 51, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(20px);
 }
@@ -355,11 +439,11 @@ tbody td {
 .tg-floating-panel {
   max-width: calc(100vw - 2rem);
   border-radius: 26px;
-  border: 1px solid rgba(17, 17, 17, 0.08);
+  border: 1px solid rgba(27, 16, 51, 0.1);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 252, 247, 0.95)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 247, 251, 0.96)),
     rgba(255, 255, 255, 0.94);
-  box-shadow: 0 28px 70px rgba(17, 17, 17, 0.14);
+  box-shadow: 0 28px 70px rgba(27, 16, 51, 0.14);
   backdrop-filter: blur(18px);
   animation: tg-rise-in 220ms var(--motion-emphasized) both;
 }
@@ -370,11 +454,11 @@ tbody td {
   top: calc(100% + 14px);
   width: min(26rem, calc(100vw - 2rem));
   border-radius: 26px;
-  border: 1px solid rgba(17, 17, 17, 0.08);
+  border: 1px solid rgba(27, 16, 51, 0.1);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 252, 247, 0.95)),
-    rgba(255, 253, 249, 0.96);
-  box-shadow: 0 28px 70px rgba(17, 17, 17, 0.14);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 247, 251, 0.96)),
+    rgba(255, 255, 255, 0.96);
+  box-shadow: 0 28px 70px rgba(27, 16, 51, 0.14);
   backdrop-filter: blur(18px);
   overflow: hidden;
   z-index: 40;

@@ -109,7 +109,7 @@ export function ProjectVendorAssignmentEditForm({
       {isMounted && isOpen
         ? createPortal(
             <div
-              className="fixed inset-0 z-[90] flex items-center justify-center bg-[rgba(7,9,22,0.58)] p-4 backdrop-blur-sm"
+              className="theme-admin fixed inset-0 z-[90] flex items-center justify-center bg-[rgba(7,9,22,0.58)] p-4 backdrop-blur-sm"
               onClick={handleClose}
               role="presentation"
             >

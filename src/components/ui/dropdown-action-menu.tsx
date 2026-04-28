@@ -170,7 +170,12 @@ function DropdownActionMenu({
               ref={menuRef}
               role="menu"
               className={cn(
-                "fixed z-[120] overflow-hidden rounded-[20px] border border-[var(--color-border)] bg-white p-2 shadow-[0_24px_64px_rgba(17,17,17,0.18)]",
+                "fixed z-[120] overflow-hidden rounded-[20px] border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[0_24px_64px_rgba(27,16,51,0.18)] backdrop-blur-xl",
+                triggerRef.current?.closest(".theme-admin")
+                  ? "theme-admin"
+                  : triggerRef.current?.closest(".theme-landing")
+                    ? "theme-landing"
+                    : "theme-public",
                 widthClassName,
                 menuClassName,
               )}

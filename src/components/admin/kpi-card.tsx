@@ -17,12 +17,12 @@ export function KpiCard({
       <CardContent className="relative flex h-full min-w-0 flex-col justify-between gap-4 p-5">
         <div
           className="absolute inset-x-0 top-0 h-1"
-          style={{ backgroundColor: accent ?? "var(--color-primary)" }}
+          style={{ backgroundColor: accent ?? "var(--accent)" }}
         />
-        <p className="min-w-0 truncate text-[11px] font-medium uppercase tracking-[0.10em] text-[var(--color-muted)]">
+        <p className="min-w-0 truncate text-[11px] font-medium uppercase tracking-[0.10em] text-[var(--text-muted)]">
           {label}
         </p>
-        <p className="truncate text-[clamp(1.7rem,1.8vw,2.35rem)] font-semibold tracking-tight text-[var(--color-ink)]">
+        <p className="truncate text-[clamp(1.7rem,1.8vw,2.35rem)] font-semibold tracking-tight text-[var(--text-main)]">
           {value}
         </p>
       </CardContent>

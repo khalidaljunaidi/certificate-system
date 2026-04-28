@@ -10,11 +10,11 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-[var(--color-primary)] !text-white hover:bg-[var(--color-primary-strong)] focus-visible:ring-[var(--color-primary)]",
+          "border border-[var(--accent)] bg-[linear-gradient(135deg,var(--tg-gold-soft),var(--accent))] !text-[var(--tg-primary)] shadow-[0_14px_34px_rgba(200,164,92,0.22)] hover:border-[var(--tg-gold-soft)] hover:shadow-[0_18px_44px_rgba(200,164,92,0.34)] focus-visible:ring-[var(--accent)]",
         secondary:
-          "border border-[var(--color-border)] bg-white !text-[var(--color-ink)] hover:bg-[var(--color-panel-soft)] focus-visible:ring-[var(--color-primary)]",
+          "border border-[var(--border)] bg-[var(--surface)] !text-[var(--text-main)] shadow-[inset_0_1px_0_rgba(255,255,255,0.55)] hover:border-[var(--accent)] hover:bg-[var(--surface-soft)] focus-visible:ring-[var(--accent)]",
         ghost:
-          "!text-[var(--color-ink)] hover:bg-[var(--color-panel-soft)] focus-visible:ring-[var(--color-primary)]",
+          "!text-[var(--text-main)] hover:bg-[var(--surface-soft)] focus-visible:ring-[var(--accent)]",
         destructive:
           "bg-[#9b1d1d] !text-white hover:bg-[#7e1818] focus-visible:ring-[#9b1d1d]",
       },

@@ -46,7 +46,7 @@ export function AdminShell({
   });
 
   return (
-    <div className="flex min-h-screen flex-col bg-[var(--color-background)]">
+    <div className="theme-admin flex min-h-screen flex-col bg-[var(--page-bg)] text-[var(--text-main)]">
       <AdminNoticeToast />
       <AdminHeaderNavigation
         user={user}
