@@ -8,6 +8,11 @@ export const metadata: Metadata = {
   title: APP_NAME,
   description:
     "Enterprise procurement operations platform for supplier intake, vendor governance, tasks, projects, and completion certificates.",
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/icon.png",
+  },
 };
 
 export default function RootLayout({
