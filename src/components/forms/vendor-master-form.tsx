@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { saveVendorMasterAction } from "@/actions/vendor-actions";
 import { EMPTY_ACTION_STATE } from "@/actions/utils";
 import { FormStateMessage } from "@/components/forms/form-state-message";
+import { SubcategorySelector } from "@/components/forms/subcategory-selector";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +31,9 @@ export function VendorMasterForm({
     notes: string | null;
     categoryId: string | null;
     subcategoryId: string | null;
+    subcategorySelections?: Array<{
+      id: string;
+    }>;
   };
   options: VendorGovernanceOptions;
   redirectTo?: string;
@@ -40,7 +44,13 @@ export function VendorMasterForm({
     EMPTY_ACTION_STATE,
   );
   const [categoryId, setCategoryId] = useState(vendor?.categoryId ?? "");
-  const [subcategoryId, setSubcategoryId] = useState(vendor?.subcategoryId ?? "");
+  const [subcategoryIds, setSubcategoryIds] = useState<string[]>(
+    vendor?.subcategorySelections?.length
+      ? vendor.subcategorySelections.map((subcategory) => subcategory.id)
+      : vendor?.subcategoryId
+        ? [vendor.subcategoryId]
+        : [],
+  );
 
   const subcategoryOptions = useMemo(
     () =>
@@ -137,19 +147,9 @@ export function VendorMasterForm({
             value={categoryId}
             onChange={(event) => {
               const nextCategoryId = event.target.value;
-              const nextSubcategoryOptions =
-                options.categories.find((category) => category.id === nextCategoryId)
-                  ?.subcategories ?? [];
 
               setCategoryId(nextCategoryId);
-              if (
-                subcategoryId &&
-                !nextSubcategoryOptions.some(
-                  (subcategory) => subcategory.id === subcategoryId,
-                )
-              ) {
-                setSubcategoryId("");
-              }
+              setSubcategoryIds([]);
             }}
             disabled={isPending}
           >
@@ -168,31 +168,17 @@ export function VendorMasterForm({
               : "No vendor categories are configured yet. Create categories before classifying vendors."}
           </p>
         </div>
-        <div>
-          <Label htmlFor="subcategoryId">Subcategory</Label>
-          <Select
-            id="subcategoryId"
-            name="subcategoryId"
-            value={subcategoryId}
-            onChange={(event) => setSubcategoryId(event.target.value)}
-            disabled={isPending || !categoryId}
-          >
-            <option value="">Unassigned</option>
-            {subcategoryOptions.map((subcategory) => (
-              <option key={subcategory.id} value={subcategory.id}>
-                {subcategory.externalKey
-                  ? `${subcategory.name} (${subcategory.externalKey})`
-                  : subcategory.name}
-              </option>
-            ))}
-          </Select>
-          <p className="mt-2 text-xs leading-6 text-[var(--color-muted)]">
-            {!categoryId
-              ? "Select a category to unlock subcategory governance options."
-              : subcategoryOptions.length === 0
-                ? "No subcategories are configured for this category yet."
-                : "Subcategory choices update automatically when the category changes."}
-          </p>
+        <div className="xl:col-span-2">
+          <SubcategorySelector
+            id="vendor-master-subcategories"
+            categorySelected={Boolean(categoryId)}
+            options={subcategoryOptions}
+            selectedIds={subcategoryIds}
+            onSelectedIdsChange={setSubcategoryIds}
+            disabled={isPending}
+            required={subcategoryOptions.length > 0}
+            lockedText="Select a category to unlock subcategory governance options."
+          />
         </div>
       </div>
 

@@ -21,8 +21,8 @@ import { canManageOperationalTasks } from "@/lib/permissions";
 import type { OperationalTaskListItem, TaskLookupOptions } from "@/lib/types";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import {
+  getTaskFilterOptions,
   getOperationalTasksForViewer,
-  getTaskLookupOptions,
 } from "@/server/queries/task-queries";
 
 type TasksPageProps = {
@@ -38,7 +38,7 @@ type TasksPageProps = {
 export default async function TasksPage({ searchParams }: TasksPageProps) {
   const session = await requireAdminSession();
   const params = await searchParams;
-  const [tasks, lookupOptions] = await Promise.all([
+  const [tasks, filterOptions] = await Promise.all([
     getOperationalTasksForViewer(
       {
         id: session.user.id,
@@ -47,15 +47,15 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
         permissions: session.user.permissions,
       },
       params,
-      { limit: 100 },
+      { limit: 50 },
     ),
-    getTaskLookupOptions(),
+    getTaskFilterOptions(),
   ]);
 
   const canManage = canManageOperationalTasks(session.user);
   const selectedCycle =
-    lookupOptions.monthlyCycles.find((cycle) => cycle.id === params.cycleId) ??
-    lookupOptions.monthlyCycles.find((cycle) => cycle.isActive) ??
+    filterOptions.monthlyCycles.find((cycle) => cycle.id === params.cycleId) ??
+    filterOptions.monthlyCycles.find((cycle) => cycle.isActive) ??
     null;
 
   const kpis = {
@@ -122,7 +122,6 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
               ) : null}
               {canManage ? (
                 <OperationalTaskModalLauncher
-                  lookupOptions={lookupOptions}
                   canManage={canManage}
                 />
               ) : null}
@@ -173,7 +172,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
                 className="h-11 w-full rounded-full border border-[var(--color-border)] bg-white px-4 text-sm text-[var(--color-ink)]"
               >
                 <option value="">All cycles</option>
-                {lookupOptions.monthlyCycles.map((cycle) => (
+                {filterOptions.monthlyCycles.map((cycle) => (
                   <option key={cycle.id} value={cycle.id}>
                     {cycle.label}
                     {cycle.isActive ? " | Active" : ""}
@@ -189,7 +188,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
                 disabled={!canManage}
               >
                 <option value="">All assignees</option>
-                {lookupOptions.users.map((user) => (
+                {filterOptions.users.map((user) => (
                   <option key={user.id} value={user.id}>
                     {user.name}
                   </option>
@@ -238,7 +237,6 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
                 {canManage ? (
                   <div className="mt-5 flex justify-center">
                     <OperationalTaskModalLauncher
-                      lookupOptions={lookupOptions}
                       canManage={canManage}
                     />
                   </div>

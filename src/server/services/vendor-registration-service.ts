@@ -8,6 +8,7 @@ import {
 } from "@/lib/constants";
 import { buildVendorRegistrationVerificationUrl, compactText } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
+import { formatSupplierCertificateCode } from "@/lib/vendor-registration-certificate";
 import {
   vendorRegistrationReviewSchema,
   vendorRegistrationSubmissionSchema,
@@ -22,6 +23,7 @@ import {
 import { logSystemError } from "@/server/services/system-error-service";
 import { generateVendorRegistrationCertificatePdfBuffer } from "@/server/services/vendor-registration-pdf-service";
 import { ensureVendorCatalogData } from "@/server/services/vendor-catalog-service";
+import { syncVendorToOdoo } from "@/server/services/vendor-odoo-sync-service";
 
 type ParsedRegistrationSubmission = z.infer<typeof vendorRegistrationSubmissionSchema>;
 type ParsedRegistrationReview = z.infer<typeof vendorRegistrationReviewSchema>;
@@ -43,6 +45,93 @@ function buildSupplierId(countryCode: string, categoryCode: string, serial: numb
   return `${countryCode.trim().toUpperCase()}-${categoryCode
     .trim()
     .toUpperCase()}-${String(serial).padStart(6, "0")}`;
+}
+
+async function reserveVendorRegistrationCertificateCode(
+  tx: Prisma.TransactionClient,
+  issuedAt: Date,
+) {
+  const year = issuedAt.getFullYear();
+  const sequenceState = await tx.vendorRegistrationCertificateSequence.upsert({
+    where: {
+      year,
+    },
+    create: {
+      year,
+      nextSerial: 2,
+    },
+    update: {
+      nextSerial: {
+        increment: 1,
+      },
+    },
+    select: {
+      nextSerial: true,
+    },
+  });
+  const sequence = sequenceState.nextSerial - 1;
+
+  return {
+    certificateCode: formatSupplierCertificateCode(year, sequence),
+    certificateYear: year,
+    certificateSequence: sequence,
+  };
+}
+
+export async function ensureVendorRegistrationCertificateCode(requestId: string) {
+  return prisma.$transaction(
+    async (tx) => {
+      const request = await tx.vendorRegistrationRequest.findUnique({
+        where: {
+          id: requestId,
+        },
+        select: {
+          id: true,
+          status: true,
+          certificateCode: true,
+          certificateYear: true,
+          certificateSequence: true,
+          reviewedAt: true,
+          submittedAt: true,
+        },
+      });
+
+      if (!request) {
+        throw new Error("Vendor registration request not found.");
+      }
+
+      if (request.certificateCode) {
+        return {
+          certificateCode: request.certificateCode,
+          certificateYear: request.certificateYear,
+          certificateSequence: request.certificateSequence,
+        };
+      }
+
+      if (request.status !== VendorRegistrationStatus.APPROVED) {
+        throw new Error(
+          "Certificate code can only be generated for approved vendor registrations.",
+        );
+      }
+
+      const reservedCode = await reserveVendorRegistrationCertificateCode(
+        tx,
+        request.reviewedAt ?? request.submittedAt ?? new Date(),
+      );
+
+      await tx.vendorRegistrationRequest.update({
+        where: {
+          id: request.id,
+        },
+        data: reservedCode,
+      });
+
+      return reservedCode;
+    },
+    {
+      timeout: 15000,
+    },
+  );
 }
 
 function buildLockKeys(countryCode: string, categoryCode: string) {
@@ -365,6 +454,52 @@ async function buildAttachmentRecord(input: {
   };
 }
 
+async function notifyVendorRegistrationSubmitted(input: {
+  requestId: string;
+  companyName: string;
+}) {
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        await createWorkflowNotification(tx, {
+          type: "SYSTEM_ALERT",
+          title: "Vendor registration submitted",
+          message: `${input.companyName} submitted a new supplier registration request.`,
+          vendorId: null,
+          href: `/admin/vendor-registrations/${input.requestId}`,
+          routingStrategies: ["procurement_chain"],
+          routingContext: {
+            procurementChainEmails: Array.from(PROCUREMENT_TEAM_EMAILS),
+          },
+          eventKey: "SYSTEM_ALERT",
+          severity: "ACTION_REQUIRED",
+          dedupeKey: `vendor-registration:${input.requestId}:submitted`,
+          cooldownMinutes: 60,
+        });
+      },
+      {
+        timeout: 15000,
+      },
+    );
+  } catch (error) {
+    console.warn("[vendor-registration] submitted notification failed", {
+      requestId: input.requestId,
+      companyName: input.companyName,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    await logSystemError({
+      action: "VendorRegistrationSubmittedNotification",
+      error,
+      severity: "WARNING",
+      context: {
+        requestId: input.requestId,
+        companyName: input.companyName,
+      },
+    }).catch(() => undefined);
+  }
+}
+
 export async function submitVendorRegistrationRequest(input: {
   values: ParsedRegistrationSubmission;
   files: Partial<
@@ -427,133 +562,124 @@ export async function submitVendorRegistrationRequest(input: {
     })),
   );
 
-  const request = await prisma.$transaction(async (tx) => {
-    const created = await tx.vendorRegistrationRequest.create({
-      data: {
-        requestNumber,
-        companyName: input.values.companyName,
-        legalName: input.values.legalName,
-        companyEmail: normalizeEmail(input.values.companyEmail),
-        companyPhone: input.values.companyPhone,
-        website: input.values.website || null,
-        crNumber: input.values.crNumber,
-        vatNumber: input.values.vatNumber,
-        categoryId: selectedCategory.id,
-        primarySubcategoryId: primarySubcategory.id,
-        countryCode: selectedCountry.code,
-        coverageScope: input.values.coverageScope,
-        addressLine1: input.values.addressLine1,
-        addressLine2: input.values.addressLine2 || null,
-        district: input.values.district,
-        region: input.values.region || null,
-        postalCode: input.values.postalCode,
-        poBox: input.values.poBox || null,
-        businessDescription: input.values.businessDescription,
-        yearsInBusiness: input.values.yearsInBusiness,
-        employeeCount: input.values.employeeCount,
-        productsServicesSummary: input.values.servicesOverview,
-        bankName: input.values.bankName,
-        accountName: input.values.accountName,
-        iban: input.values.iban,
-        swiftCode: input.values.swiftCode,
-        bankAccountNumber: input.values.bankAccountNumber || null,
-        additionalInformation: input.values.additionalInformation ?? "",
-        declarationName: input.values.declarationName,
-        declarationTitle: input.values.declarationTitle,
-        declarationAccepted: true,
-        declarationSignedAt: new Date(),
-        formSnapshot: formSnapshot as Prisma.InputJsonValue,
-        status: VendorRegistrationStatus.PENDING_REVIEW,
-        submittedAt: new Date(),
+  const request = await prisma
+    .$transaction(
+      async (tx) => {
+        const created = await tx.vendorRegistrationRequest.create({
+          data: {
+            requestNumber,
+            companyName: input.values.companyName,
+            legalName: input.values.legalName,
+            companyEmail: normalizeEmail(input.values.companyEmail),
+            companyPhone: input.values.companyPhone,
+            website: input.values.website || null,
+            crNumber: input.values.crNumber,
+            vatNumber: input.values.vatNumber,
+            categoryId: selectedCategory.id,
+            primarySubcategoryId: primarySubcategory.id,
+            countryCode: selectedCountry.code,
+            coverageScope: input.values.coverageScope,
+            addressLine1: input.values.addressLine1,
+            addressLine2: input.values.addressLine2 || null,
+            district: input.values.district,
+            region: input.values.region || null,
+            postalCode: input.values.postalCode,
+            poBox: input.values.poBox || null,
+            businessDescription: input.values.businessDescription,
+            yearsInBusiness: input.values.yearsInBusiness,
+            employeeCount: input.values.employeeCount,
+            productsServicesSummary: input.values.servicesOverview,
+            bankName: input.values.bankName,
+            accountName: input.values.accountName,
+            iban: input.values.iban,
+            swiftCode: input.values.swiftCode,
+            bankAccountNumber: input.values.bankAccountNumber || null,
+            additionalInformation: input.values.additionalInformation ?? "",
+            declarationName: input.values.declarationName,
+            declarationTitle: input.values.declarationTitle,
+            declarationAccepted: true,
+            declarationSignedAt: new Date(),
+            formSnapshot: formSnapshot as Prisma.InputJsonValue,
+            status: VendorRegistrationStatus.PENDING_REVIEW,
+            submittedAt: new Date(),
+          },
+          select: {
+            id: true,
+            requestNumber: true,
+          },
+        });
+
+        await tx.vendorRegistrationRequestSubcategory.createMany({
+          data: input.values.subcategoryIds.map((subcategoryId) => ({
+            requestId: created.id,
+            subcategoryId,
+          })),
+          skipDuplicates: true,
+        });
+
+        await tx.vendorRegistrationRequestCity.createMany({
+          data: expandedCityIds.map((cityId) => ({
+            requestId: created.id,
+            cityId,
+          })),
+          skipDuplicates: true,
+        });
+
+        await tx.vendorRegistrationReference.createMany({
+          data: [
+            input.values.reference1,
+            input.values.reference2,
+            input.values.reference3,
+          ].map((reference) => ({
+            requestId: created.id,
+            name: reference.name,
+            companyName: reference.companyName,
+            email: normalizeEmail(reference.email),
+            phone: reference.phone,
+            title: reference.title,
+          })),
+        });
+
+        await tx.vendorRegistrationAttachment.createMany({
+          data: attachmentEntries.map(({ type, attachment }) => ({
+            requestId: created.id,
+            type,
+            fileName: attachment.fileName,
+            mimeType: attachment.mimeType,
+            storagePath: attachment.storagePath,
+            sizeBytes: attachment.sizeBytes,
+          })),
+        });
+
+        await createAuditLog(tx, {
+          action: "CREATED",
+          entityType: "VendorRegistrationRequest",
+          entityId: created.id,
+          details: {
+            requestNumber,
+            companyName: input.values.companyName,
+            countryCode: selectedCountry.code,
+            categoryId: selectedCategory.id,
+            primarySubcategoryId: primarySubcategory.id,
+          },
+        });
+
+        return created;
       },
-      select: {
-        id: true,
-        requestNumber: true,
+      {
+        timeout: 15000,
       },
+    )
+    .catch(async (error) => {
+      if (isUniqueConstraintError(error, "requestNumber")) {
+        console.warn("[vendor-registration] request number collision detected", {
+          requestNumber,
+        });
+        return null;
+      }
+
+      throw error;
     });
-
-    await tx.vendorRegistrationRequestSubcategory.createMany({
-      data: input.values.subcategoryIds.map((subcategoryId) => ({
-        requestId: created.id,
-        subcategoryId,
-      })),
-      skipDuplicates: true,
-    });
-
-    await tx.vendorRegistrationRequestCity.createMany({
-      data: expandedCityIds.map((cityId) => ({
-        requestId: created.id,
-        cityId,
-      })),
-      skipDuplicates: true,
-    });
-
-    await tx.vendorRegistrationReference.createMany({
-      data: [
-        input.values.reference1,
-        input.values.reference2,
-        input.values.reference3,
-      ].map((reference) => ({
-        requestId: created.id,
-        name: reference.name,
-        companyName: reference.companyName,
-        email: normalizeEmail(reference.email),
-        phone: reference.phone,
-        title: reference.title,
-      })),
-    });
-
-    await tx.vendorRegistrationAttachment.createMany({
-      data: attachmentEntries.map(({ type, attachment }) => ({
-        requestId: created.id,
-        type,
-        fileName: attachment.fileName,
-        mimeType: attachment.mimeType,
-        storagePath: attachment.storagePath,
-        sizeBytes: attachment.sizeBytes,
-      })),
-    });
-
-    await createAuditLog(tx, {
-      action: "CREATED",
-      entityType: "VendorRegistrationRequest",
-      entityId: created.id,
-      details: {
-        requestNumber,
-        companyName: input.values.companyName,
-        countryCode: selectedCountry.code,
-        categoryId: selectedCategory.id,
-        primarySubcategoryId: primarySubcategory.id,
-      },
-    });
-
-    await createWorkflowNotification(tx, {
-      type: "SYSTEM_ALERT",
-      title: "Vendor registration submitted",
-      message: `${input.values.companyName} submitted a new supplier registration request.`,
-      vendorId: null,
-      href: `/admin/vendor-registrations/${created.id}`,
-      routingStrategies: ["procurement_chain"],
-      routingContext: {
-        procurementChainEmails: Array.from(PROCUREMENT_TEAM_EMAILS),
-      },
-      eventKey: "SYSTEM_ALERT",
-      severity: "ACTION_REQUIRED",
-      dedupeKey: `vendor-registration:${created.id}:submitted`,
-      cooldownMinutes: 60,
-    });
-
-    return created;
-  }).catch(async (error) => {
-    if (isUniqueConstraintError(error, "requestNumber")) {
-      console.warn("[vendor-registration] request number collision detected", {
-        requestNumber,
-      });
-      return null;
-    }
-
-    throw error;
-  });
 
   if (!request) {
     // Retry the full submission once when a rare request-number collision occurs.
@@ -561,6 +687,11 @@ export async function submitVendorRegistrationRequest(input: {
   }
 
   const verificationUrl = buildVendorRegistrationVerificationUrl(request.requestNumber);
+
+  await notifyVendorRegistrationSubmitted({
+    requestId: request.id,
+    companyName: input.values.companyName,
+  });
 
   await sendDirectWorkflowEmail({
     label: "vendor-registration-submitted",
@@ -582,9 +713,99 @@ export async function submitVendorRegistrationRequest(input: {
       requestNumber: request.requestNumber,
       companyName: input.values.companyName,
     },
+  }).catch(async (error) => {
+    console.warn("[vendor-registration] submitted email failed", {
+      requestNumber: request.requestNumber,
+      companyName: input.values.companyName,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    await logSystemError({
+      action: "VendorRegistrationSubmittedEmail",
+      error,
+      severity: "WARNING",
+      context: {
+        requestId: request.id,
+        requestNumber: request.requestNumber,
+        companyName: input.values.companyName,
+      },
+    }).catch(() => undefined);
   });
 
   return request;
+}
+
+export async function replaceVendorRegistrationAttachment(input: {
+  attachmentId: string;
+  file: File;
+  userId: string;
+}) {
+  const current = await prisma.vendorRegistrationAttachment.findUnique({
+    where: {
+      id: input.attachmentId,
+    },
+    select: {
+      id: true,
+      type: true,
+      fileName: true,
+      storagePath: true,
+      requestId: true,
+      request: {
+        select: {
+          requestNumber: true,
+        },
+      },
+    },
+  });
+
+  if (!current) {
+    throw new Error("Attachment record was not found.");
+  }
+
+  const nextAttachment = await buildAttachmentRecord({
+    requestNumber: current.request.requestNumber,
+    type: current.type,
+    file: input.file,
+  });
+
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.vendorRegistrationAttachment.update({
+        where: {
+          id: current.id,
+        },
+        data: {
+          fileName: nextAttachment.fileName,
+          mimeType: nextAttachment.mimeType,
+          storagePath: nextAttachment.storagePath,
+          sizeBytes: nextAttachment.sizeBytes,
+        },
+      });
+
+      await createAuditLog(tx, {
+        action: "UPDATED",
+        entityType: "VendorRegistrationAttachment",
+        entityId: current.id,
+        userId: input.userId,
+        details: {
+          requestId: current.requestId,
+          requestNumber: current.request.requestNumber,
+          type: current.type,
+          previousFileName: current.fileName,
+          previousStoragePath: current.storagePath,
+          nextFileName: nextAttachment.fileName,
+          nextStoragePath: nextAttachment.storagePath,
+        },
+      });
+    },
+    {
+      timeout: 15000,
+    },
+  );
+
+  return {
+    requestId: current.requestId,
+  };
 }
 
 export async function approveVendorRegistrationRequest(input: {
@@ -624,6 +845,20 @@ export async function approveVendorRegistrationRequest(input: {
     throw new Error("This vendor registration has already been processed.");
   }
 
+  const selectedSubcategories = request.selectedSubcategories.map((entry) => ({
+    id: entry.subcategory.id,
+    name: entry.subcategory.name,
+    externalKey: entry.subcategory.externalKey,
+  }));
+  const selectedSubcategoryIds = Array.from(
+    new Set(
+      request.selectedSubcategories.length > 0
+        ? request.selectedSubcategories.map((entry) => entry.subcategoryId)
+        : [request.primarySubcategoryId],
+    ),
+  );
+  const approvedAt = new Date();
+
   const vendor = await prisma.$transaction(async (tx) => {
     const categoryCode = getCategoryCode(request.primaryCategory);
     const serial = await acquireSupplierIdSequence(tx, request.countryCode, categoryCode);
@@ -631,6 +866,10 @@ export async function approveVendorRegistrationRequest(input: {
       request.countryCode,
       categoryCode,
       serial,
+    );
+    const certificate = await reserveVendorRegistrationCertificateCode(
+      tx,
+      approvedAt,
     );
 
     const vendor = await tx.vendor.create({
@@ -655,6 +894,14 @@ export async function approveVendorRegistrationRequest(input: {
       },
     });
 
+    await tx.vendorSubcategorySelection.createMany({
+      data: selectedSubcategoryIds.map((subcategoryId) => ({
+        vendorId: vendor.id,
+        subcategoryId,
+      })),
+      skipDuplicates: true,
+    });
+
     await tx.vendorRegistrationRequest.update({
       where: {
         id: request.id,
@@ -662,10 +909,13 @@ export async function approveVendorRegistrationRequest(input: {
       data: {
         status: VendorRegistrationStatus.APPROVED,
         reviewedByUserId: input.userId,
-        reviewedAt: new Date(),
+        reviewedAt: approvedAt,
         rejectionReason: null,
         supplierId: nextSupplierId,
         approvedVendorId: vendor.id,
+        certificateCode: certificate.certificateCode,
+        certificateYear: certificate.certificateYear,
+        certificateSequence: certificate.certificateSequence,
       },
     });
 
@@ -680,6 +930,12 @@ export async function approveVendorRegistrationRequest(input: {
         nextStatus: VendorRegistrationStatus.APPROVED,
         supplierId: nextSupplierId,
         approvedVendorId: vendor.id,
+        certificateCode: certificate.certificateCode,
+        selectedSubcategories: selectedSubcategories.map((subcategory) => ({
+          id: subcategory.id,
+          name: subcategory.name,
+          code: subcategory.externalKey,
+        })),
       },
     });
 
@@ -699,12 +955,20 @@ export async function approveVendorRegistrationRequest(input: {
       cooldownMinutes: 60,
     });
 
-    return vendor;
+    return {
+      ...vendor,
+      certificateCode: certificate.certificateCode,
+    };
   });
 
-  const approvedAt = new Date();
+  const odooSyncResult = await syncVendorToOdoo({
+    vendorId: vendor.id,
+    registrationRequestId: request.id,
+    userId: input.userId,
+  });
+
   const pdfBuffer = await generateVendorRegistrationCertificatePdfBuffer({
-    certificateId: request.id,
+    certificateCode: vendor.certificateCode,
     requestNumber: request.requestNumber,
     supplierId: vendor.supplierId ?? "-",
     companyName: request.companyName,
@@ -712,6 +976,15 @@ export async function approveVendorRegistrationRequest(input: {
     crNumber: request.crNumber,
     vatNumber: request.vatNumber,
     categoryName: request.primaryCategory.name,
+    categoryCode: request.primaryCategory.externalKey,
+    subcategories: selectedSubcategories,
+    countryName: request.country.name,
+    countryCode: request.countryCode,
+    selectedCities: request.selectedCities.map((entry) => ({
+      name: entry.city.name,
+      region: entry.city.region,
+    })),
+    coverageScope: request.coverageScope,
     approvedAt,
   });
 
@@ -727,7 +1000,7 @@ export async function approveVendorRegistrationRequest(input: {
     react: createElement("div", null, "Your supplier registration has been approved."),
     attachments: [
       {
-        filename: `${request.requestNumber}.pdf`,
+        filename: `vendor-registration-${request.requestNumber}.pdf`,
         content: pdfBuffer,
       },
     ],
@@ -767,6 +1040,11 @@ export async function approveVendorRegistrationRequest(input: {
     requestNumber: request.requestNumber,
     supplierId: vendor.supplierId,
     vendorId: vendor.id,
+    odooSyncStatus: odooSyncResult.status,
+    odooPartnerId:
+      odooSyncResult.status === "SYNCED" ? odooSyncResult.partnerId : null,
+    odooSyncError:
+      odooSyncResult.status === "FAILED" ? odooSyncResult.error : null,
   };
 }
 

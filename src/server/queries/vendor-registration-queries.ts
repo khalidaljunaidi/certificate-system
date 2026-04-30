@@ -5,6 +5,7 @@ import type {
   VendorRegistrationRequestView,
 } from "@/lib/types";
 import { prisma } from "@/lib/prisma";
+import { withServerTiming } from "@/lib/server-performance";
 import { ensureVendorCatalogData } from "@/server/services/vendor-catalog-service";
 
 type VendorRegistrationFilters = {
@@ -21,6 +22,14 @@ type VendorRegistrationQueryOptions = {
 type VendorRegistrationRequestRecord = Prisma.VendorRegistrationRequestGetPayload<{
   select: ReturnType<typeof getRequestSelect>;
 }>;
+
+const VENDOR_REGISTRATION_OPTIONS_CACHE_MS = 60_000;
+let vendorRegistrationOptionsCache:
+  | {
+      expiresAt: number;
+      value: VendorRegistrationFormOptions;
+    }
+  | null = null;
 
 function buildWhere(
   filters: VendorRegistrationFilters = {},
@@ -95,6 +104,7 @@ function mapRequest(
     categoryId: request.categoryId,
     categoryName: request.primaryCategory.name,
     categoryCode: request.primaryCategory.externalKey,
+    categorySubcategoryCount: request.primaryCategory._count.subcategories,
     primarySubcategoryId: request.primarySubcategoryId,
     primarySubcategoryName: request.primarySubcategory.name,
     primarySubcategoryCode: request.primarySubcategory.externalKey,
@@ -130,7 +140,14 @@ function mapRequest(
     declarationSignedAt: request.declarationSignedAt,
     supplierId: request.supplierId,
     approvedVendorId: request.approvedVendorId,
+    certificateCode: request.certificateCode,
+    certificateYear: request.certificateYear,
+    certificateSequence: request.certificateSequence,
     certificatePdfStoragePath: request.certificatePdfStoragePath,
+    odooSyncStatus: request.odooSyncStatus,
+    odooPartnerId: request.odooPartnerId,
+    odooSyncError: request.odooSyncError,
+    odooSyncedAt: request.odooSyncedAt,
     submittedAt: request.submittedAt,
     reviewedAt: request.reviewedAt,
     reviewedByName: request.reviewedBy?.name ?? null,
@@ -193,7 +210,14 @@ function getRequestSelect() {
     declarationSignedAt: true,
     supplierId: true,
     approvedVendorId: true,
+    certificateCode: true,
+    certificateYear: true,
+    certificateSequence: true,
     certificatePdfStoragePath: true,
+    odooSyncStatus: true,
+    odooPartnerId: true,
+    odooSyncError: true,
+    odooSyncedAt: true,
     submittedAt: true,
     reviewedAt: true,
     reviewedBy: {
@@ -210,6 +234,11 @@ function getRequestSelect() {
       select: {
         name: true,
         externalKey: true,
+        _count: {
+          select: {
+            subcategories: true,
+          },
+        },
       },
     },
     primarySubcategory: {
@@ -277,6 +306,14 @@ function getRequestSelect() {
 }
 
 export async function getVendorRegistrationFormOptions(): Promise<VendorRegistrationFormOptions> {
+  if (
+    vendorRegistrationOptionsCache &&
+    vendorRegistrationOptionsCache.expiresAt > Date.now()
+  ) {
+    return vendorRegistrationOptionsCache.value;
+  }
+
+  return withServerTiming("vendorRegistration.formOptions", async () => {
   await ensureVendorCatalogData();
 
   const [countries, categories] = await Promise.all([
@@ -292,6 +329,7 @@ export async function getVendorRegistrationFormOptions(): Promise<VendorRegistra
           name: "asc",
         },
       ],
+      take: 250,
       select: {
         code: true,
         name: true,
@@ -308,6 +346,7 @@ export async function getVendorRegistrationFormOptions(): Promise<VendorRegistra
               name: "asc",
             },
           ],
+          take: 500,
           select: {
             id: true,
             name: true,
@@ -320,6 +359,7 @@ export async function getVendorRegistrationFormOptions(): Promise<VendorRegistra
       orderBy: {
         name: "asc",
       },
+      take: 50,
       select: {
         id: true,
         name: true,
@@ -328,6 +368,7 @@ export async function getVendorRegistrationFormOptions(): Promise<VendorRegistra
           orderBy: {
             name: "asc",
           },
+          take: 250,
           select: {
             id: true,
             name: true,
@@ -339,7 +380,7 @@ export async function getVendorRegistrationFormOptions(): Promise<VendorRegistra
     }),
   ]);
 
-  return {
+  const value = {
     countries: countries.map((country) => ({
       code: country.code,
       name: country.name,
@@ -362,6 +403,14 @@ export async function getVendorRegistrationFormOptions(): Promise<VendorRegistra
       })),
     })),
   };
+
+  vendorRegistrationOptionsCache = {
+    expiresAt: Date.now() + VENDOR_REGISTRATION_OPTIONS_CACHE_MS,
+    value,
+  };
+
+  return value;
+  });
 }
 
 export async function getVendorRegistrationRequests(
@@ -383,6 +432,42 @@ export async function getVendorRegistrationRequests(
   });
 
   return requests.map(mapRequest);
+}
+
+export async function getVendorRegistrationRequestSummaries(
+  filters: VendorRegistrationFilters = {},
+  options: VendorRegistrationQueryOptions = {},
+) {
+  return prisma.vendorRegistrationRequest.findMany({
+    where: buildWhere(filters),
+    orderBy: [
+      {
+        submittedAt: "desc",
+      },
+      {
+        updatedAt: "desc",
+      },
+    ],
+    take: options.limit ?? 10,
+    select: {
+      id: true,
+      requestNumber: true,
+      companyName: true,
+      companyEmail: true,
+      status: true,
+      submittedAt: true,
+      country: {
+        select: {
+          name: true,
+        },
+      },
+      primaryCategory: {
+        select: {
+          name: true,
+        },
+      },
+    },
+  });
 }
 
 export async function getVendorRegistrationRequestById(

@@ -53,19 +53,22 @@ function formatAuditValue(value: unknown, amountField = false) {
     return formatDate(value);
   }
 
-  return JSON.stringify(value);
+  return "Structured details captured";
 }
 
-function summarizePaymentAuditEntry(
+function buildPaymentAuditSummary(
   entry: PaymentRecordDetailView["record"]["auditTrail"][number],
 ) {
   const details = asAuditDetailsRecord(entry.details);
 
   if (!details) {
-    return "Audit activity recorded.";
+    return {
+      summaryRows: ["Audit activity recorded."],
+      changes: [],
+    };
   }
 
-  const summaryParts: string[] = [];
+  const summaryRows: string[] = [];
   const summaryFields: Array<[string, string, boolean?]> = [
     ["poNumber", "PO Number"],
     ["contractNumber", "Contract Number"],
@@ -80,10 +83,15 @@ function summarizePaymentAuditEntry(
     const value = details[key];
 
     if (value !== undefined && value !== null && value !== "") {
-      summaryParts.push(`${label}: ${formatAuditValue(value, amountField)}`);
+      summaryRows.push(`${label}: ${formatAuditValue(value, amountField)}`);
     }
   }
 
+  const changes: Array<{
+    field: string;
+    previousValue: string;
+    newValue: string;
+  }> = [];
   const comparisonFields: Array<{
     label: string;
     previousKey: string;
@@ -133,9 +141,29 @@ function summarizePaymentAuditEntry(
       nextKey: "nextInvoiceNumber",
     },
     {
+      label: "Invoice Status",
+      previousKey: "previousInvoiceStatus",
+      nextKey: "nextInvoiceStatus",
+    },
+    {
       label: "Invoice Received Date",
       previousKey: "previousInvoiceReceivedDate",
       nextKey: "nextInvoiceReceivedDate",
+    },
+    {
+      label: "Odoo Invoice",
+      previousKey: "previousInvoiceExistsInOdoo",
+      nextKey: "nextInvoiceExistsInOdoo",
+    },
+    {
+      label: "Odoo Reference",
+      previousKey: "previousOdooInvoiceReference",
+      nextKey: "nextOdooInvoiceReference",
+    },
+    {
+      label: "Odoo Upload Date",
+      previousKey: "previousOdooInvoiceUploadedAt",
+      nextKey: "nextOdooInvoiceUploadedAt",
     },
     {
       label: "Closed At",
@@ -152,14 +180,18 @@ function summarizePaymentAuditEntry(
       continue;
     }
 
-    summaryParts.push(
-      `${field.label}: ${formatAuditValue(previousValue, field.amountField)} -> ${formatAuditValue(nextValue, field.amountField)}`,
-    );
+    changes.push({
+      field: field.label,
+      previousValue: formatAuditValue(previousValue, field.amountField),
+      newValue: formatAuditValue(nextValue, field.amountField),
+    });
   }
 
-  return summaryParts.length > 0
-    ? summaryParts.join(" | ")
-    : "Audit activity recorded.";
+  return {
+    summaryRows:
+      summaryRows.length > 0 ? summaryRows.slice(0, 4) : ["Audit activity recorded."],
+    changes: changes.slice(0, 5),
+  };
 }
 
 export async function buildPaymentsListPdfModel(
@@ -167,6 +199,7 @@ export async function buildPaymentsListPdfModel(
 ): Promise<PaymentsListPdfModel> {
   return {
     generatedAt: formatDate(new Date()),
+    documentReference: `PAY-LIST-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}`,
     summary: [
       {
         label: "Total PO Amount",
@@ -242,6 +275,7 @@ export async function buildPaymentRecordPdfModel(
 
   return {
     generatedAt: formatDate(new Date()),
+    documentReference: `PAY-${detail.record.projectVendorId.slice(-8).toUpperCase()}`,
     projectName: detail.record.projectName,
     projectCode: detail.record.projectCode,
     vendorName: detail.record.vendorName,
@@ -251,6 +285,9 @@ export async function buildPaymentRecordPdfModel(
     totalAmount: detail.record.amountMissing
       ? "PO amount not set"
       : formatSarAmount(detail.record.totalAmount),
+    amountSource: detail.record.amountMissing
+      ? "PO amount not set"
+      : "From PO / contract assignment",
     paidAmount: formatSarAmount(detail.record.paidAmount),
     remainingAmount: formatSarAmount(detail.record.remainingAmount),
     progressPercent: detail.record.amountMissing
@@ -284,14 +321,19 @@ export async function buildPaymentRecordPdfModel(
       totalAmount: formatSarAmount(certificate.totalAmount),
       updatedAt: formatDate(certificate.updatedAt),
     })),
-    auditItems: detail.record.auditTrail.slice(0, 8).map((entry) => ({
-      title: `${entry.action.replaceAll("_", " ")} · ${entry.entityType
-        .replaceAll(/([a-z])([A-Z])/g, "$1 $2")
-        .replaceAll("_", " ")}`,
-      actorName: entry.actorName ?? "System",
-      createdAt: formatDate(entry.createdAt),
-      summary: summarizePaymentAuditEntry(entry),
-    })),
+    auditItems: detail.record.auditTrail.slice(0, 8).map((entry) => {
+      const auditSummary = buildPaymentAuditSummary(entry);
+
+      return {
+        title: `${entry.action.replaceAll("_", " ")} - ${entry.entityType
+          .replaceAll(/([a-z])([A-Z])/g, "$1 $2")
+          .replaceAll("_", " ")}`,
+        actorName: entry.actorName ?? "System",
+        createdAt: formatDate(entry.createdAt),
+        summaryRows: auditSummary.summaryRows,
+        changes: auditSummary.changes,
+      };
+    }),
   };
 }
 

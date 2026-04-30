@@ -1,14 +1,17 @@
 import {
   type PaymentInstallmentStatus,
   type PaymentInvoiceStatus,
+  type PaymentOdooInvoiceStatus,
   Prisma,
 } from "@prisma/client";
 
 import { WorkflowUpdateEmail } from "@/emails";
-import { PRIMARY_EVALUATOR_EMAIL } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
 import { absoluteUrl } from "@/lib/utils";
-import { buildPaymentSummary } from "@/server/payments/payment-summary";
+import {
+  buildPaymentSummary,
+  canClosePaymentRecord,
+} from "@/server/payments/payment-summary";
 import { createAuditLog } from "@/server/services/audit-service";
 import { sendDirectWorkflowEmail } from "@/server/services/email-service";
 import { createWorkflowNotification } from "@/server/services/notification-service";
@@ -105,6 +108,11 @@ type PreviousInstallmentSnapshot = {
   invoiceReceivedDate: Date | null;
   taxInvoiceValidated: boolean;
   invoiceStatus: PaymentInvoiceStatus;
+  invoiceExistsInOdoo: boolean;
+  odooInvoiceStatus: PaymentOdooInvoiceStatus | null;
+  odooInvoiceReference: string | null;
+  odooInvoiceUploadedAt: Date | null;
+  odooInvoiceNotes: string | null;
   financeReviewNotes: string | null;
   financeReviewedAt: Date | null;
   financeReviewedByUserId: string | null;
@@ -135,6 +143,10 @@ type InstallmentMutationInput = {
   invoiceReceivedDate?: Date | null;
   taxInvoiceValidated: boolean;
   invoiceStatus?: PaymentInvoiceStatus | null;
+  invoiceExistsInOdoo?: boolean;
+  odooInvoiceReference?: string | null;
+  odooInvoiceUploadedAt?: Date | null;
+  odooInvoiceNotes?: string | null;
   financeReviewNotes?: string | null;
   scheduledPaymentDate?: Date | null;
   paymentDate?: Date | null;
@@ -152,6 +164,11 @@ type InstallmentMutationPayload = {
   invoiceReceivedDate: Date | null;
   taxInvoiceValidated: boolean;
   invoiceStatus: PaymentInvoiceStatus;
+  invoiceExistsInOdoo: boolean;
+  odooInvoiceStatus: PaymentOdooInvoiceStatus | null;
+  odooInvoiceReference: string | null;
+  odooInvoiceUploadedAt: Date | null;
+  odooInvoiceNotes: string | null;
   financeReviewNotes: string | null;
   financeReviewedAt: Date | null;
   financeReviewedByUserId: string | null;
@@ -231,6 +248,11 @@ async function summarizeAssignmentTotals(
           invoiceReceivedDate: true,
           taxInvoiceValidated: true,
           invoiceStatus: true,
+          invoiceExistsInOdoo: true,
+          odooInvoiceStatus: true,
+          odooInvoiceReference: true,
+          odooInvoiceUploadedAt: true,
+          odooInvoiceNotes: true,
           financeReviewNotes: true,
           financeReviewedAt: true,
           financeReviewedBy: {
@@ -269,25 +291,30 @@ async function summarizeAssignmentTotals(
   const openInstallments = summary.installments.filter(
     (installment) => !isClosedInstallment(installment.status),
   );
+  const unpaidInstallments = summary.installments.filter(
+    (installment) => installment.status !== "PAID",
+  );
+  const canClosePayment = canClosePaymentRecord({
+    totalAmount: summary.totalAmount,
+    paidAmount: summary.paidAmount,
+    remainingAmount: summary.remainingAmount,
+    installments: summary.installments,
+  });
 
   return {
     summary,
     openInstallments,
+    canClosePayment,
     closureFailures: [
       ...(summary.amountMissing ? ["PO amount is not set."] : []),
-      ...(projectVendor.paymentFinanceOwnerUserId ? [] : ["Finance owner is not assigned."]),
       ...(summary.totalAmount <= 0 ? ["PO amount must be greater than zero."] : []),
-      ...(summary.paidAmount < summary.totalAmount
+      ...(summary.remainingAmount > 0 || summary.paidAmount < summary.totalAmount
         ? ["Paid installments do not yet match the PO amount."]
         : []),
-      ...(openInstallments.length > 0
-        ? ["Pending installments or invoices still exist."]
+      ...(unpaidInstallments.length > 0
+        ? ["Payment cannot be closed until all installments are fully paid."]
         : []),
-      ...(projectVendor.paymentWorkflowOverrideStatus
-        ? [
-            `Payment record is currently ${projectVendor.paymentWorkflowOverrideStatus.replaceAll("_", " ").toLowerCase()}.`,
-          ]
-        : []),
+      ...(!canClosePayment ? ["Payment cannot be closed until all installments are fully paid."] : []),
     ],
   };
 }
@@ -333,6 +360,19 @@ function buildInstallmentMutationPayload(
     sanitizeText(input.financeReviewNotes) ??
     previousInstallment?.financeReviewNotes ??
     null;
+  const invoiceExistsInOdoo =
+    input.invoiceExistsInOdoo ?? previousInstallment?.invoiceExistsInOdoo ?? false;
+  const odooInvoiceReference = invoiceExistsInOdoo
+    ? sanitizeText(input.odooInvoiceReference) ??
+      previousInstallment?.odooInvoiceReference ??
+      null
+    : null;
+  const odooInvoiceUploadedAt = invoiceExistsInOdoo
+    ? input.odooInvoiceUploadedAt ?? previousInstallment?.odooInvoiceUploadedAt ?? null
+    : null;
+  const odooInvoiceNotes = invoiceExistsInOdoo
+    ? sanitizeText(input.odooInvoiceNotes) ?? previousInstallment?.odooInvoiceNotes ?? null
+    : null;
   const basePayload: InstallmentMutationPayload = {
     amount: input.amount,
     dueDate: input.dueDate,
@@ -352,6 +392,11 @@ function buildInstallmentMutationPayload(
     taxInvoiceValidated:
       input.taxInvoiceValidated ?? previousInstallment?.taxInvoiceValidated ?? false,
     invoiceStatus: previousInstallment?.invoiceStatus ?? "MISSING",
+    invoiceExistsInOdoo,
+    odooInvoiceStatus: invoiceExistsInOdoo ? "UPLOADED_TO_ODOO" : null,
+    odooInvoiceReference,
+    odooInvoiceUploadedAt,
+    odooInvoiceNotes,
     financeReviewNotes,
     financeReviewedAt: previousInstallment?.financeReviewedAt ?? null,
     financeReviewedByUserId: previousInstallment?.financeReviewedByUserId ?? null,
@@ -377,12 +422,18 @@ function buildInstallmentMutationPayload(
           (invoiceNumber || basePayload.invoiceReceivedDate ? "INVOICE_RECEIVED" : "PLANNED"),
       };
     case "ADD_INVOICE":
+      if (!basePayload.invoiceExistsInOdoo && !basePayload.invoiceStoragePath) {
+        throw new Error(
+          "Upload an invoice attachment or mark that the invoice exists in Odoo.",
+        );
+      }
+
       return {
         ...basePayload,
         invoiceDate: input.invoiceDate ?? basePayload.invoiceDate,
         invoiceAmount: toDecimal(input.invoiceAmount ?? null),
         invoiceReceivedDate: input.invoiceReceivedDate ?? new Date(),
-        invoiceStatus: "RECEIVED",
+        invoiceStatus: basePayload.taxInvoiceValidated ? "VALIDATED" : "RECEIVED",
         status: "INVOICE_RECEIVED",
         financeReviewedAt: null,
         financeReviewedByUserId: null,
@@ -456,148 +507,177 @@ export async function saveProjectVendorPaymentInstallment(input: {
   invoiceReceivedDate?: Date | null;
   taxInvoiceValidated: boolean;
   invoiceStatus?: PaymentInvoiceStatus | null;
+  invoiceExistsInOdoo?: boolean;
+  odooInvoiceReference?: string | null;
+  odooInvoiceUploadedAt?: Date | null;
+  odooInvoiceNotes?: string | null;
   financeReviewNotes?: string | null;
   scheduledPaymentDate?: Date | null;
   paymentDate?: Date | null;
   notes?: string | null;
 }) {
-  return prisma.$transaction(async (tx) => {
-    const projectVendor = await tx.projectVendor.findUnique({
-      where: {
-        id: input.projectVendorId,
-      },
-      select: {
-        id: true,
-        projectId: true,
-        poAmount: true,
-        poNumber: true,
-        contractNumber: true,
-        paymentFinanceOwnerUserId: true,
-        paymentWorkflowOverrideStatus: true,
-        vendor: {
-          select: {
-            id: true,
-            vendorId: true,
-            vendorName: true,
-          },
-        },
-        project: {
-          select: {
-            id: true,
-            projectName: true,
-            projectCode: true,
-          },
+  const projectVendor = await prisma.projectVendor.findUnique({
+    where: {
+      id: input.projectVendorId,
+    },
+    select: {
+      id: true,
+      projectId: true,
+      poAmount: true,
+      poNumber: true,
+      contractNumber: true,
+      paymentFinanceOwnerUserId: true,
+      paymentWorkflowOverrideStatus: true,
+      vendor: {
+        select: {
+          id: true,
+          vendorId: true,
+          vendorName: true,
         },
       },
-    });
+      project: {
+        select: {
+          id: true,
+          projectName: true,
+          projectCode: true,
+        },
+      },
+    },
+  });
 
-    if (!projectVendor || projectVendor.projectId !== input.projectId) {
-      throw new Error("Project vendor assignment not found.");
-    }
+  if (!projectVendor || projectVendor.projectId !== input.projectId) {
+    throw new Error("Project vendor assignment not found.");
+  }
 
-    const previousInstallment = input.installmentId
-      ? await tx.projectVendorPaymentInstallment.findUnique({
-          where: {
-            id: input.installmentId,
-          },
-          select: {
-            id: true,
-            projectVendorId: true,
-            amount: true,
-            dueDate: true,
-            condition: true,
-            invoiceNumber: true,
-            invoiceStoragePath: true,
-            invoiceDate: true,
-            invoiceAmount: true,
-            invoiceReceivedDate: true,
-            taxInvoiceValidated: true,
-            invoiceStatus: true,
-            financeReviewNotes: true,
-            financeReviewedAt: true,
-            financeReviewedByUserId: true,
-            scheduledPaymentDate: true,
-            paymentDate: true,
-            status: true,
-            notes: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        })
-      : null;
+  const previousInstallment = input.installmentId
+    ? await prisma.projectVendorPaymentInstallment.findUnique({
+        where: {
+          id: input.installmentId,
+        },
+        select: {
+          id: true,
+          projectVendorId: true,
+          amount: true,
+          dueDate: true,
+          condition: true,
+          invoiceNumber: true,
+          invoiceStoragePath: true,
+          invoiceDate: true,
+          invoiceAmount: true,
+          invoiceReceivedDate: true,
+          taxInvoiceValidated: true,
+          invoiceStatus: true,
+          invoiceExistsInOdoo: true,
+          odooInvoiceStatus: true,
+          odooInvoiceReference: true,
+          odooInvoiceUploadedAt: true,
+          odooInvoiceNotes: true,
+          financeReviewNotes: true,
+          financeReviewedAt: true,
+          financeReviewedByUserId: true,
+          scheduledPaymentDate: true,
+          paymentDate: true,
+          status: true,
+          notes: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
+    : null;
 
-    if (previousInstallment && previousInstallment.projectVendorId !== projectVendor.id) {
-      throw new Error("The selected installment does not belong to this assignment.");
-    }
+  if (previousInstallment && previousInstallment.projectVendorId !== projectVendor.id) {
+    throw new Error("The selected installment does not belong to this assignment.");
+  }
 
-    if (input.workflowIntent !== "CREATE_PLAN" && !previousInstallment) {
-      throw new Error("Select an existing installment before progressing the payment workflow.");
-    }
+  if (input.workflowIntent !== "CREATE_PLAN" && !previousInstallment) {
+    throw new Error("Select an existing installment before progressing the payment workflow.");
+  }
 
-    const nextPayload = buildInstallmentMutationPayload(input, previousInstallment);
+  const nextPayload = buildInstallmentMutationPayload(input, previousInstallment);
 
-    const installment = previousInstallment
-      ? await tx.projectVendorPaymentInstallment.update({
-          where: {
-            id: previousInstallment.id,
-          },
-          data: nextPayload,
-          select: {
-            id: true,
-            projectVendorId: true,
-            amount: true,
-            dueDate: true,
-            condition: true,
-            invoiceNumber: true,
-            invoiceStoragePath: true,
-            invoiceDate: true,
-            invoiceAmount: true,
-            invoiceReceivedDate: true,
-            taxInvoiceValidated: true,
-            invoiceStatus: true,
-            financeReviewNotes: true,
-            financeReviewedAt: true,
-            financeReviewedByUserId: true,
-            scheduledPaymentDate: true,
-            paymentDate: true,
-            status: true,
-            notes: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        })
-      : await tx.projectVendorPaymentInstallment.create({
-          data: {
-            projectVendorId: projectVendor.id,
-            createdByUserId: input.userId,
-            ...nextPayload,
-          },
-          select: {
-            id: true,
-            projectVendorId: true,
-            amount: true,
-            dueDate: true,
-            condition: true,
-            invoiceNumber: true,
-            invoiceStoragePath: true,
-            invoiceDate: true,
-            invoiceAmount: true,
-            invoiceReceivedDate: true,
-            taxInvoiceValidated: true,
-            invoiceStatus: true,
-            financeReviewNotes: true,
-            financeReviewedAt: true,
-            financeReviewedByUserId: true,
-            scheduledPaymentDate: true,
-            paymentDate: true,
-            status: true,
-            notes: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        });
+  const installment = await prisma.$transaction(
+    async (tx) => {
+      return previousInstallment
+        ? tx.projectVendorPaymentInstallment.update({
+            where: {
+              id: previousInstallment.id,
+            },
+            data: nextPayload,
+            select: {
+              id: true,
+              projectVendorId: true,
+              amount: true,
+              dueDate: true,
+              condition: true,
+              invoiceNumber: true,
+              invoiceStoragePath: true,
+              invoiceDate: true,
+              invoiceAmount: true,
+              invoiceReceivedDate: true,
+              taxInvoiceValidated: true,
+              invoiceStatus: true,
+              invoiceExistsInOdoo: true,
+              odooInvoiceStatus: true,
+              odooInvoiceReference: true,
+              odooInvoiceUploadedAt: true,
+              odooInvoiceNotes: true,
+              financeReviewNotes: true,
+              financeReviewedAt: true,
+              financeReviewedByUserId: true,
+              scheduledPaymentDate: true,
+              paymentDate: true,
+              status: true,
+              notes: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          })
+        : tx.projectVendorPaymentInstallment.create({
+            data: {
+              projectVendorId: projectVendor.id,
+              createdByUserId: input.userId,
+              ...nextPayload,
+            },
+            select: {
+              id: true,
+              projectVendorId: true,
+              amount: true,
+              dueDate: true,
+              condition: true,
+              invoiceNumber: true,
+              invoiceStoragePath: true,
+              invoiceDate: true,
+              invoiceAmount: true,
+              invoiceReceivedDate: true,
+              taxInvoiceValidated: true,
+              invoiceStatus: true,
+              invoiceExistsInOdoo: true,
+              odooInvoiceStatus: true,
+              odooInvoiceReference: true,
+              odooInvoiceUploadedAt: true,
+              odooInvoiceNotes: true,
+              financeReviewNotes: true,
+              financeReviewedAt: true,
+              financeReviewedByUserId: true,
+              scheduledPaymentDate: true,
+              paymentDate: true,
+              status: true,
+              notes: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          });
+    },
+    {
+      timeout: 15000,
+    },
+  );
 
-    await createAuditLog(tx, {
+  const postCommitClient = prisma as unknown as Prisma.TransactionClient;
+  const totals = await summarizeAssignmentTotals(postCommitClient, projectVendor.id);
+
+  try {
+    await createAuditLog(postCommitClient, {
       action: previousInstallment ? "UPDATED" : "CREATED",
       entityType: "ProjectVendorPaymentInstallment",
       entityId: installment.id,
@@ -617,6 +697,16 @@ export async function saveProjectVendorPaymentInstallment(input: {
         nextStatus: installment.status,
         previousInvoiceStatus: previousInstallment?.invoiceStatus ?? null,
         nextInvoiceStatus: installment.invoiceStatus,
+        previousInvoiceExistsInOdoo: previousInstallment?.invoiceExistsInOdoo ?? null,
+        nextInvoiceExistsInOdoo: installment.invoiceExistsInOdoo,
+        previousOdooInvoiceStatus: previousInstallment?.odooInvoiceStatus ?? null,
+        nextOdooInvoiceStatus: installment.odooInvoiceStatus,
+        previousOdooInvoiceReference: previousInstallment?.odooInvoiceReference ?? null,
+        nextOdooInvoiceReference: installment.odooInvoiceReference,
+        previousOdooInvoiceUploadedAt: previousInstallment?.odooInvoiceUploadedAt ?? null,
+        nextOdooInvoiceUploadedAt: installment.odooInvoiceUploadedAt,
+        previousOdooInvoiceNotes: previousInstallment?.odooInvoiceNotes ?? null,
+        nextOdooInvoiceNotes: installment.odooInvoiceNotes,
         previousInvoiceNumber: previousInstallment?.invoiceNumber ?? null,
         nextInvoiceNumber: installment.invoiceNumber,
         previousInvoiceDate: previousInstallment?.invoiceDate ?? null,
@@ -637,120 +727,149 @@ export async function saveProjectVendorPaymentInstallment(input: {
         nextPaymentDate: installment.paymentDate,
       },
     });
+  } catch (error) {
+    await logSystemError({
+      action: "PaymentInstallmentAuditLog",
+      error,
+      userId: input.userId,
+      context: {
+        projectVendorId: projectVendor.id,
+        installmentId: installment.id,
+      },
+    });
+  }
 
-    if (!previousInstallment) {
-      await createPaymentNotification(tx, {
-        projectVendor,
-        title: "Payment plan created",
-        message: `${projectVendor.vendor.vendorName} now has an installment plan started for ${projectVendor.project.projectName}.`,
+  const notificationRequests: Array<Parameters<typeof createPaymentNotification>[1]> = [];
+
+  if (!previousInstallment) {
+    notificationRequests.push({
+      projectVendor,
+      title: "Payment plan created",
+      message: `${projectVendor.vendor.vendorName} now has an installment plan started for ${projectVendor.project.projectName}.`,
+    });
+  }
+
+  if (
+    (previousInstallment?.invoiceStatus ?? "MISSING") === "MISSING" &&
+    (installment.invoiceStatus === "RECEIVED" || installment.invoiceStatus === "VALIDATED")
+  ) {
+    notificationRequests.push({
+      projectVendor,
+      title: "Invoice received",
+      message: `An invoice was received for ${projectVendor.vendor.vendorName} on ${projectVendor.project.projectName}.`,
+      dedupeKey: `payment:${installment.id}:invoice-received`,
+      cooldownMinutes: 12 * 60,
+      severity: "ACTION_REQUIRED",
+    });
+  }
+
+  if (
+    previousInstallment?.invoiceStatus !== "APPROVED_FOR_PAYMENT" &&
+    installment.invoiceStatus === "APPROVED_FOR_PAYMENT"
+  ) {
+    notificationRequests.push({
+      projectVendor,
+      title: "Invoice approved for payment",
+      message: `${projectVendor.vendor.vendorName} invoice is approved for payment scheduling on ${projectVendor.project.projectName}.`,
+      dedupeKey: `payment:${installment.id}:invoice-approved`,
+      cooldownMinutes: 12 * 60,
+      severity: "ACTION_REQUIRED",
+    });
+  }
+
+  if (
+    previousInstallment?.invoiceStatus !== "REJECTED" &&
+    installment.invoiceStatus === "REJECTED"
+  ) {
+    notificationRequests.push({
+      projectVendor,
+      title: "Invoice rejected",
+      message: `${projectVendor.vendor.vendorName} invoice was rejected and requires procurement follow-up.`,
+      dedupeKey: `payment:${installment.id}:invoice-rejected`,
+      cooldownMinutes: 12 * 60,
+      severity: "WARNING",
+    });
+  }
+
+  if (previousInstallment?.status !== "SCHEDULED" && installment.status === "SCHEDULED") {
+    notificationRequests.push({
+      projectVendor,
+      title: "Payment scheduled",
+      message: `${projectVendor.vendor.vendorName} now has a payment scheduled for ${projectVendor.project.projectName}.`,
+      dedupeKey: `payment:${installment.id}:scheduled`,
+      cooldownMinutes: 12 * 60,
+    });
+  }
+
+  if (previousInstallment?.status !== "PAID" && installment.status === "PAID") {
+    notificationRequests.push({
+      projectVendor,
+      title: "Payment installment paid",
+      message: `${projectVendor.vendor.vendorName} has a paid installment recorded for ${projectVendor.project.projectName}.`,
+      dedupeKey: `payment:${installment.id}:paid`,
+      cooldownMinutes: 12 * 60,
+    });
+  }
+
+  if (isInstallmentDueSoon({ status: installment.status, dueDate: installment.dueDate })) {
+    notificationRequests.push({
+      projectVendor,
+      title: "Payment due soon",
+      message: `A payment installment for ${projectVendor.vendor.vendorName} is due within the next seven days.`,
+      severity: "ACTION_REQUIRED",
+      dedupeKey: `payment:${installment.id}:due-soon`,
+      cooldownMinutes: 24 * 60,
+    });
+  }
+
+  if (isInstallmentOverdue({ status: installment.status, dueDate: installment.dueDate })) {
+    notificationRequests.push({
+      projectVendor,
+      title: "Payment overdue",
+      message: `A payment installment for ${projectVendor.vendor.vendorName} is overdue and requires follow-up.`,
+      severity: "WARNING",
+      dedupeKey: `payment:${installment.id}:overdue`,
+      cooldownMinutes: 24 * 60,
+    });
+  }
+
+  const fullyPaid =
+    totals.summary.totalAmount > 0 &&
+    totals.summary.paidAmount >= totals.summary.totalAmount;
+
+  if (fullyPaid) {
+    notificationRequests.push({
+      projectVendor,
+      title: "Full payment completed",
+      message: `${projectVendor.vendor.vendorName} has been fully paid for ${projectVendor.project.projectName}.`,
+      dedupeKey: `payment:${projectVendor.id}:fully-paid`,
+      cooldownMinutes: 24 * 60,
+    });
+  }
+
+  for (const notification of notificationRequests) {
+    try {
+      await createPaymentNotification(postCommitClient, notification);
+    } catch (error) {
+      await logSystemError({
+        action: "PaymentInstallmentNotification",
+        error,
+        userId: input.userId,
+        context: {
+          projectVendorId: projectVendor.id,
+          installmentId: installment.id,
+          notificationTitle: notification.title,
+        },
       });
     }
+  }
 
-    if (
-      (previousInstallment?.invoiceStatus ?? "MISSING") === "MISSING" &&
-      installment.invoiceStatus === "RECEIVED"
-    ) {
-      await createPaymentNotification(tx, {
-        projectVendor,
-        title: "Invoice received",
-        message: `An invoice was received for ${projectVendor.vendor.vendorName} on ${projectVendor.project.projectName}.`,
-        dedupeKey: `payment:${installment.id}:invoice-received`,
-        cooldownMinutes: 12 * 60,
-        severity: "ACTION_REQUIRED",
-      });
-    }
-
-    if (
-      previousInstallment?.invoiceStatus !== "APPROVED_FOR_PAYMENT" &&
-      installment.invoiceStatus === "APPROVED_FOR_PAYMENT"
-    ) {
-      await createPaymentNotification(tx, {
-        projectVendor,
-        title: "Invoice approved for payment",
-        message: `${projectVendor.vendor.vendorName} invoice is approved for payment scheduling on ${projectVendor.project.projectName}.`,
-        dedupeKey: `payment:${installment.id}:invoice-approved`,
-        cooldownMinutes: 12 * 60,
-        severity: "ACTION_REQUIRED",
-      });
-    }
-
-    if (
-      previousInstallment?.invoiceStatus !== "REJECTED" &&
-      installment.invoiceStatus === "REJECTED"
-    ) {
-      await createPaymentNotification(tx, {
-        projectVendor,
-        title: "Invoice rejected",
-        message: `${projectVendor.vendor.vendorName} invoice was rejected and requires procurement follow-up.`,
-        dedupeKey: `payment:${installment.id}:invoice-rejected`,
-        cooldownMinutes: 12 * 60,
-        severity: "WARNING",
-      });
-    }
-
-    if (previousInstallment?.status !== "SCHEDULED" && installment.status === "SCHEDULED") {
-      await createPaymentNotification(tx, {
-        projectVendor,
-        title: "Payment scheduled",
-        message: `${projectVendor.vendor.vendorName} now has a payment scheduled for ${projectVendor.project.projectName}.`,
-        dedupeKey: `payment:${installment.id}:scheduled`,
-        cooldownMinutes: 12 * 60,
-      });
-    }
-
-    if (previousInstallment?.status !== "PAID" && installment.status === "PAID") {
-      await createPaymentNotification(tx, {
-        projectVendor,
-        title: "Payment installment paid",
-        message: `${projectVendor.vendor.vendorName} has a paid installment recorded for ${projectVendor.project.projectName}.`,
-        dedupeKey: `payment:${installment.id}:paid`,
-        cooldownMinutes: 12 * 60,
-      });
-    }
-
-    if (isInstallmentDueSoon({ status: installment.status, dueDate: installment.dueDate })) {
-      await createPaymentNotification(tx, {
-        projectVendor,
-        title: "Payment due soon",
-        message: `A payment installment for ${projectVendor.vendor.vendorName} is due within the next seven days.`,
-        severity: "ACTION_REQUIRED",
-        dedupeKey: `payment:${installment.id}:due-soon`,
-        cooldownMinutes: 24 * 60,
-      });
-    }
-
-    if (isInstallmentOverdue({ status: installment.status, dueDate: installment.dueDate })) {
-      await createPaymentNotification(tx, {
-        projectVendor,
-        title: "Payment overdue",
-        message: `A payment installment for ${projectVendor.vendor.vendorName} is overdue and requires follow-up.`,
-        severity: "WARNING",
-        dedupeKey: `payment:${installment.id}:overdue`,
-        cooldownMinutes: 24 * 60,
-      });
-    }
-
-    const totals = await summarizeAssignmentTotals(tx, projectVendor.id);
-
-    if (totals.summary.totalAmount > 0 && totals.summary.paidAmount >= totals.summary.totalAmount) {
-      await createPaymentNotification(tx, {
-        projectVendor,
-        title: "Full payment completed",
-        message: `${projectVendor.vendor.vendorName} has been fully paid for ${projectVendor.project.projectName}.`,
-        dedupeKey: `payment:${projectVendor.id}:fully-paid`,
-        cooldownMinutes: 24 * 60,
-      });
-    }
-
-    return {
-      projectId: projectVendor.projectId,
-      projectVendorId: projectVendor.id,
-      installmentId: installment.id,
-      fullyPaid:
-        totals.summary.totalAmount > 0 &&
-        totals.summary.paidAmount >= totals.summary.totalAmount,
-    };
-  });
+  return {
+    projectId: projectVendor.projectId,
+    projectVendorId: projectVendor.id,
+    installmentId: installment.id,
+    fullyPaid,
+  };
 }
 
 export async function updatePaymentRecordGovernance(input: {
@@ -1031,12 +1150,11 @@ export async function setPaymentRecordClosedState(input: {
 
     if (closing) {
       const closureSnapshot = await summarizeAssignmentTotals(tx, projectVendor.id);
-      const canForceClose =
-        input.overrideClosure &&
-        input.userEmail?.trim().toLowerCase() === PRIMARY_EVALUATOR_EMAIL;
 
-      if (closureSnapshot.closureFailures.length > 0 && !canForceClose) {
-        throw new Error(closureSnapshot.closureFailures.join(" "));
+      if (!closureSnapshot.canClosePayment) {
+        throw new Error(
+          Array.from(new Set(closureSnapshot.closureFailures)).join(" "),
+        );
       }
     }
 
@@ -1067,6 +1185,9 @@ export async function setPaymentRecordClosedState(input: {
         vendorId: projectVendor.vendor.vendorId,
         previousClosedAt: projectVendor.paymentClosedAt,
         nextClosedAt: updated.paymentClosedAt,
+        timelineEvent: closing ? "PAYMENT_CLOSED" : "PAYMENT_REOPENED",
+        previousStatus: projectVendor.paymentClosedAt ? "CLOSED" : "OPEN",
+        nextStatus: closing ? "CLOSED" : "OPEN",
         overrideClosure: input.overrideClosure,
         reason: sanitizeText(input.closeReason),
       },

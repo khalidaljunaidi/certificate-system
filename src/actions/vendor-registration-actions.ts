@@ -1,25 +1,82 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { EMPTY_ACTION_STATE, toActionState } from "@/actions/utils";
 import { requireAdminSession } from "@/lib/auth";
 import { canManageVendorGovernance } from "@/lib/permissions";
 import { vendorRegistrationReviewSchema, vendorRegistrationSubmissionSchema } from "@/lib/validation";
 import type { ActionState } from "@/lib/types";
+import { testOdooConnection } from "@/server/services/odoo-service";
 import {
   approveVendorRegistrationRequest,
+  replaceVendorRegistrationAttachment,
   rejectVendorRegistrationRequest,
   submitVendorRegistrationRequest,
 } from "@/server/services/vendor-registration-service";
+import { retryVendorOdooSync } from "@/server/services/vendor-odoo-sync-service";
 import { logSystemError } from "@/server/services/system-error-service";
+
+const MAX_SUPPLIER_REGISTRATION_FILE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_SUPPLIER_REGISTRATION_FILE_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+]);
+const ALLOWED_SUPPLIER_REGISTRATION_FILE_EXTENSIONS = [
+  ".pdf",
+  ".jpg",
+  ".jpeg",
+  ".png",
+];
+
+const supplierRegistrationFileLabels: Record<string, string> = {
+  crAttachment: "CR",
+  vatAttachment: "VAT",
+  companyProfileAttachment: "Company Profile",
+  financialsAttachment: "Financials",
+  bankCertificateAttachment: "Bank Certificate",
+  replacementAttachment: "Attachment",
+};
+
+function withNotice(path: string, notice: string) {
+  const safePath = path.startsWith("/") ? path : "/admin/vendor-registrations";
+  return `${safePath}${safePath.includes("?") ? "&" : "?"}notice=${notice}`;
+}
+
+function isAllowedSupplierRegistrationFile(file: File) {
+  const name = file.name.trim().toLowerCase();
+
+  return (
+    ALLOWED_SUPPLIER_REGISTRATION_FILE_TYPES.has(file.type) ||
+    ALLOWED_SUPPLIER_REGISTRATION_FILE_EXTENSIONS.some((extension) =>
+      name.endsWith(extension),
+    )
+  );
+}
+
+function assertValidSupplierRegistrationFile(file: File, fieldName: string) {
+  const label = supplierRegistrationFileLabels[fieldName] ?? fieldName;
+
+  if (file.size > MAX_SUPPLIER_REGISTRATION_FILE_BYTES) {
+    throw new Error(`${label} must be 10MB or less.`);
+  }
+
+  if (!isAllowedSupplierRegistrationFile(file)) {
+    throw new Error(`${label} must be a PDF, JPG, or PNG file.`);
+  }
+}
 
 function getRequiredFile(formData: FormData, fieldName: string) {
   const value = formData.get(fieldName);
+  const label = supplierRegistrationFileLabels[fieldName] ?? fieldName;
 
   if (!(value instanceof File) || value.size === 0) {
-    throw new Error(`${fieldName} is required.`);
+    throw new Error(`${label} is required.`);
   }
+
+  assertValidSupplierRegistrationFile(value, fieldName);
 
   return value;
 }
@@ -30,6 +87,8 @@ function getOptionalFile(formData: FormData, fieldName: string) {
   if (!(value instanceof File) || value.size === 0) {
     return undefined;
   }
+
+  assertValidSupplierRegistrationFile(value, fieldName);
 
   return value;
 }
@@ -91,6 +150,22 @@ function parseRegistrationFormData(formData: FormData) {
   });
 }
 
+function isInternalSupplierRegistrationError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+
+  return (
+    message.includes("prisma") ||
+    message.includes("transaction api error") ||
+    message.includes("transaction expired") ||
+    message.includes("invalid `") ||
+    message.includes(".next")
+  );
+}
+
 export async function submitVendorRegistrationAction(
   prevState: ActionState = EMPTY_ACTION_STATE,
   formData: FormData,
@@ -123,6 +198,13 @@ export async function submitVendorRegistrationAction(
       error,
       severity: "ERROR",
     });
+
+    if (isInternalSupplierRegistrationError(error)) {
+      return {
+        error:
+          "We could not submit the registration due to a system processing delay. Please try again.",
+      };
+    }
 
     return toActionState(error);
   }
@@ -163,10 +245,20 @@ export async function reviewVendorRegistrationAction(
       revalidatePath("/admin/dashboard");
       revalidatePath("/admin", "layout");
 
+      const odooSyncFailed = result.odooSyncStatus === "FAILED";
+
       return {
-        success: "Vendor registration approved successfully.",
-        noticeKey: "vendor-registration-approved",
-        redirectTo: `/admin/vendor-registrations/${values.requestId}?notice=vendor-registration-approved`,
+        success: odooSyncFailed
+          ? "Vendor registration approved. Odoo sync failed and can be retried from this page."
+          : "Vendor registration approved successfully.",
+        noticeKey: odooSyncFailed
+          ? "vendor-registration-approved-odoo-failed"
+          : "vendor-registration-approved",
+        redirectTo: `/admin/vendor-registrations/${values.requestId}?notice=${
+          odooSyncFailed
+            ? "vendor-registration-approved-odoo-failed"
+            : "vendor-registration-approved"
+        }`,
       };
     }
 
@@ -188,6 +280,177 @@ export async function reviewVendorRegistrationAction(
   } catch (error) {
     await logSystemError({
       action: "SupplierRegistrationReview",
+      error,
+      severity: "ERROR",
+    });
+
+    return toActionState(error);
+  }
+}
+
+export async function replaceVendorRegistrationAttachmentAction(
+  formData: FormData,
+): Promise<void> {
+  const redirectTo = String(
+    formData.get("redirectTo") ?? "/admin/vendor-registrations",
+  );
+  let nextUrl = withNotice(redirectTo, "attachment-updated");
+
+  try {
+    const session = await requireAdminSession();
+
+    if (!canManageVendorGovernance(session.user)) {
+      nextUrl = withNotice(redirectTo, "attachment-update-denied");
+    } else {
+      const attachmentId = String(formData.get("attachmentId") ?? "");
+      const file = formData.get("attachmentFile");
+
+      if (!attachmentId) {
+        throw new Error("Attachment record is missing.");
+      }
+
+      if (!(file instanceof File) || file.size === 0) {
+        throw new Error("Please choose a replacement file.");
+      }
+
+      assertValidSupplierRegistrationFile(file, "replacementAttachment");
+
+      const result = await replaceVendorRegistrationAttachment({
+        attachmentId,
+        file,
+        userId: session.user.id,
+      });
+
+      revalidatePath("/admin/vendor-registrations");
+      revalidatePath(`/admin/vendor-registrations/${result.requestId}`);
+    }
+  } catch (error) {
+    await logSystemError({
+      action: "VendorRegistrationAttachmentReplace",
+      error,
+      severity: "ERROR",
+      context: {
+        redirectTo,
+        attachmentId: String(formData.get("attachmentId") ?? ""),
+      },
+    });
+
+    nextUrl = withNotice(redirectTo, "attachment-update-failed");
+  }
+
+  redirect(nextUrl);
+}
+
+export async function retryOdooVendorSyncAction(
+  prevState: ActionState = EMPTY_ACTION_STATE,
+  formData: FormData,
+): Promise<ActionState> {
+  try {
+    void prevState;
+    const session = await requireAdminSession();
+
+    if (!canManageVendorGovernance(session.user)) {
+      return {
+        error: "You do not have permission to sync vendors with Odoo.",
+      };
+    }
+
+    const targetType = String(formData.get("targetType") ?? "");
+    const targetId = String(formData.get("targetId") ?? "");
+    const vendorId = String(formData.get("vendorId") ?? "");
+    const redirectTo = String(formData.get("redirectTo") ?? "");
+
+    if (targetType !== "registration" && targetType !== "vendor") {
+      return {
+        error: "Odoo sync target type is invalid.",
+      };
+    }
+
+    if (!targetId || !vendorId) {
+      return {
+        error: "Odoo sync target is missing.",
+      };
+    }
+
+    const result = await retryVendorOdooSync({
+      vendorId,
+      registrationRequestId: targetType === "registration" ? targetId : null,
+      userId: session.user.id,
+    });
+
+    revalidatePath("/admin/vendor-registrations");
+    revalidatePath("/admin/vendors");
+    revalidatePath(`/admin/vendors/${vendorId}`);
+
+    if (targetType === "registration") {
+      revalidatePath(`/admin/vendor-registrations/${targetId}`);
+    }
+
+    revalidatePath("/admin", "layout");
+
+    if (result.status === "FAILED") {
+      return {
+        error: `Odoo sync failed. ${result.error}`,
+        redirectTo: redirectTo
+          ? withNotice(redirectTo, "odoo-sync-failed")
+          : undefined,
+      };
+    }
+
+    return {
+      success: "Vendor synced with Odoo successfully.",
+      redirectTo: redirectTo
+        ? withNotice(redirectTo, "odoo-sync-synced")
+        : undefined,
+    };
+  } catch (error) {
+    await logSystemError({
+      action: "OdooVendorSyncRetry",
+      error,
+      severity: "ERROR",
+    });
+
+    return toActionState(error);
+  }
+}
+
+export async function testOdooConnectionAction(
+  prevState: ActionState = EMPTY_ACTION_STATE,
+): Promise<ActionState> {
+  try {
+    void prevState;
+    const session = await requireAdminSession();
+
+    if (!canManageVendorGovernance(session.user)) {
+      return {
+        error: "You do not have permission to test Odoo connectivity.",
+      };
+    }
+
+    const result = await testOdooConnection();
+
+    if (result.status === "CONNECTED") {
+      return {
+        success: `Connected as UID: ${result.uid}. Database: ${result.db}. URL: ${result.url}. res.partner count: ${result.partnerCount ?? "unavailable"}.`,
+      };
+    }
+
+    await logSystemError({
+      action: "OdooConnectionTest",
+      error: new Error(result.error),
+      userId: session.user.id,
+      severity: "WARNING",
+      context: {
+        odooDiagnostics: result.diagnostics,
+      },
+    });
+
+    return {
+      error: `Failed: ${result.error}`,
+    };
+  } catch (error) {
+    await logSystemError({
+      action: "OdooConnectionTest",
       error,
       severity: "ERROR",
     });

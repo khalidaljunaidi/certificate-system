@@ -123,6 +123,12 @@ enum VendorRegistrationStatus {
   REJECTED
 }
 
+enum OdooSyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+}
+
 enum VendorRegistrationAttachmentType {
   CR
   VAT
@@ -213,8 +219,13 @@ enum PaymentAmountSource {
 enum PaymentInvoiceStatus {
   MISSING
   RECEIVED
+  VALIDATED
   REJECTED
   APPROVED_FOR_PAYMENT
+}
+
+enum PaymentOdooInvoiceStatus {
+  UPLOADED_TO_ODOO
 }
 
 enum PaymentWorkflowOverrideStatus {
@@ -314,6 +325,11 @@ model User {
   closedPaymentRecords ProjectVendor[] @relation("ProjectVendorPaymentClosedBy")
   systemErrorLogs     SystemErrorLog[]
   supplierInvitations SupplierInvitation[] @relation("SupplierInvitationInvitedBy")
+
+  @@index([isActive])
+  @@index([role])
+  @@index([createdAt])
+  @@index([updatedAt])
 }
 
 model Project {
@@ -355,10 +371,15 @@ model Vendor {
   notes        String?
   categoryId   String?
   subcategoryId String?
+  odooSyncStatus OdooSyncStatus @default(PENDING)
+  odooPartnerId Int?
+  odooSyncError String?
+  odooSyncedAt DateTime?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   category     VendorCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   subcategory  VendorSubcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
+  subcategorySelections VendorSubcategorySelection[]
   projectLinks ProjectVendor[]
   certificates Certificate[]
   evaluationCycles VendorEvaluationCycle[]
@@ -373,6 +394,8 @@ model Vendor {
   @@index([supplierId])
   @@index([categoryId])
   @@index([subcategoryId])
+  @@index([odooSyncStatus])
+  @@index([odooPartnerId])
   @@index([createdAt])
   @@index([updatedAt])
 }
@@ -463,7 +486,14 @@ model VendorRegistrationRequest {
   reviewedAt              DateTime?
   supplierId              String?                        @unique
   approvedVendorId        String?
+  certificateCode         String?                        @unique
+  certificateYear         Int?
+  certificateSequence     Int?
   certificatePdfStoragePath String?
+  odooSyncStatus          OdooSyncStatus                 @default(PENDING)
+  odooPartnerId           Int?
+  odooSyncError           String?
+  odooSyncedAt            DateTime?
   submittedAt             DateTime                       @default(now())
   createdAt               DateTime                       @default(now())
   updatedAt               DateTime                       @updatedAt
@@ -484,6 +514,21 @@ model VendorRegistrationRequest {
   @@index([countryCode])
   @@index([categoryId])
   @@index([supplierId])
+  @@index([certificateYear])
+  @@index([odooSyncStatus])
+  @@index([odooPartnerId])
+  @@index([submittedAt])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([reviewedByUserId])
+  @@index([approvedVendorId])
+}
+
+model VendorRegistrationCertificateSequence {
+  year       Int      @id
+  nextSerial Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 model VendorRegistrationRequestSubcategory {
@@ -585,11 +630,23 @@ model VendorSubcategory {
   updatedAt   DateTime       @updatedAt
   category    VendorCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   vendors     Vendor[]
+  vendorSelections VendorSubcategorySelection[]
   registrationRequests VendorRegistrationRequest[]
   registrationSelections VendorRegistrationRequestSubcategory[]
 
   @@unique([categoryId, name])
   @@index([categoryId])
+}
+
+model VendorSubcategorySelection {
+  vendorId      String
+  subcategoryId String
+  createdAt     DateTime          @default(now())
+  vendor        Vendor            @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  subcategory   VendorSubcategory @relation(fields: [subcategoryId], references: [id], onDelete: Restrict)
+
+  @@id([vendorId, subcategoryId])
+  @@index([subcategoryId])
 }
 
 model ProjectVendor {
@@ -638,6 +695,12 @@ model ProjectVendor {
   @@index([paymentWorkflowOverrideByUserId])
   @@index([paymentClosedAt])
   @@index([isActive])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([projectId, updatedAt])
+  @@index([vendorId, updatedAt])
+  @@index([paymentFinanceOwnerUserId, updatedAt])
+  @@index([isActive, updatedAt])
 }
 
 model ProjectVendorPaymentInstallment {
@@ -653,6 +716,11 @@ model ProjectVendorPaymentInstallment {
   invoiceReceivedDate DateTime?
   taxInvoiceValidated Boolean            @default(false)
   invoiceStatus   PaymentInvoiceStatus   @default(MISSING)
+  invoiceExistsInOdoo Boolean            @default(false)
+  odooInvoiceStatus PaymentOdooInvoiceStatus?
+  odooInvoiceReference String?
+  odooInvoiceUploadedAt DateTime?
+  odooInvoiceNotes String?
   financeReviewNotes String?
   financeReviewedAt DateTime?
   financeReviewedByUserId String?
@@ -671,9 +739,15 @@ model ProjectVendorPaymentInstallment {
   @@index([projectVendorId, dueDate])
   @@index([status, dueDate])
   @@index([invoiceStatus])
+  @@index([odooInvoiceStatus])
+  @@index([odooInvoiceReference])
   @@index([invoiceReceivedDate])
   @@index([scheduledPaymentDate])
+  @@index([projectVendorId, updatedAt])
+  @@index([createdByUserId])
+  @@index([financeReviewedByUserId])
   @@index([createdAt])
+  @@index([updatedAt])
 }
 
 model Certificate {
@@ -1164,6 +1238,9 @@ model AuditLog {
   @@index([projectId, createdAt])
   @@index([certificateId, createdAt])
   @@index([userId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([entityType, createdAt])
+  @@index([createdAt])
 }
 
 model Account {
@@ -1182,6 +1259,7 @@ model Account {
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
 model Session {
@@ -1190,6 +1268,9 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expires])
 }
 
 model VerificationToken {

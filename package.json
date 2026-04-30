@@ -17,7 +17,10 @@
     "prisma:studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",
     "seed:demo": "tsx prisma/seed-demo.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "smoke:vendor-registration-certificate-pdf": "tsx scripts/smoke-vendor-registration-certificate-pdf.ts",
+    "smoke:performance": "tsx scripts/smoke-performance-routes.ts",
+    "cleanup:test-vendor-odoo": "tsx scripts/cleanup-test-vendor-odoo.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

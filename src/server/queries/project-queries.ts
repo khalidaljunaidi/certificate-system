@@ -193,6 +193,11 @@ export async function getProjectWorkspace(
               invoiceReceivedDate: true,
               taxInvoiceValidated: true,
               invoiceStatus: true,
+              invoiceExistsInOdoo: true,
+              odooInvoiceStatus: true,
+              odooInvoiceReference: true,
+              odooInvoiceUploadedAt: true,
+              odooInvoiceNotes: true,
               financeReviewNotes: true,
               financeReviewedAt: true,
               financeReviewedBy: {

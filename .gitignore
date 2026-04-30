@@ -42,3 +42,6 @@ next-env.d.ts
 
 # logs
 *.log
+
+# private local upload fallback
+/.storage/

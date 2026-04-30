@@ -9,7 +9,7 @@ import { getNotificationsForUser } from "@/server/queries/notification-queries";
 export default async function NotificationsPage() {
   const session = await requireAdminSession();
   const notifications = await getNotificationsForUser(session.user.id, {
-    limit: 50,
+    limit: 20,
   });
 
   return (

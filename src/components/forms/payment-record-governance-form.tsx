@@ -26,7 +26,7 @@ export function PaymentRecordGovernanceForm({
   closedAt,
   canAssignFinanceOwner,
   canCloseRecord,
-  canForceClose,
+  canClosePayment,
 }: {
   projectVendorId: string;
   redirectTo: string;
@@ -43,7 +43,7 @@ export function PaymentRecordGovernanceForm({
   closedAt: Date | null;
   canAssignFinanceOwner: boolean;
   canCloseRecord: boolean;
-  canForceClose: boolean;
+  canClosePayment: boolean;
 }) {
   const router = useRouter();
   const [governanceState, governanceAction, governancePending] = useActionState(
@@ -54,6 +54,12 @@ export function PaymentRecordGovernanceForm({
     setPaymentRecordClosedStateAction,
     EMPTY_ACTION_STATE,
   );
+  const closeDisabled =
+    closePending || (!closedAt && !canClosePayment);
+  const closeDisabledReason =
+    !closedAt && !canClosePayment
+      ? "Payment cannot be closed until all installments are fully paid"
+      : undefined;
 
   useEffect(() => {
     const redirectToTarget = governanceState.redirectTo ?? closeState.redirectTo;
@@ -151,20 +157,7 @@ export function PaymentRecordGovernanceForm({
           <input type="hidden" name="redirectTo" value={redirectTo} />
           <input type="hidden" name="closeAction" value={closedAt ? "REOPEN" : "CLOSE"} />
 
-          {!closedAt && canForceClose ? (
-            <label className="inline-flex items-center gap-3 text-sm font-medium text-[var(--color-ink)]">
-              <input
-                type="checkbox"
-                name="overrideClosure"
-                value="on"
-                disabled={closePending}
-                className="h-4 w-4 rounded border-[var(--color-border)]"
-              />
-              Force close with Khaled override
-            </label>
-          ) : (
-            <input type="hidden" name="overrideClosure" value="" />
-          )}
+          <input type="hidden" name="overrideClosure" value="" />
 
           <div>
             <Label htmlFor="closeReason">
@@ -184,17 +177,25 @@ export function PaymentRecordGovernanceForm({
 
           <FormStateMessage state={closeState} />
 
-          <Button
-            type="submit"
-            variant={closedAt ? "secondary" : "destructive"}
-            disabled={closePending}
-          >
-            {closePending
-              ? "Saving..."
-              : closedAt
-                ? "Reopen Payment Record"
-                : "Close Payment Record"}
-          </Button>
+          {closeDisabledReason ? (
+            <p className="rounded-[16px] border border-[rgba(185,28,28,0.14)] bg-[rgba(185,28,28,0.06)] px-4 py-3 text-xs leading-6 text-[#991b1b]">
+              {closeDisabledReason}.
+            </p>
+          ) : null}
+
+          <span className="inline-flex" title={closeDisabledReason}>
+            <Button
+              type="submit"
+              variant={closedAt ? "secondary" : "destructive"}
+              disabled={closeDisabled}
+            >
+              {closePending
+                ? "Saving..."
+                : closedAt
+                  ? "Reopen Payment Record"
+                  : "Close Payment Record"}
+            </Button>
+          </span>
         </form>
       ) : null}
     </div>

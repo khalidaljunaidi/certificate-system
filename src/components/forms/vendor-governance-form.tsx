@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { updateVendorGovernanceAction } from "@/actions/vendor-actions";
 import { EMPTY_ACTION_STATE } from "@/actions/utils";
 import { FormStateMessage } from "@/components/forms/form-state-message";
+import { SubcategorySelector } from "@/components/forms/subcategory-selector";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -15,11 +16,13 @@ export function VendorGovernanceForm({
   vendorId,
   currentCategoryId,
   currentSubcategoryId,
+  currentSubcategoryIds = [],
   options,
 }: {
   vendorId: string;
   currentCategoryId: string | null;
   currentSubcategoryId: string | null;
+  currentSubcategoryIds?: string[];
   options: VendorGovernanceOptions;
 }) {
   const router = useRouter();
@@ -28,7 +31,13 @@ export function VendorGovernanceForm({
     EMPTY_ACTION_STATE,
   );
   const [categoryId, setCategoryId] = useState(currentCategoryId ?? "");
-  const [subcategoryId, setSubcategoryId] = useState(currentSubcategoryId ?? "");
+  const [subcategoryIds, setSubcategoryIds] = useState<string[]>(
+    currentSubcategoryIds.length > 0
+      ? currentSubcategoryIds
+      : currentSubcategoryId
+        ? [currentSubcategoryId]
+        : [],
+  );
 
   const subcategoryOptions = useMemo(
     () =>
@@ -55,20 +64,8 @@ export function VendorGovernanceForm({
           name="categoryId"
           value={categoryId}
           onChange={(event) => {
-            const nextCategoryId = event.target.value;
-            const nextSubcategoryOptions =
-              options.categories.find((category) => category.id === nextCategoryId)
-                ?.subcategories ?? [];
-
-            setCategoryId(nextCategoryId);
-            if (
-              subcategoryId &&
-              !nextSubcategoryOptions.some(
-                (subcategory) => subcategory.id === subcategoryId,
-              )
-            ) {
-              setSubcategoryId("");
-            }
+            setCategoryId(event.target.value);
+            setSubcategoryIds([]);
           }}
           disabled={isPending}
         >
@@ -88,32 +85,17 @@ export function VendorGovernanceForm({
         </p>
       </div>
 
-      <div>
-        <Label htmlFor="vendor-subcategory">Subcategory</Label>
-        <Select
-          id="vendor-subcategory"
-          name="subcategoryId"
-          value={subcategoryId}
-          onChange={(event) => setSubcategoryId(event.target.value)}
-          disabled={isPending || !categoryId}
-        >
-          <option value="">Unassigned</option>
-          {subcategoryOptions.map((subcategory) => (
-            <option key={subcategory.id} value={subcategory.id}>
-              {subcategory.externalKey
-                ? `${subcategory.name} (${subcategory.externalKey})`
-                : subcategory.name}
-            </option>
-          ))}
-        </Select>
-        <p className="mt-2 text-xs leading-6 text-[var(--color-muted)]">
-          {!categoryId
-            ? "Choose a category to enable subcategory options."
-            : subcategoryOptions.length === 0
-              ? "No subcategories exist for the selected category yet."
-              : "Subcategory options are tied to the selected category."}
-        </p>
-      </div>
+      <SubcategorySelector
+        id="vendor-governance-subcategories"
+        categorySelected={Boolean(categoryId)}
+        options={subcategoryOptions}
+        selectedIds={subcategoryIds}
+        onSelectedIdsChange={setSubcategoryIds}
+        disabled={isPending}
+        required={subcategoryOptions.length > 0}
+        lockedText="Choose a category to enable subcategory options."
+        emptyText="No subcategories exist for the selected category yet."
+      />
 
       <FormStateMessage state={state.error ? state : EMPTY_ACTION_STATE} />
 

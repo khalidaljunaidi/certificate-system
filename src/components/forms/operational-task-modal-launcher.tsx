@@ -10,11 +10,17 @@ export function OperationalTaskModalLauncher({
   lookupOptions,
   canManage,
 }: {
-  lookupOptions: TaskLookupOptions;
+  lookupOptions?: TaskLookupOptions;
   canManage: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [loadedLookupOptions, setLoadedLookupOptions] =
+    useState<TaskLookupOptions | null>(lookupOptions ?? null);
+  const [isLoadingLookupOptions, setIsLoadingLookupOptions] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+
+  const activeLookupOptions = lookupOptions ?? loadedLookupOptions;
 
   useEffect(() => {
     if (!isOpen) {
@@ -41,9 +47,52 @@ export function OperationalTaskModalLauncher({
     return null;
   }
 
+  const handleOpen = async () => {
+    setIsOpen(true);
+
+    if (lookupOptions || loadedLookupOptions || isLoadingLookupOptions) {
+      return;
+    }
+
+    setLookupError(null);
+    setIsLoadingLookupOptions(true);
+
+    try {
+      const response = await fetch("/api/admin/tasks/lookup-options", {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Task lookup data could not be loaded.");
+      }
+
+      const payload = (await response.json()) as {
+        lookupOptions?: TaskLookupOptions;
+        error?: string;
+      };
+
+      if (!payload.lookupOptions) {
+        throw new Error(payload.error ?? "Task lookup data could not be loaded.");
+      }
+
+      setLoadedLookupOptions(payload.lookupOptions);
+    } catch (error) {
+      setLookupError(
+        error instanceof Error
+          ? error.message
+          : "Task lookup data could not be loaded.",
+      );
+    } finally {
+      setIsLoadingLookupOptions(false);
+    }
+  };
+
   return (
     <>
-      <Button type="button" onClick={() => setIsOpen(true)}>
+      <Button type="button" onClick={handleOpen}>
         Create Task
       </Button>
 
@@ -77,7 +126,19 @@ export function OperationalTaskModalLauncher({
               </Button>
             </div>
             <div className="max-h-[calc(90vh-140px)] overflow-y-auto px-6 py-6">
-              <OperationalTaskForm lookupOptions={lookupOptions} canManage={canManage} />
+              {activeLookupOptions ? (
+                <OperationalTaskForm
+                  lookupOptions={activeLookupOptions}
+                  canManage={canManage}
+                />
+              ) : (
+                <div className="rounded-[22px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-5 text-sm text-[var(--color-muted)]">
+                  {lookupError ??
+                    (isLoadingLookupOptions
+                      ? "Loading task setup options..."
+                      : "Preparing task setup options...")}
+                </div>
+              )}
             </div>
           </div>
         </div>

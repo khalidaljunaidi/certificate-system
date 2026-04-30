@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import { withServerTiming } from "@/lib/server-performance";
 import type { NotificationItem } from "@/lib/types";
 import { getNotificationPreviewForUser } from "@/server/queries/notification-queries";
 
 export async function getDashboardData(userId: string) {
+  return withServerTiming("dashboard.data", async () => {
   const activeProjectWhere = { isArchived: false } as const;
   const activeCertificateWhere = {
     isArchived: false,
@@ -87,4 +89,5 @@ export async function getDashboardData(userId: string) {
     recentNotifications: recentNotifications as NotificationItem[],
     unreadCount,
   };
+  });
 }

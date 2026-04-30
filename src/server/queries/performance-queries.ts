@@ -7,7 +7,6 @@ import {
 } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import type {
-  NotificationItem,
   MonthlyCycleOption,
   MonthlyGovernanceDashboardView,
   MonthlyPerformanceReviewView,
@@ -24,7 +23,6 @@ import {
   getEvaluatedEmployees,
   createEmptyOperationalMetrics,
 } from "@/server/services/performance-service";
-import { getNotificationPreviewForUser } from "@/server/queries/notification-queries";
 import { getOperationalTasksForViewer } from "@/server/queries/task-queries";
 
 type Viewer = {
@@ -32,6 +30,10 @@ type Viewer = {
   role: UserRole;
   email: string;
   permissions?: string[] | null;
+};
+
+type TeamDashboardOptions = {
+  includeQuarterlyTrend?: boolean;
 };
 
 type ReviewFilters = {
@@ -312,6 +314,7 @@ export async function getQuarterlyPerformanceReviewDetail(
 
 export async function getTeamPerformanceDashboard(
   viewer: Viewer,
+  options: TeamDashboardOptions = {},
 ): Promise<TeamDashboardView> {
   const { quarter: currentQuarter, year: currentYear } = getCurrentQuarter();
   const allEmployees = await getEvaluatedEmployees();
@@ -432,61 +435,62 @@ export async function getTeamPerformanceDashboard(
 
   const quarterlyTrend: TeamDashboardView["quarterlyTrend"] = [];
 
-  for (let index = 3; index >= 0; index -= 1) {
-    const quarterOffset = currentQuarter - index;
-    const year = quarterOffset <= 0 ? currentYear - 1 : currentYear;
-    const quarter = quarterOffset <= 0 ? quarterOffset + 4 : quarterOffset;
-    const [reviews, completionMetricsByEmployee] = await Promise.all([
-      prisma.quarterlyPerformanceReview.findMany({
-        where: {
-          year,
-          quarter,
-          employeeUserId: {
-            in: employeeIds,
+  if (options.includeQuarterlyTrend !== false) {
+    for (let index = 3; index >= 0; index -= 1) {
+      const quarterOffset = currentQuarter - index;
+      const year = quarterOffset <= 0 ? currentYear - 1 : currentYear;
+      const quarter = quarterOffset <= 0 ? quarterOffset + 4 : quarterOffset;
+      const [reviews, completionMetricsByEmployee] = await Promise.all([
+        prisma.quarterlyPerformanceReview.findMany({
+          where: {
+            year,
+            quarter,
+            employeeUserId: {
+              in: employeeIds,
+            },
           },
-        },
-        select: {
-          finalScorePercent: true,
-        },
-      }),
-      prisma.$transaction((tx) =>
-        calculateOperationalMetricsForQuarterBatch(tx, {
-          employeeUserIds: employeeIds,
-          year,
-          quarter,
+          select: {
+            finalScorePercent: true,
+          },
         }),
-      ),
-    ]);
+        prisma.$transaction((tx) =>
+          calculateOperationalMetricsForQuarterBatch(tx, {
+            employeeUserIds: employeeIds,
+            year,
+            quarter,
+          }),
+        ),
+      ]);
 
-    const completionMetrics = employeeIds.map(
-      (employeeId) =>
-        completionMetricsByEmployee.get(employeeId) ?? createEmptyOperationalMetrics(),
-    );
+      const completionMetrics = employeeIds.map(
+        (employeeId) =>
+          completionMetricsByEmployee.get(employeeId) ?? createEmptyOperationalMetrics(),
+      );
 
-    quarterlyTrend.push({
-      year,
-      quarter,
-      completionRate:
-        completionMetrics.length === 0
-          ? 0
-          : roundMetric(
-              completionMetrics.reduce((sum, metric) => sum + metric.completionRate, 0) /
-                completionMetrics.length,
-            ),
-      finalScore:
-        reviews.length === 0
-          ? null
-          : roundMetric(
-              reviews.reduce((sum, review) => sum + review.finalScorePercent.toNumber(), 0) /
-                reviews.length,
-            ),
-    });
+      quarterlyTrend.push({
+        year,
+        quarter,
+        completionRate:
+          completionMetrics.length === 0
+            ? 0
+            : roundMetric(
+                completionMetrics.reduce((sum, metric) => sum + metric.completionRate, 0) /
+                  completionMetrics.length,
+              ),
+        finalScore:
+          reviews.length === 0
+            ? null
+            : roundMetric(
+                reviews.reduce((sum, review) => sum + review.finalScorePercent.toNumber(), 0) /
+                  reviews.length,
+             ),
+      });
+    }
   }
 
   const currentUserSummary =
     memberCards.find((card) => card.email === viewer.email) ?? null;
   const recentTasks = await getOperationalTasksForViewer(viewer, {}, { limit: 8 });
-  const recentNotifications = (await getNotificationPreviewForUser(viewer.id)) as NotificationItem[];
 
   return {
     isExecutive,
@@ -509,7 +513,7 @@ export async function getTeamPerformanceDashboard(
     quarterlyTrend,
     currentUserSummary,
     recentTasks: recentTasks.slice(0, 8),
-    recentNotifications,
+    recentNotifications: [],
   };
 }
 

@@ -95,6 +95,10 @@ export async function saveVendorMasterAction(
       notes: formData.get("notes") || undefined,
       categoryId: formData.get("categoryId") || undefined,
       subcategoryId: formData.get("subcategoryId") || undefined,
+      subcategoryIds: formData
+        .getAll("subcategoryIds")
+        .map((value) => String(value).trim())
+        .filter(Boolean),
     });
 
     const redirectTo = formData.get("redirectTo");
@@ -135,6 +139,10 @@ export async function updateVendorGovernanceAction(
       vendorId: formData.get("vendorId"),
       categoryId: formData.get("categoryId") || undefined,
       subcategoryId: formData.get("subcategoryId") || undefined,
+      subcategoryIds: formData
+        .getAll("subcategoryIds")
+        .map((value) => String(value).trim())
+        .filter(Boolean),
     });
 
     const vendor = await updateVendorGovernance(session.user.id, values);

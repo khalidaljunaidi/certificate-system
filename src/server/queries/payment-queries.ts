@@ -8,11 +8,8 @@ import type {
   PaymentWorkspaceView,
 } from "@/lib/types";
 import { prisma } from "@/lib/prisma";
+import { withServerTiming } from "@/lib/server-performance";
 import { shouldScopePaymentsToAssignedRecords, type PermissionSubject } from "@/lib/permissions";
-import {
-  ensureDefaultAccessControlCatalog,
-  resolveUserAccessProfile,
-} from "@/server/services/rbac-service";
 import {
   buildPaymentSummary,
   deriveRecommendedPaymentAction,
@@ -41,6 +38,24 @@ type PaymentViewer = PermissionSubject & {
 };
 
 const INSENSITIVE_QUERY_MODE = Prisma.QueryMode.insensitive;
+const PAYMENT_WORKSPACE_RECORD_LIMIT = 50;
+const FINANCE_OWNER_CACHE_MS = 30_000;
+
+type PaymentDetailActiveTab =
+  | "overview"
+  | "installments"
+  | "invoices"
+  | "finance-review"
+  | "certificates"
+  | "audit"
+  | "notes";
+
+let financeOwnerCache:
+  | {
+      expiresAt: number;
+      owners: PaymentFinanceOwnerView[];
+    }
+  | null = null;
 
 function buildBaseWhere(input: {
   viewer: PaymentViewer;
@@ -282,8 +297,14 @@ function toPaymentRecordListItem(record: {
     invoiceStatus:
       | "MISSING"
       | "RECEIVED"
+      | "VALIDATED"
       | "REJECTED"
       | "APPROVED_FOR_PAYMENT";
+    invoiceExistsInOdoo: boolean;
+    odooInvoiceStatus: "UPLOADED_TO_ODOO" | null;
+    odooInvoiceReference: string | null;
+    odooInvoiceUploadedAt: Date | null;
+    odooInvoiceNotes: string | null;
     financeReviewNotes: string | null;
     financeReviewedAt: Date | null;
     financeReviewedBy: {
@@ -352,6 +373,7 @@ function toPaymentRecordListItem(record: {
     paidAmount: summary.paidAmount,
     remainingAmount: summary.remainingAmount,
     progressPercent: summary.progressPercent,
+    canClosePayment: summary.canClosePayment,
     nextDueDate,
     status,
     workflowOverrideStatus: record.paymentWorkflowOverrideStatus,
@@ -373,6 +395,7 @@ function toPaymentRecordListItem(record: {
     recommendedAction: deriveRecommendedPaymentAction({
       status,
       nextActionInstallment,
+      canClosePayment: summary.canClosePayment,
     }),
     nextActionInstallment,
   };
@@ -416,51 +439,72 @@ function applyWorkspaceFilters(
 }
 
 async function getActiveFinanceOwners() {
-  await ensureDefaultAccessControlCatalog();
+  if (financeOwnerCache && financeOwnerCache.expiresAt > Date.now()) {
+    return financeOwnerCache.owners;
+  }
 
-  const users = await prisma.user.findMany({
-    where: {
-      isActive: true,
-    },
-    orderBy: {
-      name: "asc",
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      title: true,
-      role: true,
-    },
-  });
+  const owners = await withServerTiming("payments.financeOwners", async () => {
+    const users = await prisma.user.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          {
+            role: {
+              in: ["ADMIN", "PROCUREMENT_DIRECTOR", "PROCUREMENT_LEAD"],
+            },
+          },
+          {
+            roleAssignment: {
+              role: {
+                permissions: {
+                  some: {
+                    permission: {
+                      key: {
+                        startsWith: "payment.",
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+      orderBy: {
+        name: "asc",
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        title: true,
+      },
+    });
 
-  const profiles = await Promise.all(
-    users.map(async (user) => ({
-      user,
-      profile: await resolveUserAccessProfile({
-        userId: user.id,
-        legacyRole: user.role,
-      }),
-    })),
-  );
-
-  return profiles
-    .filter(({ profile }) => profile.permissions.some((permission) => permission.startsWith("payment.")))
-    .map(({ user }) => ({
+    return users.map((user) => ({
       id: user.id,
       name: user.name,
       email: user.email,
       title: user.title,
     }));
+  });
+
+  financeOwnerCache = {
+    expiresAt: Date.now() + FINANCE_OWNER_CACHE_MS,
+    owners,
+  };
+
+  return owners;
 }
 
 export async function getPaymentsWorkspace(
   viewer: PaymentViewer,
   filters: PaymentWorkspaceFilters = {},
 ): Promise<PaymentWorkspaceView> {
+  return withServerTiming("payments.workspace", async () => {
   const baseWhere = buildBaseWhere({ viewer, filters });
 
-  const [projectVendors, projects, vendors, financeOwners] = await Promise.all([
+  const [projectVendors, financeOwners] = await Promise.all([
     prisma.projectVendor.findMany({
       where: baseWhere,
       orderBy: [
@@ -471,6 +515,7 @@ export async function getPaymentsWorkspace(
           createdAt: "desc",
         },
       ],
+      take: PAYMENT_WORKSPACE_RECORD_LIMIT,
       select: {
         id: true,
         poNumber: true,
@@ -545,6 +590,11 @@ export async function getPaymentsWorkspace(
             invoiceReceivedDate: true,
             taxInvoiceValidated: true,
             invoiceStatus: true,
+            invoiceExistsInOdoo: true,
+            odooInvoiceStatus: true,
+            odooInvoiceReference: true,
+            odooInvoiceUploadedAt: true,
+            odooInvoiceNotes: true,
             financeReviewNotes: true,
             financeReviewedAt: true,
             financeReviewedBy: {
@@ -562,36 +612,6 @@ export async function getPaymentsWorkspace(
         },
       },
     }),
-    prisma.project.findMany({
-      where: {
-        vendorLinks: {
-          some: baseWhere,
-        },
-      },
-      orderBy: {
-        projectName: "asc",
-      },
-      select: {
-        id: true,
-        projectCode: true,
-        projectName: true,
-      },
-    }),
-    prisma.vendor.findMany({
-      where: {
-        projectLinks: {
-          some: baseWhere,
-        },
-      },
-      orderBy: {
-        vendorName: "asc",
-      },
-      select: {
-        id: true,
-        vendorId: true,
-        vendorName: true,
-      },
-    }),
     getActiveFinanceOwners(),
   ]);
 
@@ -599,6 +619,26 @@ export async function getPaymentsWorkspace(
     projectVendors.map(toPaymentRecordListItem),
     filters,
   );
+  const projects = Array.from(
+    new Map(
+      projectVendors.map((projectVendor) => [
+        projectVendor.project.id,
+        projectVendor.project,
+      ]),
+    ).values(),
+  ).sort((left, right) => left.projectName.localeCompare(right.projectName));
+  const vendors = Array.from(
+    new Map(
+      projectVendors.map((projectVendor) => [
+        projectVendor.vendor.id,
+        {
+          id: projectVendor.vendor.id,
+          vendorId: projectVendor.vendor.vendorId,
+          vendorName: projectVendor.vendor.vendorName,
+        },
+      ]),
+    ).values(),
+  ).sort((left, right) => left.vendorName.localeCompare(right.vendorName));
 
   return {
     filters: {
@@ -638,12 +678,15 @@ export async function getPaymentsWorkspace(
     },
     records,
   };
+  });
 }
 
 export async function getPaymentRecordDetail(input: {
   viewer: PaymentViewer;
   projectVendorId: string;
+  activeTab?: PaymentDetailActiveTab;
 }): Promise<PaymentRecordDetailView | null> {
+  return withServerTiming("payments.detail", async () => {
   const record = await prisma.projectVendor.findUnique({
     where: {
       id: input.projectVendorId,
@@ -704,20 +747,6 @@ export async function getPaymentRecordDetail(input: {
           vendorPhone: true,
         },
       },
-      certificates: {
-        orderBy: {
-          updatedAt: "desc",
-        },
-        select: {
-          id: true,
-          certificateCode: true,
-          status: true,
-          totalAmount: true,
-          updatedAt: true,
-          pmApprovedAt: true,
-          issuedAt: true,
-        },
-      },
       paymentInstallments: {
         orderBy: [
           {
@@ -740,6 +769,11 @@ export async function getPaymentRecordDetail(input: {
           invoiceReceivedDate: true,
           taxInvoiceValidated: true,
           invoiceStatus: true,
+          invoiceExistsInOdoo: true,
+          odooInvoiceStatus: true,
+          odooInvoiceReference: true,
+          odooInvoiceUploadedAt: true,
+          odooInvoiceNotes: true,
           financeReviewNotes: true,
           financeReviewedAt: true,
           financeReviewedBy: {
@@ -770,46 +804,68 @@ export async function getPaymentRecordDetail(input: {
   }
 
   const listItem = toPaymentRecordListItem(record);
+  const activeTab = input.activeTab ?? "overview";
   const installmentIds = record.paymentInstallments.map((installment) => installment.id);
-  const [financeOwners, auditLogs] = await Promise.all([
-    getActiveFinanceOwners(),
-    prisma.auditLog.findMany({
-      where: {
-        OR: [
-          {
-            entityType: "ProjectVendor",
-            entityId: record.id,
+  const [financeOwners, auditLogs, certificates] = await Promise.all([
+    activeTab === "notes" ? getActiveFinanceOwners() : Promise.resolve([]),
+    activeTab === "audit"
+      ? prisma.auditLog.findMany({
+          where: {
+            OR: [
+              {
+                entityType: "ProjectVendor",
+                entityId: record.id,
+              },
+              ...(installmentIds.length > 0
+                ? [
+                    {
+                      entityType: "ProjectVendorPaymentInstallment",
+                      entityId: {
+                        in: installmentIds,
+                      },
+                    },
+                  ]
+                : []),
+            ],
           },
-          ...(installmentIds.length > 0
-            ? [
-                {
-                  entityType: "ProjectVendorPaymentInstallment",
-                  entityId: {
-                    in: installmentIds,
-                  },
-                },
-              ]
-            : []),
-        ],
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-      take: 24,
-      select: {
-        id: true,
-        action: true,
-        entityType: true,
-        entityId: true,
-        createdAt: true,
-        details: true,
-        user: {
+          orderBy: {
+            createdAt: "desc",
+          },
+          take: 30,
           select: {
-            name: true,
+            id: true,
+            action: true,
+            entityType: true,
+            entityId: true,
+            createdAt: true,
+            details: true,
+            user: {
+              select: {
+                name: true,
+              },
+            },
           },
-        },
-      },
-    }),
+        })
+      : Promise.resolve([]),
+    activeTab === "certificates"
+      ? prisma.certificate.findMany({
+          where: {
+            projectVendorId: record.id,
+          },
+          orderBy: {
+            updatedAt: "desc",
+          },
+          select: {
+            id: true,
+            certificateCode: true,
+            status: true,
+            totalAmount: true,
+            updatedAt: true,
+            pmApprovedAt: true,
+            issuedAt: true,
+          },
+        })
+      : Promise.resolve([]),
   ]);
 
   return {
@@ -819,7 +875,7 @@ export async function getPaymentRecordDetail(input: {
       clientName: record.project.clientName,
       vendorPhone: record.vendor.vendorPhone,
       isActive: record.isActive,
-      certificates: record.certificates.map((certificate) => ({
+      certificates: certificates.map((certificate) => ({
         id: certificate.id,
         certificateCode: certificate.certificateCode,
         status: certificate.status,
@@ -852,4 +908,5 @@ export async function getPaymentRecordDetail(input: {
     },
     financeOwners,
   };
+  });
 }

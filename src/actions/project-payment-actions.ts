@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 
 import { EMPTY_ACTION_STATE, toActionState } from "@/actions/utils";
 import { requireAdminSession } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import {
   canAssignPaymentFinanceOwner,
   canCreatePaymentPlan,
@@ -64,6 +65,36 @@ function buildPaymentRedirectTarget(input: {
   return `${url.pathname}${url.search}${input.anchor ? `#${input.anchor}` : ""}`;
 }
 
+function toPaymentCents(value: number) {
+  return Math.round(value * 100);
+}
+
+function getClosePaymentFailureReason(input: {
+  totalAmount: number;
+  totalPaid: number;
+  remainingAmount: number;
+  allInstallmentsPaid: boolean;
+}) {
+  const reasons: string[] = [];
+
+  if (toPaymentCents(input.totalAmount) <= 0) {
+    reasons.push("PO amount must be set before closure.");
+  }
+
+  if (
+    toPaymentCents(input.remainingAmount) > 0 ||
+    toPaymentCents(input.totalPaid) < toPaymentCents(input.totalAmount)
+  ) {
+    reasons.push("Payment cannot be closed until the paid amount covers the full PO amount.");
+  }
+
+  if (!input.allInstallmentsPaid) {
+    reasons.push("Payment cannot be closed until all installments are fully paid.");
+  }
+
+  return reasons.join(" ") || "Payment cannot be closed yet.";
+}
+
 export async function saveProjectVendorPaymentInstallmentAction(
   prevState: ActionState = EMPTY_ACTION_STATE,
   formData: FormData,
@@ -78,11 +109,13 @@ export async function saveProjectVendorPaymentInstallmentAction(
       };
     }
 
+    const workflowIntent = formData.get("workflowIntent");
+    const invoiceExistsInOdooValue = formData.get("invoiceExistsInOdoo");
     const values = projectVendorPaymentInstallmentSchema.parse({
       projectId: formData.get("projectId"),
       projectVendorId: formData.get("projectVendorId"),
       installmentId: formData.get("installmentId") || undefined,
-      workflowIntent: formData.get("workflowIntent"),
+      workflowIntent,
       amount: formData.get("amount"),
       dueDate: formData.get("dueDate"),
       condition: formData.get("condition"),
@@ -92,6 +125,13 @@ export async function saveProjectVendorPaymentInstallmentAction(
       invoiceReceivedDate: formData.get("invoiceReceivedDate") || undefined,
       taxInvoiceValidated: formData.get("taxInvoiceValidated"),
       invoiceStatus: formData.get("invoiceStatus") || undefined,
+      invoiceExistsInOdoo:
+        workflowIntent === "ADD_INVOICE"
+          ? invoiceExistsInOdooValue === "on"
+          : invoiceExistsInOdooValue || undefined,
+      odooInvoiceReference: formData.get("odooInvoiceReference") || undefined,
+      odooInvoiceUploadedAt: formData.get("odooInvoiceUploadedAt") || undefined,
+      odooInvoiceNotes: formData.get("odooInvoiceNotes") || undefined,
       financeReviewNotes: formData.get("financeReviewNotes") || undefined,
       scheduledPaymentDate: formData.get("scheduledPaymentDate") || undefined,
       paymentDate: formData.get("paymentDate") || undefined,
@@ -128,6 +168,10 @@ export async function saveProjectVendorPaymentInstallmentAction(
       invoiceReceivedDate: values.invoiceReceivedDate ?? null,
       taxInvoiceValidated: values.taxInvoiceValidated,
       invoiceStatus: values.invoiceStatus ?? null,
+      invoiceExistsInOdoo: values.invoiceExistsInOdoo,
+      odooInvoiceReference: values.odooInvoiceReference ?? null,
+      odooInvoiceUploadedAt: values.odooInvoiceUploadedAt ?? null,
+      odooInvoiceNotes: values.odooInvoiceNotes ?? null,
       financeReviewNotes: values.financeReviewNotes ?? null,
       scheduledPaymentDate: values.scheduledPaymentDate ?? null,
       paymentDate: values.paymentDate ?? null,
@@ -290,6 +334,135 @@ export async function setPaymentRecordClosedStateAction(
   } catch (error) {
     await logSystemError({
       action: "PaymentRecordCloseStateUpdate",
+      error,
+      severity: "ERROR",
+    });
+
+    return toActionState(error);
+  }
+}
+
+export async function closePaymentAction(paymentId: string): Promise<ActionState> {
+  console.log("closePaymentAction started", { paymentId });
+
+  try {
+    const session = await requireAdminSession();
+
+    if (!canClosePayments(session.user)) {
+      console.log("closePaymentAction permission denied", { paymentId });
+      return {
+        error: "You do not have permission to close payment records.",
+      };
+    }
+
+    const payment = await prisma.projectVendor.findUnique({
+      where: {
+        id: paymentId,
+      },
+      select: {
+        id: true,
+        projectId: true,
+        poAmount: true,
+        paymentClosedAt: true,
+        paymentInstallments: {
+          select: {
+            amount: true,
+            status: true,
+          },
+        },
+      },
+    });
+
+    if (!payment) {
+      console.log("closePaymentAction payment not found", { paymentId });
+      return {
+        error: "Payment record not found.",
+      };
+    }
+
+    const totalAmount = Number(payment.poAmount ?? 0);
+    const totalPaid = payment.paymentInstallments.reduce((sum, installment) => {
+      return installment.status === "PAID"
+        ? sum + Number(installment.amount ?? 0)
+        : sum;
+    }, 0);
+    const remainingAmount = Math.max(totalAmount - totalPaid, 0);
+    const allInstallmentsPaid =
+      payment.paymentInstallments.length === 0 ||
+      payment.paymentInstallments.every((installment) => installment.status === "PAID");
+    const canClosePayment =
+      toPaymentCents(totalAmount) > 0 &&
+      toPaymentCents(remainingAmount) === 0 &&
+      toPaymentCents(totalPaid) >= toPaymentCents(totalAmount) &&
+      allInstallmentsPaid;
+    const currentStatus = payment.paymentClosedAt
+      ? "CLOSED"
+      : canClosePayment
+        ? "PAID"
+        : "OPEN";
+
+    console.log("closePaymentAction paymentId", paymentId);
+    console.log("closePaymentAction current status", currentStatus);
+    console.log("closePaymentAction canClosePayment result", {
+      paymentId,
+      totalAmount,
+      totalPaid,
+      remainingAmount,
+      allInstallmentsPaid,
+      canClosePayment,
+    });
+
+    if (payment.paymentClosedAt) {
+      console.log("closePaymentAction update result", {
+        paymentId,
+        closed: true,
+        alreadyClosed: true,
+      });
+
+      return {
+        success: "Payment closed successfully.",
+        noticeKey: "payment-record-closed",
+      };
+    }
+
+    if (!canClosePayment) {
+      return {
+        error: getClosePaymentFailureReason({
+          totalAmount,
+          totalPaid,
+          remainingAmount,
+          allInstallmentsPaid,
+        }),
+      };
+    }
+
+    const result = await setPaymentRecordClosedState({
+      userId: session.user.id,
+      userEmail: session.user.email,
+      projectVendorId: payment.id,
+      closeAction: "CLOSE",
+      closeReason: "Closed from payment workflow action.",
+      overrideClosure: false,
+    });
+
+    console.log("closePaymentAction update result", result);
+
+    revalidatePath(`/admin/projects/${result.projectId}`);
+    revalidatePath("/admin/payments");
+    revalidatePath(`/admin/payments/${result.projectVendorId}`);
+
+    return {
+      success: "Payment closed successfully.",
+      noticeKey: "payment-record-closed",
+    };
+  } catch (error) {
+    console.log("closePaymentAction update result", {
+      paymentId,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    await logSystemError({
+      action: "PaymentRecordCloseAction",
       error,
       severity: "ERROR",
     });

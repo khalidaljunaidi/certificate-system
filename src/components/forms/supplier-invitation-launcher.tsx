@@ -13,11 +13,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { VendorRegistrationCategoryOption } from "@/lib/types";
+
+type InvitationCategoryOption = {
+  id: string;
+  name: string;
+  code: string | null;
+};
 
 type SupplierInvitationLauncherProps = {
   registrationUrl: string;
-  categories: VendorRegistrationCategoryOption[];
+  categories: InvitationCategoryOption[];
   triggerLabel?: string;
   postSubmitRedirect?: string;
 };
@@ -61,7 +66,7 @@ function InvitationModal({
   postSubmitRedirect,
   registrationUrl,
 }: {
-  categories: VendorRegistrationCategoryOption[];
+  categories: InvitationCategoryOption[];
   onClose: () => void;
   postSubmitRedirect: string;
   registrationUrl: string;

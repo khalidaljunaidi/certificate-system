@@ -12,8 +12,8 @@ import type {
   VendorRegistryView,
 } from "@/lib/types";
 import { prisma } from "@/lib/prisma";
+import { withServerTiming } from "@/lib/server-performance";
 import { hashToken } from "@/server/services/token-service";
-import { ensureVendorCatalogData } from "@/server/services/vendor-catalog-service";
 
 type VendorRegistryFilters = {
   search?: string;
@@ -24,6 +24,22 @@ type VendorRegistryFilters = {
   status?: string;
   activeProject?: string;
 };
+
+const VENDOR_GOVERNANCE_OPTIONS_CACHE_MS = 60_000;
+const VENDOR_REGISTRY_CACHE_MS = 10_000;
+let vendorGovernanceOptionsCache:
+  | {
+      expiresAt: number;
+      value: VendorGovernanceOptions;
+    }
+  | null = null;
+const vendorRegistryCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    value: VendorRegistryItem[];
+  }
+>();
 
 type VendorRegistryQueryOptions = {
   limit?: number;
@@ -58,7 +74,24 @@ function buildVendorRegistryWhere(
         }
       : {}),
     ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
-    ...(filters.subcategoryId ? { subcategoryId: filters.subcategoryId } : {}),
+    ...(filters.subcategoryId
+      ? {
+          AND: [
+            {
+              OR: [
+                { subcategoryId: filters.subcategoryId },
+                {
+                  subcategorySelections: {
+                    some: {
+                      subcategoryId: filters.subcategoryId,
+                    },
+                  },
+                },
+              ],
+            },
+          ],
+        }
+      : {}),
     ...(filters.status ? { status: filters.status as VendorStatus } : {}),
     ...(filters.finalGrade
       ? {
@@ -93,11 +126,47 @@ function buildVendorRegistryWhere(
   };
 }
 
+type VendorSubcategorySelectionSnapshot = {
+  id: string;
+  name: string;
+  externalKey: string | null;
+};
+
+function mapVendorSubcategorySelections(vendor: {
+  subcategoryId?: string | null;
+  subcategory?: VendorSubcategorySelectionSnapshot | null;
+  subcategorySelections?: Array<{
+    subcategory: VendorSubcategorySelectionSnapshot;
+  }>;
+}) {
+  const selected =
+    vendor.subcategorySelections?.map((entry) => entry.subcategory) ?? [];
+
+  if (selected.length > 0) {
+    return selected;
+  }
+
+  return vendor.subcategoryId && vendor.subcategory
+    ? [vendor.subcategory]
+    : [];
+}
+
 export async function getVendorRegistry(
   filters: VendorRegistryFilters = {},
   options: VendorRegistryQueryOptions = {},
 ): Promise<VendorRegistryItem[]> {
-  const vendors = await prisma.vendor.findMany({
+  const cacheKey = JSON.stringify({
+    filters,
+    limit: options.limit ?? null,
+  });
+  const cached = vendorRegistryCache.get(cacheKey);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
+  const vendors = await withServerTiming("vendors.registry", () =>
+    prisma.vendor.findMany({
     where: buildVendorRegistryWhere(filters),
     orderBy: {
       vendorName: "asc",
@@ -115,6 +184,10 @@ export async function getVendorRegistry(
       notes: true,
       categoryId: true,
       subcategoryId: true,
+      odooSyncStatus: true,
+      odooPartnerId: true,
+      odooSyncError: true,
+      odooSyncedAt: true,
       category: {
         select: {
           name: true,
@@ -122,34 +195,9 @@ export async function getVendorRegistry(
       },
       subcategory: {
         select: {
+          id: true,
           name: true,
-        },
-      },
-      projectLinks: {
-        select: {
-          projectId: true,
-          project: {
-            select: {
-              isArchived: true,
-              status: true,
-            },
-          },
-        },
-      },
-      certificates: {
-        select: {
-          issuedAt: true,
-          status: true,
-        },
-      },
-      evaluationCycles: {
-        orderBy: [{ year: "desc" }, { createdAt: "desc" }],
-        take: 1,
-        select: {
-          year: true,
-          status: true,
-          finalGrade: true,
-          finalScorePercent: true,
+          externalKey: true,
         },
       },
       _count: {
@@ -159,29 +207,126 @@ export async function getVendorRegistry(
         },
       },
     },
-  });
+    }),
+  );
 
-  return vendors.map((vendor) => {
-    const uniqueProjectIds = new Set(vendor.projectLinks.map((item) => item.projectId));
-    const activeProjectIds = new Set(
-      vendor.projectLinks
-        .filter(
-          (item) => item.project.status === "ACTIVE" && !item.project.isArchived,
-        )
-        .map((item) => item.projectId),
-    );
-    const latestIssuedAt = vendor.certificates.reduce<Date | null>((latest, item) => {
-      if (!item.issuedAt) {
-        return latest;
-      }
+  const vendorIds = vendors.map((vendor) => vendor.id);
+  const [
+    activeAssignmentCounts,
+    issuedCertificateMetrics,
+    latestEvaluationRows,
+    subcategorySelectionRows,
+  ] =
+    vendorIds.length > 0
+      ? await Promise.all([
+          prisma.projectVendor.groupBy({
+            by: ["vendorId"],
+            where: {
+              vendorId: {
+                in: vendorIds,
+              },
+              project: {
+                isArchived: false,
+                status: "ACTIVE",
+              },
+            },
+            _count: {
+              _all: true,
+            },
+          }),
+          prisma.certificate.groupBy({
+            by: ["vendorId"],
+            where: {
+              vendorId: {
+                in: vendorIds,
+              },
+              status: "ISSUED",
+            },
+            _count: {
+              _all: true,
+            },
+            _max: {
+              issuedAt: true,
+            },
+          }),
+          prisma.vendorEvaluationCycle.findMany({
+            where: {
+              vendorId: {
+                in: vendorIds,
+              },
+            },
+            orderBy: [{ year: "desc" }, { createdAt: "desc" }],
+            take: Math.max(vendorIds.length * 5, 25),
+            select: {
+              vendorId: true,
+              year: true,
+              status: true,
+              finalGrade: true,
+              finalScorePercent: true,
+            },
+          }),
+          prisma.vendorSubcategorySelection.findMany({
+            where: {
+              vendorId: {
+                in: vendorIds,
+              },
+            },
+            orderBy: {
+              createdAt: "asc",
+            },
+            select: {
+              vendorId: true,
+              subcategory: {
+                select: {
+                  id: true,
+                  name: true,
+                  externalKey: true,
+                },
+              },
+            },
+          }),
+        ])
+      : [[], [], [], []];
 
-      if (!latest || item.issuedAt > latest) {
-        return item.issuedAt;
-      }
+  const activeAssignmentsByVendorId = new Map(
+    activeAssignmentCounts.map((item) => [item.vendorId, item._count._all]),
+  );
+  const issuedCertificateMetricsByVendorId = new Map(
+    issuedCertificateMetrics.map((item) => [
+      item.vendorId,
+      {
+        count: item._count._all,
+        latestIssuedAt: item._max.issuedAt,
+      },
+    ]),
+  );
+  const latestEvaluationByVendorId = new Map<
+    string,
+    (typeof latestEvaluationRows)[number]
+  >();
 
-      return latest;
-    }, null);
-    const latestEvaluation = vendor.evaluationCycles[0] ?? null;
+  for (const evaluation of latestEvaluationRows) {
+    if (!latestEvaluationByVendorId.has(evaluation.vendorId)) {
+      latestEvaluationByVendorId.set(evaluation.vendorId, evaluation);
+    }
+  }
+  const subcategorySelectionsByVendorId = new Map<
+    string,
+    VendorSubcategorySelectionSnapshot[]
+  >();
+
+  for (const selection of subcategorySelectionRows) {
+    const current = subcategorySelectionsByVendorId.get(selection.vendorId) ?? [];
+    current.push(selection.subcategory);
+    subcategorySelectionsByVendorId.set(selection.vendorId, current);
+  }
+
+  const value = vendors.map((vendor) => {
+    const latestEvaluation = latestEvaluationByVendorId.get(vendor.id) ?? null;
+    const subcategorySelections =
+      subcategorySelectionsByVendorId.get(vendor.id) ??
+      mapVendorSubcategorySelections(vendor);
+    const issuedCertificateMetric = issuedCertificateMetricsByVendorId.get(vendor.id);
 
     return {
       id: vendor.id,
@@ -197,14 +342,17 @@ export async function getVendorRegistry(
       categoryName: vendor.category?.name ?? null,
       subcategoryId: vendor.subcategoryId,
       subcategoryName: vendor.subcategory?.name ?? null,
-      projectCount: uniqueProjectIds.size,
-      activeProjectCount: activeProjectIds.size,
+      subcategorySelections,
+      odooSyncStatus: vendor.odooSyncStatus,
+      odooPartnerId: vendor.odooPartnerId,
+      odooSyncError: vendor.odooSyncError,
+      odooSyncedAt: vendor.odooSyncedAt,
+      projectCount: vendor._count.projectLinks,
+      activeProjectCount: activeAssignmentsByVendorId.get(vendor.id) ?? 0,
       assignmentCount: vendor._count.projectLinks,
       certificateCount: vendor._count.certificates,
-      issuedCertificateCount: vendor.certificates.filter(
-        (item) => item.status === "ISSUED",
-      ).length,
-      latestIssuedAt,
+      issuedCertificateCount: issuedCertificateMetric?.count ?? 0,
+      latestIssuedAt: issuedCertificateMetric?.latestIssuedAt ?? null,
       latestEvaluationYear: latestEvaluation?.year ?? null,
       latestEvaluationStatus: latestEvaluation?.status ?? null,
       latestFinalGrade: latestEvaluation?.finalGrade ?? null,
@@ -213,36 +361,59 @@ export async function getVendorRegistry(
         : null,
     };
   });
+
+  vendorRegistryCache.set(cacheKey, {
+    expiresAt: Date.now() + VENDOR_REGISTRY_CACHE_MS,
+    value,
+  });
+
+  return value;
 }
 
 export async function getVendorGovernanceOptions(): Promise<VendorGovernanceOptions> {
-  await ensureVendorCatalogData();
+  if (
+    vendorGovernanceOptionsCache &&
+    vendorGovernanceOptionsCache.expiresAt > Date.now()
+  ) {
+    return vendorGovernanceOptionsCache.value;
+  }
 
-  const categories = await prisma.vendorCategory.findMany({
-    orderBy: {
-      name: "asc",
-    },
-    select: {
-      id: true,
-      name: true,
-      externalKey: true,
-      subcategories: {
-        orderBy: {
-          name: "asc",
-        },
-        select: {
-          id: true,
-          name: true,
-          externalKey: true,
-          categoryId: true,
+  return withServerTiming("vendors.governanceOptions", async () => {
+    const categories = await prisma.vendorCategory.findMany({
+      orderBy: {
+        name: "asc",
+      },
+      take: 50,
+      select: {
+        id: true,
+        name: true,
+        externalKey: true,
+        subcategories: {
+          orderBy: {
+            name: "asc",
+          },
+          take: 250,
+          select: {
+            id: true,
+            name: true,
+            externalKey: true,
+            categoryId: true,
+          },
         },
       },
-    },
-  });
+    });
 
-  return {
-    categories,
-  };
+    const value = {
+      categories,
+    };
+
+    vendorGovernanceOptionsCache = {
+      expiresAt: Date.now() + VENDOR_GOVERNANCE_OPTIONS_CACHE_MS,
+      value,
+    };
+
+    return value;
+  });
 }
 
 export async function getVendorRegistryView(
@@ -264,6 +435,10 @@ export async function getVendorRegistryView(
       notes: true,
       categoryId: true,
       subcategoryId: true,
+      odooSyncStatus: true,
+      odooPartnerId: true,
+      odooSyncError: true,
+      odooSyncedAt: true,
       category: {
         select: {
           name: true,
@@ -271,7 +446,23 @@ export async function getVendorRegistryView(
       },
       subcategory: {
         select: {
+          id: true,
           name: true,
+          externalKey: true,
+        },
+      },
+      subcategorySelections: {
+        orderBy: {
+          createdAt: "asc",
+        },
+        select: {
+          subcategory: {
+            select: {
+              id: true,
+              name: true,
+              externalKey: true,
+            },
+          },
         },
       },
       projectLinks: {
@@ -427,6 +618,7 @@ export async function getVendorRegistryView(
         ]),
     ).values(),
   ];
+  const subcategorySelections = mapVendorSubcategorySelections(vendor);
 
   return {
     vendor: {
@@ -443,6 +635,11 @@ export async function getVendorRegistryView(
       categoryName: vendor.category?.name ?? null,
       subcategoryId: vendor.subcategoryId,
       subcategoryName: vendor.subcategory?.name ?? null,
+      subcategorySelections,
+      odooSyncStatus: vendor.odooSyncStatus,
+      odooPartnerId: vendor.odooPartnerId,
+      odooSyncError: vendor.odooSyncError,
+      odooSyncedAt: vendor.odooSyncedAt,
     },
     assignmentGroups,
     certificateHistory: vendor.certificates.map((certificate) => ({

@@ -3,14 +3,30 @@ import { getServerSession } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 
 import { prisma } from "@/lib/prisma";
 import type { AuthenticatedUser } from "@/lib/types";
 import { resolveUserAccessProfile } from "@/server/services/rbac-service";
 
-async function getAuthenticatedUserById(
+const AUTHENTICATED_USER_CACHE_MS = 30_000;
+const authenticatedUserCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    user: AuthenticatedUser | null;
+  }
+>();
+
+const getAuthenticatedUserById = cache(async (
   userId: string,
-): Promise<AuthenticatedUser | null> {
+): Promise<AuthenticatedUser | null> => {
+  const cached = authenticatedUserCache.get(userId);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.user;
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -26,6 +42,10 @@ async function getAuthenticatedUserById(
   });
 
   if (!user) {
+    authenticatedUserCache.set(userId, {
+      expiresAt: Date.now() + AUTHENTICATED_USER_CACHE_MS,
+      user: null,
+    });
     return null;
   }
 
@@ -34,14 +54,21 @@ async function getAuthenticatedUserById(
     legacyRole: user.role,
   });
 
-  return {
+  const authenticatedUser = {
     ...user,
     accessRoleId: accessProfile.roleId,
     accessRoleKey: accessProfile.roleKey,
     accessRoleName: accessProfile.roleName,
     permissions: accessProfile.permissions,
   };
-}
+
+  authenticatedUserCache.set(userId, {
+    expiresAt: Date.now() + AUTHENTICATED_USER_CACHE_MS,
+    user: authenticatedUser,
+  });
+
+  return authenticatedUser;
+});
 
 export const authOptions: NextAuthOptions = {
   // next-auth v4 requires JWT sessions when credentials auth is the only
@@ -138,16 +165,6 @@ export const authOptions: NextAuthOptions = {
         session.user.passwordChanged = token.passwordChanged ?? false;
         session.user.name = token.name ?? token.email ?? "Procurement User";
         session.user.email = token.email ?? "";
-
-        const accessProfile = await resolveUserAccessProfile({
-          userId: session.user.id,
-          legacyRole: session.user.role,
-        });
-
-        session.user.accessRoleId = accessProfile.roleId;
-        session.user.accessRoleKey = accessProfile.roleKey;
-        session.user.accessRoleName = accessProfile.roleName;
-        session.user.permissions = accessProfile.permissions;
       }
 
       return session;
@@ -159,8 +176,10 @@ export async function getCurrentSession() {
   return getServerSession(authOptions);
 }
 
+const getCachedCurrentSession = cache(async () => getServerSession(authOptions));
+
 export async function getCurrentAuthenticatedUser() {
-  const session = await getCurrentSession();
+  const session = await getCachedCurrentSession();
 
   if (!session?.user?.id) {
     return null;
@@ -172,7 +191,7 @@ export async function getCurrentAuthenticatedUser() {
 export async function requireAdminSession(options?: {
   allowPasswordChangeBypass?: boolean;
 }) {
-  const session = await getCurrentSession();
+  const session = await getCachedCurrentSession();
 
   if (!session?.user?.id) {
     redirect("/admin/login");

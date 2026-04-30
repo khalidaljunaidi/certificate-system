@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { OperationalTaskStatus, TaskSlaStatus } from "@prisma/client";
 
 import { ActivityFeed } from "@/components/admin/activity-feed";
 import { CircularKpiMeter } from "@/components/admin/circular-kpi-meter";
@@ -19,10 +20,6 @@ import { PageHeader, PageShell } from "@/components/layout/page-shell";
 import { requireAdminSession } from "@/lib/auth";
 import { QUARTER_LABELS } from "@/lib/constants";
 import { getDashboardData } from "@/server/queries/dashboard-queries";
-import {
-  getMonthlyGovernanceDashboard,
-  getTeamPerformanceDashboard,
-} from "@/server/queries/performance-queries";
 import { formatDate } from "@/lib/utils";
 
 type DashboardPageProps = {
@@ -36,19 +33,9 @@ export default async function AdminDashboardPage({
 }: DashboardPageProps) {
   const session = await requireAdminSession();
   const params = await searchParams;
-  const [data, performanceDashboard, monthlyDashboard] = await Promise.all([
-    getDashboardData(session.user.id),
-    getTeamPerformanceDashboard({
-      id: session.user.id,
-      role: session.user.role,
-      email: session.user.email,
-    }),
-    getMonthlyGovernanceDashboard({
-      id: session.user.id,
-      role: session.user.role,
-      email: session.user.email,
-    }),
-  ]);
+  const data = await getDashboardData(session.user.id);
+  const performanceDashboard = createLightweightPerformanceSummary(session.user);
+  const monthlyDashboard = createLightweightMonthlySummary();
 
   return (
     <PageShell>
@@ -480,4 +467,84 @@ function InfoTile({ label, value }: { label: string; value: string }) {
       </p>
     </div>
   );
+}
+
+function createLightweightPerformanceSummary(user: {
+  id: string;
+  name: string;
+  email: string;
+  title: string;
+}) {
+  const currentQuarter = (Math.floor(new Date().getMonth() / 3) + 1) as
+    | 1
+    | 2
+    | 3
+    | 4;
+
+  return {
+    isExecutive: false,
+    currentQuarter,
+    kpis: {
+      teamCompletionRate: 0,
+      overdueExposure: 0,
+      productivityScore: 0,
+      topPerformer: null,
+      atRiskMember: null,
+    },
+    currentUserSummary: {
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      title: user.title,
+      systemScore: 0,
+      onTimeCompletionRate: 0,
+      overdueRate: 0,
+      grade: null,
+    },
+    recentTasks: [] as Array<{
+      id: string;
+      title: string;
+      status: OperationalTaskStatus;
+      slaStatus: TaskSlaStatus;
+      dueDate: Date;
+      assignedTo: {
+        name: string;
+      };
+      checklistItemsCount: number;
+      completedChecklistItemsCount: number;
+    }>,
+    memberCards: [] as Array<{
+      userId: string;
+      name: string;
+      title: string;
+      grade: null;
+      completionRate: number;
+      systemScore: number;
+      overdueRate: number;
+    }>,
+  };
+}
+
+function createLightweightMonthlySummary() {
+  return {
+    selectedCycle: null as { label: string } | null,
+    kpis: {
+      totalTasks: 0,
+      completedTasks: 0,
+      overdueTasks: 0,
+      monthlyCompletionRate: 0,
+      workloadBalance: 100,
+      monthlyTeamScore: 0,
+    },
+    employeeCards: [] as Array<{
+      userId: string;
+      name: string;
+      title: string;
+      workloadLevel: string;
+      grade: null;
+      completionRate: number;
+      monthlyScore: number;
+      overdueRate: number;
+    }>,
+  };
 }

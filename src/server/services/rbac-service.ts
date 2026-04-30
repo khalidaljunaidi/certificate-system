@@ -8,6 +8,7 @@ import {
   PERMISSION_DEFINITIONS,
 } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { withServerTiming } from "@/lib/server-performance";
 import type {
   AccessRoleOptionView,
   AccessRoleView,
@@ -18,6 +19,18 @@ import type {
   UserRoleAssignmentView,
 } from "@/lib/types";
 import { createAuditLog } from "@/server/services/audit-service";
+
+const ACCESS_CATALOG_CACHE_MS = 5 * 60 * 1000;
+const ROLE_MANAGEMENT_DATA_CACHE_MS = 10_000;
+
+let accessCatalogEnsuredAt = 0;
+let accessCatalogEnsurePromise: Promise<void> | null = null;
+let roleManagementDataCache:
+  | {
+      expiresAt: number;
+      data: RoleManagementView;
+    }
+  | null = null;
 
 function legacyRoleLabel(role: UserRole) {
   return role
@@ -222,15 +235,17 @@ async function upsertRole(definition: (typeof DEFAULT_ROLE_DEFINITIONS)[number])
   });
 }
 
-export async function ensureDefaultAccessControlCatalog() {
+async function ensureDefaultAccessControlCatalogUncached() {
   const [existingPermissionKeys, existingRoleKeys] = await Promise.all([
     prisma.permission.findMany({
       select: {
+        id: true,
         key: true,
       },
     }),
     prisma.role.findMany({
       select: {
+        id: true,
         key: true,
       },
     }),
@@ -254,44 +269,104 @@ export async function ensureDefaultAccessControlCatalog() {
     await Promise.all(missingRoleDefinitions.map(upsertRole));
   }
 
-  const permissionRows = await prisma.permission.findMany({
+  const [permissionRows, roleRows] = await Promise.all([
+    missingPermissionDefinitions.length > 0
+      ? prisma.permission.findMany({
+          select: {
+            id: true,
+            key: true,
+          },
+        })
+      : Promise.resolve(existingPermissionKeys),
+    missingRoleDefinitions.length > 0
+      ? prisma.role.findMany({
+          select: {
+            id: true,
+            key: true,
+          },
+        })
+      : Promise.resolve(existingRoleKeys),
+  ]);
+
+  const permissionIdByKey = new Map(permissionRows.map((permission) => [permission.key, permission.id]));
+  const roleIdByKey = new Map(roleRows.map((role) => [role.key, role.id]));
+  const defaultRoleIds = DEFAULT_ROLE_DEFINITIONS.map((definition) => roleIdByKey.get(definition.key)).filter(
+    (roleId): roleId is string => Boolean(roleId),
+  );
+
+  if (defaultRoleIds.length === 0) {
+    return;
+  }
+
+  const existingRolePermissions = await prisma.rolePermission.findMany({
+    where: {
+      roleId: {
+        in: defaultRoleIds,
+      },
+    },
     select: {
-      id: true,
-      key: true,
+      roleId: true,
+      permissionId: true,
     },
   });
-  const permissionIdByKey = new Map(permissionRows.map((permission) => [permission.key, permission.id]));
+  const existingRolePermissionKeys = new Set(
+    existingRolePermissions.map((link) => `${link.roleId}:${link.permissionId}`),
+  );
 
-  for (const roleDefinition of DEFAULT_ROLE_DEFINITIONS) {
-    const role = await prisma.role.findUnique({
-      where: {
-        key: roleDefinition.key,
-      },
-      select: {
-        id: true,
-      },
-    });
+  const missingRolePermissionLinks = DEFAULT_ROLE_DEFINITIONS.flatMap((roleDefinition) => {
+    const roleId = roleIdByKey.get(roleDefinition.key);
 
-    if (!role) {
-      continue;
+    if (!roleId) {
+      return [];
     }
 
-    const rolePermissionIds = roleDefinition.permissions
-      .map((permissionKey) => permissionIdByKey.get(permissionKey))
-      .filter((permissionId): permissionId is string => Boolean(permissionId));
+    return roleDefinition.permissions.flatMap((permissionKey) => {
+      const permissionId = permissionIdByKey.get(permissionKey);
 
-    if (rolePermissionIds.length === 0) {
-      continue;
-    }
+      if (!permissionId) {
+        return [];
+      }
 
-    await prisma.rolePermission.createMany({
-      data: rolePermissionIds.map((permissionId) => ({
-        roleId: role.id,
+      const linkKey = `${roleId}:${permissionId}`;
+
+      if (existingRolePermissionKeys.has(linkKey)) {
+        return [];
+      }
+
+      return {
+        roleId,
         permissionId,
-      })),
-      skipDuplicates: true,
+      };
+    });
+  });
+
+  if (missingRolePermissionLinks.length === 0) {
+    return;
+  }
+
+  await prisma.rolePermission.createMany({
+    data: missingRolePermissionLinks,
+    skipDuplicates: true,
+  });
+}
+
+export async function ensureDefaultAccessControlCatalog() {
+  const now = Date.now();
+
+  if (now - accessCatalogEnsuredAt < ACCESS_CATALOG_CACHE_MS) {
+    return;
+  }
+
+  if (!accessCatalogEnsurePromise) {
+    accessCatalogEnsurePromise = withServerTiming("rbac.ensureCatalog", async () => {
+      await ensureDefaultAccessControlCatalogUncached();
+      accessCatalogEnsuredAt = Date.now();
+    }).finally(() => {
+      accessCatalogEnsurePromise = null;
     });
   }
+
+  await accessCatalogEnsurePromise;
 }
 
 export async function getPermissionCatalog(): Promise<PermissionGroupView[]> {
@@ -378,64 +453,83 @@ export async function resolveUserAccessProfile(input: {
 }
 
 export async function getRoleManagementData(): Promise<RoleManagementView> {
-  await ensureDefaultAccessControlCatalog();
+  if (roleManagementDataCache && roleManagementDataCache.expiresAt > Date.now()) {
+    return roleManagementDataCache.data;
+  }
 
-  const [roles, users] = await Promise.all([
-    prisma.role.findMany({
-      orderBy: [
-        {
-          isSystem: "desc",
-        },
-        {
-          name: "asc",
-        },
-      ],
-      include: {
-        permissions: {
-          include: {
-            permission: true,
+  return withServerTiming("rbac.roleManagementData", async () => {
+    const [roles, users] = await Promise.all([
+      prisma.role.findMany({
+        orderBy: [
+          {
+            isSystem: "desc",
           },
-        },
-        users: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                title: true,
-                role: true,
+          {
+            name: "asc",
+          },
+        ],
+        take: 100,
+        select: {
+          id: true,
+          key: true,
+          name: true,
+          description: true,
+          isSystem: true,
+          permissions: {
+            select: {
+              permission: {
+                select: {
+                  key: true,
+                  name: true,
+                  description: true,
+                  category: true,
+                  sortOrder: true,
+                },
+              },
+            },
+          },
+          users: {
+            select: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  title: true,
+                  role: true,
+                },
               },
             },
           },
         },
-      },
-    }),
-    prisma.user.findMany({
-      orderBy: [
-        {
-          name: "asc",
-        },
-      ],
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        title: true,
-        role: true,
-        roleAssignment: {
-          select: {
-            role: {
-              select: {
-                id: true,
-                key: true,
-                name: true,
-                description: true,
-                permissions: {
-                  select: {
-                    permission: {
-                      select: {
-                        key: true,
+      }),
+      prisma.user.findMany({
+        orderBy: [
+          {
+            name: "asc",
+          },
+        ],
+        take: 250,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          title: true,
+          role: true,
+          roleAssignment: {
+            select: {
+              role: {
+                select: {
+                  id: true,
+                  key: true,
+                  name: true,
+                  description: true,
+                  permissions: {
+                    select: {
+                      permission: {
+                        select: {
+                          key: true,
+                        },
                       },
                     },
                   },
@@ -444,93 +538,116 @@ export async function getRoleManagementData(): Promise<RoleManagementView> {
             },
           },
         },
-      },
-    }),
-  ]);
+      }),
+    ]);
 
-  return {
-    permissionGroups: groupPermissionsByCategory(),
-    roles: roles.map(toRoleView),
-    users: users.map(toUserView),
-  };
+    const data = {
+      permissionGroups: groupPermissionsByCategory(),
+      roles: roles.map(toRoleView),
+      users: users.map(toUserView),
+    };
+
+    roleManagementDataCache = {
+      expiresAt: Date.now() + ROLE_MANAGEMENT_DATA_CACHE_MS,
+      data,
+    };
+
+    return data;
+  });
 }
 
 export async function getInternalUserManagementData(): Promise<InternalUserManagementView> {
-  await ensureDefaultAccessControlCatalog();
-
-  const [roles, users] = await Promise.all([
-    prisma.role.findMany({
-      orderBy: [
-        {
-          isSystem: "desc",
-        },
-        {
-          name: "asc",
-        },
-      ],
-      select: {
-        id: true,
-        key: true,
-        name: true,
-        description: true,
-        permissions: {
-          select: {
-            permission: {
-              select: {
-                key: true,
+  return withServerTiming("rbac.internalUserManagementData", async () => {
+    const [roles, users] = await Promise.all([
+      prisma.role.findMany({
+        orderBy: [
+          {
+            isSystem: "desc",
+          },
+          {
+            name: "asc",
+          },
+        ],
+        take: 100,
+        select: {
+          id: true,
+          key: true,
+          name: true,
+          description: true,
+          permissions: {
+            select: {
+              permission: {
+                select: {
+                  key: true,
+                },
               },
             },
           },
         },
-      },
-    }),
-    prisma.user.findMany({
-      orderBy: [
-        {
-          createdAt: "desc",
-        },
-      ],
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        title: true,
-        role: true,
-        isActive: true,
-      },
-    }),
-  ]);
-
-  const userAccessProfiles = await Promise.all(
-    users.map(async (user) => ({
-      user,
-      accessProfile: await resolveUserAccessProfile({
-        userId: user.id,
-        legacyRole: user.role,
       }),
-    })),
-  );
+      prisma.user.findMany({
+        orderBy: [
+          {
+            createdAt: "desc",
+          },
+        ],
+        take: 250,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          title: true,
+          role: true,
+          isActive: true,
+          roleAssignment: {
+            select: {
+              role: {
+                select: {
+                  key: true,
+                  name: true,
+                  permissions: {
+                    select: {
+                      permission: {
+                        select: {
+                          key: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
 
-  return {
-    roles: roles.map(toAccessRoleOption),
-    users: userAccessProfiles.map(({ user, accessProfile }) => {
-      const paymentPermissionKeys = accessProfile.permissions.filter((key) =>
-        key.startsWith("payment."),
-      );
+    const roleByKey = new Map(roles.map((role) => [role.key, role]));
 
-      return {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        title: user.title,
-        isActive: user.isActive,
-        legacyRole: user.role,
-        accessRoleName: accessProfile.roleName,
-        accessRoleKey: accessProfile.roleKey,
-        paymentPermissionKeys,
-      };
-    }),
-  };
+    return {
+      roles: roles.map(toAccessRoleOption),
+      users: users.map((user) => {
+        const assignmentRole = user.roleAssignment?.role;
+        const fallbackRole = assignmentRole ? null : roleByKey.get(user.role);
+        const accessRoleName = assignmentRole?.name ?? fallbackRole?.name ?? legacyRoleLabel(user.role);
+        const accessRoleKey = assignmentRole?.key ?? fallbackRole?.key ?? user.role;
+        const permissions = assignmentRole?.permissions ?? fallbackRole?.permissions ?? [];
+        const paymentPermissionKeys = toPermissionKeys(permissions).filter((key) => key.startsWith("payment."));
+
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          title: user.title,
+          isActive: user.isActive,
+          legacyRole: user.role,
+          accessRoleName,
+          accessRoleKey,
+          paymentPermissionKeys,
+        };
+      }),
+    };
+  });
 }
 
 export async function saveRoleDefinition(input: {

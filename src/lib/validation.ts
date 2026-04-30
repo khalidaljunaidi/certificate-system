@@ -82,12 +82,15 @@ export const vendorGovernanceSchema = z
     vendorId: requiredString("Vendor"),
     categoryId: z.string().trim().optional(),
     subcategoryId: z.string().trim().optional(),
+    subcategoryIds: z.array(z.string().trim()).default([]),
   })
   .refine(
-    (values) => !values.subcategoryId || Boolean(values.categoryId),
+    (values) =>
+      (!values.subcategoryId && values.subcategoryIds.length === 0) ||
+      Boolean(values.categoryId),
     {
       message: "Choose a category before selecting a subcategory.",
-      path: ["subcategoryId"],
+      path: ["subcategoryIds"],
     },
   );
 
@@ -122,10 +125,16 @@ export const vendorMasterSchema = z
     notes: z.string().trim().optional(),
     categoryId: z.string().trim().optional(),
     subcategoryId: z.string().trim().optional(),
+    subcategoryIds: z.array(z.string().trim()).default([]),
   })
-  .refine((values) => !values.subcategoryId || Boolean(values.categoryId), {
+  .refine((values) => {
+    return (
+      (!values.subcategoryId && values.subcategoryIds.length === 0) ||
+      Boolean(values.categoryId)
+    );
+  }, {
     message: "Choose a category before selecting a subcategory.",
-    path: ["subcategoryId"],
+    path: ["subcategoryIds"],
   });
 
 const vendorRegistrationCoverageScopeSchema = z.enum([
@@ -234,8 +243,24 @@ export const projectVendorPaymentInstallmentSchema = z.object({
     z.boolean(),
   ),
   invoiceStatus: z
-    .enum(["MISSING", "RECEIVED", "REJECTED", "APPROVED_FOR_PAYMENT"])
+    .enum(["MISSING", "RECEIVED", "VALIDATED", "REJECTED", "APPROVED_FOR_PAYMENT"])
     .optional(),
+  invoiceExistsInOdoo: z.preprocess(
+    (value) => {
+      if (value === undefined || value === null || value === "") {
+        return undefined;
+      }
+
+      return value === "on" || value === true || value === "true";
+    },
+    z.boolean().optional(),
+  ),
+  odooInvoiceReference: z.string().trim().max(120).optional(),
+  odooInvoiceUploadedAt: z.preprocess(
+    (value) => (value === "" || value === null ? undefined : value),
+    z.coerce.date().optional(),
+  ),
+  odooInvoiceNotes: z.string().trim().max(2000).optional(),
   financeReviewNotes: z.string().trim().max(2000).optional(),
   scheduledPaymentDate: z.coerce.date().optional(),
   paymentDate: z.coerce.date().optional(),

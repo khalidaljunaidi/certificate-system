@@ -20,6 +20,7 @@ type RawInstallmentStatus =
 type RawInstallmentInvoiceStatus =
   | "MISSING"
   | "RECEIVED"
+  | "VALIDATED"
   | "REJECTED"
   | "APPROVED_FOR_PAYMENT";
 
@@ -36,6 +37,11 @@ type RawInstallment = {
   invoiceReceivedDate: Date | null;
   taxInvoiceValidated: boolean;
   invoiceStatus: RawInstallmentInvoiceStatus;
+  invoiceExistsInOdoo: boolean;
+  odooInvoiceStatus: "UPLOADED_TO_ODOO" | null;
+  odooInvoiceReference: string | null;
+  odooInvoiceUploadedAt: Date | null;
+  odooInvoiceNotes: string | null;
   financeReviewNotes: string | null;
   financeReviewedAt: Date | null;
   financeReviewedBy: {
@@ -85,14 +91,19 @@ function isClosedInstallment(
 function hasInvoicePayload(
   installment: Pick<
     ProjectVendorPaymentInstallmentView,
-    "invoiceStatus" | "invoiceNumber" | "invoiceReceivedDate" | "invoiceStoragePath"
+    | "invoiceStatus"
+    | "invoiceNumber"
+    | "invoiceReceivedDate"
+    | "invoiceStoragePath"
+    | "invoiceExistsInOdoo"
   >,
 ) {
   return (
     installment.invoiceStatus !== "MISSING" ||
     Boolean(installment.invoiceNumber) ||
     Boolean(installment.invoiceReceivedDate) ||
-    Boolean(installment.invoiceStoragePath)
+    Boolean(installment.invoiceStoragePath) ||
+    installment.invoiceExistsInOdoo
   );
 }
 
@@ -112,6 +123,11 @@ export function mapPaymentInstallments(
     invoiceReceivedDate: installment.invoiceReceivedDate,
     taxInvoiceValidated: installment.taxInvoiceValidated,
     invoiceStatus: installment.invoiceStatus,
+    invoiceExistsInOdoo: installment.invoiceExistsInOdoo,
+    odooInvoiceStatus: installment.odooInvoiceStatus,
+    odooInvoiceReference: installment.odooInvoiceReference,
+    odooInvoiceUploadedAt: installment.odooInvoiceUploadedAt,
+    odooInvoiceNotes: installment.odooInvoiceNotes,
     financeReviewNotes: installment.financeReviewNotes,
     financeReviewedAt: installment.financeReviewedAt,
     financeReviewedByName: installment.financeReviewedBy?.name ?? null,
@@ -126,6 +142,38 @@ export function mapPaymentInstallments(
 
 function getOpenInstallments(installments: ProjectVendorPaymentInstallmentView[]) {
   return installments.filter((installment) => !isClosedInstallment(installment));
+}
+
+function isSettledAmount(value: number) {
+  return Math.round(value * 100) === 0;
+}
+
+function amountCoversTotal(input: {
+  paidAmount: number;
+  totalAmount: number;
+}) {
+  return Math.round(input.paidAmount * 100) >= Math.round(input.totalAmount * 100);
+}
+
+export function canClosePaymentRecord(input: {
+  totalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
+  installments: Array<Pick<ProjectVendorPaymentInstallmentView, "status">>;
+}) {
+  const allInstallmentsPaid =
+    input.installments.length === 0 ||
+    input.installments.every((installment) => installment.status === "PAID");
+
+  return (
+    input.totalAmount > 0 &&
+    isSettledAmount(input.remainingAmount) &&
+    amountCoversTotal({
+      paidAmount: input.paidAmount,
+      totalAmount: input.totalAmount,
+    }) &&
+    allInstallmentsPaid
+  );
 }
 
 export function buildPaymentSummary(
@@ -154,6 +202,12 @@ export function buildPaymentSummary(
     .reduce((sum, installment) => sum + installment.amount, 0);
   const remainingAmount = Math.max(totalAmount - paidAmount, 0);
   const progressPercent = totalAmount > 0 ? (paidAmount / totalAmount) * 100 : 0;
+  const canClosePayment = canClosePaymentRecord({
+    totalAmount,
+    paidAmount,
+    remainingAmount,
+    installments: mappedInstallments,
+  });
   const invoiceReceivedCount = openInstallments.filter((installment) =>
     hasInvoicePayload(installment),
   ).length;
@@ -182,6 +236,7 @@ export function buildPaymentSummary(
     paidAmount,
     remainingAmount,
     progressPercent,
+    canClosePayment,
     installmentCount: mappedInstallments.length,
     invoiceReceivedCount,
     approvedInvoiceCount,
@@ -323,6 +378,7 @@ export function derivePaymentRecordStatus(input: {
       (installment) =>
         installment.status === "INVOICE_RECEIVED" ||
         installment.invoiceStatus === "RECEIVED" ||
+        installment.invoiceStatus === "VALIDATED" ||
         installment.invoiceStatus === "REJECTED",
     )
   ) {
@@ -335,6 +391,7 @@ export function derivePaymentRecordStatus(input: {
 export function deriveRecommendedPaymentAction(input: {
   status: PaymentRecordStatusView;
   nextActionInstallment: ProjectVendorPaymentInstallmentView | null;
+  canClosePayment?: boolean;
 }): PaymentRecordRecommendedActionView {
   switch (input.status) {
     case "PO_AMOUNT_REQUIRED":
@@ -363,7 +420,8 @@ export function deriveRecommendedPaymentAction(input: {
 
       if (
         input.nextActionInstallment?.status === "INVOICE_RECEIVED" ||
-        input.nextActionInstallment?.invoiceStatus === "RECEIVED"
+        input.nextActionInstallment?.invoiceStatus === "RECEIVED" ||
+        input.nextActionInstallment?.invoiceStatus === "VALIDATED"
       ) {
         return "REVIEW_INVOICE";
       }
@@ -374,7 +432,7 @@ export function deriveRecommendedPaymentAction(input: {
 
       return "VIEW_RECORD";
     case "FULLY_PAID":
-      return "CLOSE_PAYMENT";
+      return input.canClosePayment ? "CLOSE_PAYMENT" : "VIEW_RECORD";
     case "CLOSED":
     case "ON_HOLD":
     case "DISPUTED":

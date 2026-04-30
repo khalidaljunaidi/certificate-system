@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from "@react-pdf/renderer";
+import fs from "node:fs";
 import path from "node:path";
 
 import { BRAND_COLORS } from "@/lib/brand";
@@ -39,6 +40,16 @@ type CertificatePdfModel = {
 const LOGO_FILE_PATH = path.join(process.cwd(), "public", "logo.png");
 
 let fontsRegistered = false;
+let logoDataUrl: string | null = null;
+
+function getLogoDataUrl() {
+  if (!logoDataUrl) {
+    const logoBase64 = fs.readFileSync(LOGO_FILE_PATH).toString("base64");
+    logoDataUrl = `data:image/png;base64,${logoBase64}`;
+  }
+
+  return logoDataUrl;
+}
 
 function registerFonts() {
   if (fontsRegistered) {
@@ -78,21 +89,27 @@ function registerFonts() {
 
 export function CertificateDocument({ model }: { model: CertificatePdfModel }) {
   registerFonts();
+  const logoSrc = getLogoDataUrl();
 
   return (
     <Document>
       <Page size="A4" style={styles.page} wrap={false}>
         <View style={styles.backgroundGlow} />
         {/* eslint-disable-next-line jsx-a11y/alt-text */}
-        <Image src={LOGO_FILE_PATH} style={styles.watermark} />
+        <Image src={logoSrc} style={styles.watermark} />
         <View style={styles.header}>
-          {/* eslint-disable-next-line jsx-a11y/alt-text */}
-          <Image src={LOGO_FILE_PATH} style={styles.logo} />
+          <View style={styles.logoPanel}>
+            {/* eslint-disable-next-line jsx-a11y/alt-text */}
+            <Image src={logoSrc} style={styles.logo} />
+          </View>
           <View style={styles.headerText}>
             <Text style={styles.headerTitle}>Project Completion Certificate</Text>
             <Text style={styles.headerSubtitle}>
               Official vendor completion record for project-linked delivery.
             </Text>
+          </View>
+          <View style={styles.codePanel}>
+            <Text style={styles.codeLabel}>Certificate Code</Text>
             <Text style={styles.code}>{model.certificateCode}</Text>
           </View>
         </View>
@@ -196,50 +213,79 @@ const styles = StyleSheet.create({
     height: 150,
     backgroundColor: "#f9f1ea",
   },
-watermark: {
-  position: "absolute",
-  width: 220,
-  height: 70,
-  right: 26,
-  top: 180,
-  opacity: 0.06,
-  objectFit: "contain",
-},
- header: {
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 16,
-  backgroundColor: BRAND_COLORS.purple,
-  borderRadius: 24,
-  paddingVertical: 18,
-  paddingHorizontal: 18,
-  minHeight: 88,
-},
+  watermark: {
+    position: "absolute",
+    width: 330,
+    height: 84,
+    right: 24,
+    top: 214,
+    opacity: 0.04,
+    objectFit: "contain",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: BRAND_COLORS.purple,
+    borderRadius: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    minHeight: 96,
+  },
+  logoPanel: {
+    width: 154,
+    minHeight: 54,
+    alignItems: "flex-start",
+    justifyContent: "center",
+    paddingRight: 18,
+    borderRightWidth: 1,
+    borderRightColor: "rgba(255,247,241,0.18)",
+  },
   logo: {
-  width: 140,
-  height: 42,
-  objectFit: "contain",
-},
+    width: 136,
+    height: 34,
+    objectFit: "contain",
+  },
   headerText: {
     flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
   },
   headerTitle: {
     color: "#fff7f1",
-    fontSize: 24,
+    fontSize: 23,
     fontWeight: 700,
+    textAlign: "center",
   },
   headerSubtitle: {
     color: "#e9ddf2",
     fontSize: 10.5,
     marginTop: 4,
     textTransform: "uppercase",
-    letterSpacing: 1.1,
+    letterSpacing: 0.8,
+    textAlign: "center",
+  },
+  codePanel: {
+    width: 142,
+    minHeight: 54,
+    alignItems: "flex-end",
+    justifyContent: "center",
+    paddingLeft: 18,
+    borderLeftWidth: 1,
+    borderLeftColor: "rgba(255,247,241,0.18)",
+  },
+  codeLabel: {
+    color: "#e9ddf2",
+    fontSize: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
   },
   code: {
     color: "#f7c08b",
-    fontSize: 12,
-    marginTop: 10,
-    letterSpacing: 1,
+    fontSize: 10.5,
+    marginTop: 6,
+    letterSpacing: 0.5,
+    textAlign: "right",
   },
   heroPanel: {
     marginTop: 18,

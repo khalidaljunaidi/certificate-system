@@ -29,6 +29,7 @@ const STATUS_LABEL_OVERRIDES: Record<string, string> = {
   PENDING_REVIEW: "Pending",
   READY_FOR_PROCUREMENT: "Ready",
   READY_FOR_INVOICE: "Ready",
+  VALIDATED: "Validated",
   PO_AMOUNT_REQUIRED: "PO Required",
   AWAITING_INVOICE: "Awaiting",
   INVOICE_RECEIVED: "Invoice In",

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { CertificateStatus } from "@prisma/client";
 
+import { OdooSyncStatusCard } from "@/components/admin/odoo-sync-status-card";
 import { PageNotice } from "@/components/admin/page-notice";
 import {
   CertificateStatusBadge,
@@ -17,6 +18,7 @@ import { VendorMasterForm } from "@/components/forms/vendor-master-form";
 import { VendorSubcategoryForm } from "@/components/forms/vendor-subcategory-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Chip } from "@/components/ui/chip";
 import { requireAdminSession } from "@/lib/auth";
 import {
   EXECUTIVE_OVERSIGHT_NAME,
@@ -102,6 +104,19 @@ export default async function VendorDetailPage({
           body="Khaled force-finalized the vendor evaluation successfully and the cycle is now closed."
         />
       ) : null}
+      {feedback.notice === "odoo-sync-synced" ? (
+        <PageNotice
+          title="Odoo sync complete"
+          body="The vendor master record was created or updated in Odoo successfully."
+        />
+      ) : null}
+      {feedback.notice === "odoo-sync-failed" ? (
+        <PageNotice
+          tone="warning"
+          title="Odoo sync failed"
+          body="The sync failure was logged internally. Please review the Odoo Vendor Sync card and retry when ready."
+        />
+      ) : null}
 
       <section className="rounded-[32px] border border-[var(--color-border)] bg-white p-8 shadow-[0_20px_60px_rgba(17,17,17,0.05)]">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -125,9 +140,30 @@ export default async function VendorDetailPage({
               <span className="inline-flex rounded-full bg-[rgba(49,19,71,0.08)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-primary)]">
                 {vendorView.vendor.categoryName ?? "Unassigned Category"}
               </span>
-              <span className="inline-flex rounded-full bg-[rgba(215,132,57,0.12)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-accent)]">
-                {vendorView.vendor.subcategoryName ?? "Unassigned Subcategory"}
-              </span>
+              {vendorView.vendor.subcategorySelections.length === 0 ? (
+                <span className="inline-flex rounded-full bg-[rgba(215,132,57,0.12)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--color-accent)]">
+                  No Subcategories
+                </span>
+              ) : (
+                <>
+                  {vendorView.vendor.subcategorySelections.slice(0, 5).map((subcategory) => (
+                    <Chip key={subcategory.id} tone="orange" size="sm" title={subcategory.name}>
+                      {subcategory.name}
+                    </Chip>
+                  ))}
+                  {vendorView.vendor.subcategorySelections.length > 5 ? (
+                    <Chip
+                      tone="purple"
+                      size="sm"
+                      title={vendorView.vendor.subcategorySelections
+                        .map((subcategory) => subcategory.name)
+                        .join(", ")}
+                    >
+                      +{vendorView.vendor.subcategorySelections.length - 5} more
+                    </Chip>
+                  ) : null}
+                </>
+              )}
               {vendorView.vendor.classification ? (
                 <span className="inline-flex rounded-full bg-[rgba(17,17,17,0.06)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--color-ink)]">
                   {vendorView.vendor.classification}
@@ -188,6 +224,18 @@ export default async function VendorDetailPage({
           />
         </div>
       </section>
+
+      <OdooSyncStatusCard
+        status={vendorView.vendor.odooSyncStatus}
+        partnerId={vendorView.vendor.odooPartnerId}
+        syncError={vendorView.vendor.odooSyncError}
+        syncedAt={vendorView.vendor.odooSyncedAt}
+        targetType="vendor"
+        targetId={vendorView.vendor.id}
+        vendorId={vendorView.vendor.id}
+        redirectTo={`/admin/vendors/${vendorView.vendor.id}`}
+        allowRetry={canManageVendor}
+      />
 
       <section
         id="vendor-analytics"
@@ -341,6 +389,7 @@ export default async function VendorDetailPage({
                     notes: vendorView.vendor.notes,
                     categoryId: vendorView.vendor.categoryId,
                     subcategoryId: vendorView.vendor.subcategoryId,
+                    subcategorySelections: vendorView.vendor.subcategorySelections,
                   }}
                   options={governanceOptions}
                 />

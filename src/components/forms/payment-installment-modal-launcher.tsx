@@ -58,8 +58,14 @@ type PaymentInstallmentModalLauncherProps = {
     invoiceStatus:
       | "MISSING"
       | "RECEIVED"
+      | "VALIDATED"
       | "REJECTED"
       | "APPROVED_FOR_PAYMENT";
+    invoiceExistsInOdoo: boolean;
+    odooInvoiceStatus: "UPLOADED_TO_ODOO" | null;
+    odooInvoiceReference: string | null;
+    odooInvoiceUploadedAt: Date | null;
+    odooInvoiceNotes: string | null;
     financeReviewNotes: string | null;
     financeReviewedAt: Date | null;
     financeReviewedByName: string | null;
@@ -240,6 +246,9 @@ function PaymentInstallmentModal({
       ? installment.invoiceStatus
       : "APPROVED_FOR_PAYMENT",
   );
+  const [invoiceExistsInOdoo, setInvoiceExistsInOdoo] = useState(
+    installment?.invoiceExistsInOdoo ?? false,
+  );
   const [state, formAction, isPending] = useActionState(
     saveProjectVendorPaymentInstallmentAction,
     EMPTY_ACTION_STATE,
@@ -317,7 +326,7 @@ function PaymentInstallmentModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="payment-installment-title"
-        className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-[28px] border border-[var(--color-border)] bg-white shadow-[0_28px_90px_rgba(17,17,17,0.24)]"
+        className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-[var(--color-border)] bg-white shadow-[0_28px_90px_rgba(17,17,17,0.24)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-6 py-5">
@@ -348,8 +357,8 @@ function PaymentInstallmentModal({
           </button>
         </div>
 
-        <div className="max-h-[calc(92vh-92px)] overflow-y-auto p-6">
-          <form action={formAction} className="space-y-5" noValidate>
+        <form action={formAction} className="flex min-h-0 flex-1 flex-col" noValidate>
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-6">
             <input type="hidden" name="projectId" value={projectId} />
             <input type="hidden" name="projectVendorId" value={projectVendorId} />
             <input type="hidden" name="redirectTo" value={redirectTo} />
@@ -508,14 +517,70 @@ function PaymentInstallmentModal({
                   )}
 
                   {mode === "invoice" ? (
-                    <Field label="Invoice Attachment">
-                      <Input
-                        name="invoiceAttachment"
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                        disabled={isPending}
-                      />
-                    </Field>
+                    <>
+                      <div className="md:col-span-2 rounded-[20px] border border-[var(--color-border)] bg-white px-4 py-4">
+                        <label className="inline-flex items-start gap-3 text-sm font-medium text-[var(--color-ink)]">
+                          <input
+                            type="checkbox"
+                            name="invoiceExistsInOdoo"
+                            checked={invoiceExistsInOdoo}
+                            onChange={(event) => setInvoiceExistsInOdoo(event.target.checked)}
+                            disabled={isPending}
+                            className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)]"
+                          />
+                          <span>
+                            Invoice exists in Odoo
+                            <span className="mt-1 block text-xs font-normal leading-5 text-[var(--color-muted)]">
+                              Use this when finance already registered the supplier invoice in Odoo and no local attachment is needed.
+                            </span>
+                          </span>
+                        </label>
+                      </div>
+
+                      {invoiceExistsInOdoo ? (
+                        <>
+                          <Field label="Odoo Invoice Reference">
+                            <Input
+                              name="odooInvoiceReference"
+                              defaultValue={installment?.odooInvoiceReference ?? ""}
+                              placeholder="e.g. ODOO/INV/2026/001"
+                              disabled={isPending}
+                            />
+                          </Field>
+
+                          <Field label="Odoo Upload / Confirmation Date">
+                            <Input
+                              name="odooInvoiceUploadedAt"
+                              type="date"
+                              defaultValue={toDateInputValue(installment?.odooInvoiceUploadedAt)}
+                              disabled={isPending}
+                            />
+                          </Field>
+
+                          <Field label="Odoo Notes">
+                            <Textarea
+                              name="odooInvoiceNotes"
+                              rows={3}
+                              defaultValue={installment?.odooInvoiceNotes ?? ""}
+                              placeholder="Add finance confirmation notes, if needed."
+                              disabled={isPending}
+                            />
+                          </Field>
+                        </>
+                      ) : null}
+
+                      <Field label="Invoice Attachment">
+                        <Input
+                          name="invoiceAttachment"
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                          disabled={isPending}
+                        />
+                        <p className="mt-2 text-xs leading-5 text-[var(--color-muted)]">
+                          Optional when the invoice already exists in Odoo. Required only when no Odoo invoice is confirmed.
+                        </p>
+                      </Field>
+                    </>
                   ) : null}
                 </>
               ) : null}
@@ -606,17 +671,17 @@ function PaymentInstallmentModal({
             </div>
 
             <FormStateMessage state={state} />
+          </div>
 
-            <div className="flex flex-wrap gap-3">
-              <Button type="submit" disabled={isPending}>
-                {isPending ? "Saving..." : getSubmitLabel(mode)}
-              </Button>
-              <Button type="button" variant="secondary" onClick={onClose} disabled={isPending}>
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </div>
+          <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-3 border-t border-[var(--color-border)] bg-white/95 px-6 py-4 backdrop-blur">
+            <Button type="button" variant="secondary" onClick={onClose} disabled={isPending}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Saving..." : getSubmitLabel(mode)}
+            </Button>
+          </div>
+        </form>
       </div>
     </div>,
     document.body,
@@ -630,7 +695,7 @@ function getSubmitLabel(mode: PaymentWorkflowModalMode) {
     case "edit":
       return "Save Installment";
     case "invoice":
-      return "Save Invoice";
+      return "Register Invoice";
     case "review":
       return "Save Review";
     case "schedule":

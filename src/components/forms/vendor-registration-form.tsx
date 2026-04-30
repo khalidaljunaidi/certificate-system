@@ -1,8 +1,14 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 
 import { EMPTY_ACTION_STATE } from "@/actions/utils";
 import { submitVendorRegistrationAction } from "@/actions/vendor-registration-actions";
@@ -69,6 +75,14 @@ const COVERAGE_SCOPE_OPTIONS = [
   { value: "GLOBAL", label: "Global coverage" },
 ] as const;
 
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ALLOWED_UPLOAD_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+]);
+const ALLOWED_UPLOAD_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png"];
+
 const ATTACHMENT_FIELDS = [
   {
     name: "crAttachment",
@@ -101,6 +115,10 @@ const ATTACHMENT_FIELDS = [
     required: false,
   },
 ] as const;
+
+type AttachmentFieldName = (typeof ATTACHMENT_FIELDS)[number]["name"];
+type SelectedUploadFiles = Partial<Record<AttachmentFieldName, File>>;
+type UploadFieldErrors = Partial<Record<AttachmentFieldName, string>>;
 
 type VendorRegistrationFormProps = {
   options: VendorRegistrationFormOptions;
@@ -281,12 +299,18 @@ function AttachmentField({
   helper,
   required,
   isPending,
+  selectedFile,
+  error,
+  onFileChange,
 }: {
-  name: string;
+  name: AttachmentFieldName;
   label: string;
   helper: string;
   required: boolean;
   isPending: boolean;
+  selectedFile: File | null;
+  error: string | null;
+  onFileChange: (name: AttachmentFieldName, file: File | null) => void;
 }) {
   return (
     <div className="rounded-[24px] border border-[var(--color-border)] bg-white p-4">
@@ -301,11 +325,238 @@ function AttachmentField({
         accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
         required={required}
         disabled={isPending}
+        onChange={(event) =>
+          onFileChange(name, event.currentTarget.files?.[0] ?? null)
+        }
         className="mt-2 file:mr-4 file:rounded-full file:border-0 file:bg-[var(--color-panel-soft)] file:px-4 file:py-2 file:text-xs file:font-semibold file:text-[var(--color-ink)]"
       />
-      <p className="mt-2 text-xs leading-6 text-[var(--color-muted)]">{helper}</p>
+      {selectedFile ? (
+        <p className="mt-2 rounded-[14px] bg-[rgba(21,128,61,0.08)] px-3 py-2 text-xs font-medium text-[#166534]">
+          Selected: {selectedFile.name}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="mt-2 rounded-[14px] bg-[rgba(185,28,28,0.08)] px-3 py-2 text-xs font-medium text-[#991b1b]">
+          {error}
+        </p>
+      ) : null}
+      <p className="mt-2 text-xs leading-6 text-[var(--color-muted)]">
+        {helper} PDF, JPG, or PNG only. Max 10MB per file.
+      </p>
     </div>
   );
+}
+
+function validateUploadFile(file: File, label: string) {
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return `${label} must be 10MB or less.`;
+  }
+
+  if (!isAllowedUploadFile(file)) {
+    return `${label} must be a PDF, JPG, or PNG file.`;
+  }
+
+  return null;
+}
+
+function isAllowedUploadFile(file: File) {
+  const fileName = file.name.trim().toLowerCase();
+
+  return (
+    ALLOWED_UPLOAD_TYPES.has(file.type) ||
+    ALLOWED_UPLOAD_EXTENSIONS.some((extension) => fileName.endsWith(extension))
+  );
+}
+
+function validateUploadInputs(uploadFiles: SelectedUploadFiles) {
+  let totalBytes = 0;
+  const fieldErrors: UploadFieldErrors = {};
+
+  for (const field of ATTACHMENT_FIELDS) {
+    const file = uploadFiles[field.name] ?? null;
+
+    if (!file) {
+      if (field.required) {
+        fieldErrors[field.name] = `${field.label} is required.`;
+      }
+
+      continue;
+    }
+
+    totalBytes += file.size;
+    const fileError = validateUploadFile(file, field.label);
+
+    if (fileError) {
+      fieldErrors[field.name] = fileError;
+    }
+  }
+
+  const firstFieldError = ATTACHMENT_FIELDS.map(
+    (field) => fieldErrors[field.name],
+  ).find(Boolean);
+
+  if (firstFieldError) {
+    return {
+      message: firstFieldError,
+      fieldErrors,
+    };
+  }
+
+  if (totalBytes > MAX_UPLOAD_BYTES) {
+    return {
+      message:
+        "The combined upload size must stay under 10MB for this submission. Please reduce file sizes and try again.",
+      fieldErrors,
+    };
+  }
+
+  return {
+    message: null,
+    fieldErrors,
+  };
+}
+
+function appendControlToFormData(
+  formData: FormData,
+  element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+) {
+  if (!element.name || element.disabled) {
+    return;
+  }
+
+  if (element instanceof HTMLInputElement) {
+    if (element.type === "file") {
+      return;
+    }
+
+    if (element.type === "checkbox" || element.type === "radio") {
+      if (element.checked) {
+        formData.append(element.name, element.value || "on");
+      }
+      return;
+    }
+
+    formData.append(element.name, element.value);
+    return;
+  }
+
+  if (element instanceof HTMLSelectElement && element.multiple) {
+    for (const option of Array.from(element.selectedOptions)) {
+      formData.append(element.name, option.value);
+    }
+    return;
+  }
+
+  formData.append(element.name, element.value);
+}
+
+function buildCompleteRegistrationFormData(
+  form: HTMLFormElement,
+  uploadFiles: SelectedUploadFiles,
+) {
+  const formData = new FormData();
+
+  for (const element of Array.from(form.elements)) {
+    if (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLSelectElement ||
+      element instanceof HTMLTextAreaElement
+    ) {
+      appendControlToFormData(formData, element);
+    }
+  }
+
+  for (const field of ATTACHMENT_FIELDS) {
+    const file = uploadFiles[field.name];
+
+    formData.delete(field.name);
+
+    if (file) {
+      formData.set(field.name, file);
+    }
+  }
+
+  return formData;
+}
+
+function firstFieldError(
+  fieldErrors: Record<string, string[]> | undefined,
+): string | null {
+  if (!fieldErrors) {
+    return null;
+  }
+
+  for (const messages of Object.values(fieldErrors)) {
+    const message = messages?.[0];
+
+    if (message) {
+      return message;
+    }
+  }
+
+  return null;
+}
+
+function getStepForField(fieldName: string) {
+  if (
+    [
+      "companyName",
+      "legalName",
+      "companyEmail",
+      "companyPhone",
+      "website",
+      "crNumber",
+      "vatNumber",
+    ].includes(fieldName)
+  ) {
+    return 0;
+  }
+
+  if (
+    [
+      "countryCode",
+      "coverageScope",
+      "cityIds",
+      "addressLine1",
+      "addressLine2",
+      "district",
+      "region",
+      "postalCode",
+      "poBox",
+    ].includes(fieldName)
+  ) {
+    return 1;
+  }
+
+  if (
+    ["businessDescription", "yearsInBusiness", "employeeCount"].includes(
+      fieldName,
+    )
+  ) {
+    return 2;
+  }
+
+  if (["categoryId", "subcategoryIds", "servicesOverview"].includes(fieldName)) {
+    return 3;
+  }
+
+  if (fieldName.startsWith("reference")) {
+    return 4;
+  }
+
+  if (
+    ["bankName", "accountName", "iban", "swiftCode", "bankAccountNumber"].includes(
+      fieldName,
+    )
+  ) {
+    return 5;
+  }
+
+  if (fieldName.endsWith("Attachment") || fieldName === "additionalInformation") {
+    return 6;
+  }
+
+  return 7;
 }
 
 export function VendorRegistrationForm({ options }: VendorRegistrationFormProps) {
@@ -322,6 +573,12 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
   const [subcategoryIds, setSubcategoryIds] = useState<string[]>([]);
   const [selectedCityIds, setSelectedCityIds] = useState<string[]>([]);
   const [citySearch, setCitySearch] = useState("");
+  const [clientUploadError, setClientUploadError] = useState<string | null>(null);
+  const [selectedUploadFiles, setSelectedUploadFiles] =
+    useState<SelectedUploadFiles>({});
+  const [uploadFieldErrors, setUploadFieldErrors] = useState<UploadFieldErrors>(
+    {},
+  );
 
   const selectedCountry = useMemo(
     () => options.countries.find((country) => country.code === countryCode) ?? null,
@@ -455,6 +712,25 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
     }
   }, [router, state.redirectTo]);
 
+  useEffect(() => {
+    const firstInvalidField = Object.keys(state.fieldErrors ?? {})[0];
+
+    if (firstInvalidField) {
+      setCurrentStep(getStepForField(firstInvalidField));
+    }
+  }, [state.fieldErrors]);
+
+  const serverFieldError = useMemo(
+    () => firstFieldError(state.fieldErrors),
+    [state.fieldErrors],
+  );
+
+  const displayState = clientUploadError
+    ? { error: clientUploadError }
+    : serverFieldError
+      ? { error: serverFieldError }
+      : state;
+
   const hiddenCityInputs =
     coverageScope === "SPECIFIC_CITIES" ? (
       selectedCityIds.map((cityId) => (
@@ -466,8 +742,99 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
       ))
     );
 
+  function handleUploadFileChange(name: AttachmentFieldName, file: File | null) {
+    const field = ATTACHMENT_FIELDS.find((item) => item.name === name);
+    const fileError = file && field ? validateUploadFile(file, field.label) : null;
+
+    setClientUploadError(null);
+
+    if (fileError) {
+      setSelectedUploadFiles((current) => {
+        const next = { ...current };
+        delete next[name];
+        return next;
+      });
+      setUploadFieldErrors((current) => ({
+        ...current,
+        [name]: fileError,
+      }));
+      return;
+    }
+
+    setUploadFieldErrors((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
+    setSelectedUploadFiles((current) => {
+      const next = { ...current };
+
+      if (file) {
+        next[name] = file;
+      } else {
+        delete next[name];
+      }
+
+      return next;
+    });
+  }
+
+  function validateUploadsBeforeSubmit() {
+    const uploadValidation = validateUploadInputs(selectedUploadFiles);
+
+    if (uploadValidation.message) {
+      setClientUploadError(uploadValidation.message);
+      setUploadFieldErrors(uploadValidation.fieldErrors);
+      setCurrentStep(6);
+      return false;
+    }
+
+    setClientUploadError(null);
+    setUploadFieldErrors({});
+    return true;
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!validateUploadsBeforeSubmit()) {
+      return;
+    }
+
+    const formData = buildCompleteRegistrationFormData(
+      event.currentTarget,
+      selectedUploadFiles,
+    );
+
+    startTransition(() => {
+      formAction(formData);
+    });
+  }
+
+  function handleContinue() {
+    if (currentStep === 6 && !validateUploadsBeforeSubmit()) {
+      return;
+    }
+
+    setCurrentStep((step) => Math.min(step + 1, STEPS.length - 1));
+  }
+
   return (
-    <form action={formAction} noValidate className="space-y-8">
+    <form
+      action={formAction}
+      onChange={(event) => {
+        if (
+          clientUploadError &&
+          event.target instanceof HTMLInputElement &&
+          event.target.type === "file"
+        ) {
+          setClientUploadError(null);
+        }
+      }}
+      onSubmit={handleSubmit}
+      noValidate
+      className="space-y-8"
+    >
       <Card className="overflow-hidden">
         <CardContent className="space-y-6 p-6 md:p-8">
           <div className="space-y-4">
@@ -874,7 +1241,10 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                     id="categoryId"
                     name="categoryId"
                     value={categoryId}
-                    onChange={(event) => setCategoryId(event.target.value)}
+                    onChange={(event) => {
+                      setCategoryId(event.target.value);
+                      setSubcategoryIds([]);
+                    }}
                     disabled={isPending}
                   >
                     <option value="">Select category</option>
@@ -900,8 +1270,8 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="neutral">
-                      {subcategoryIds.length} selected
+                    <Badge variant={allSubcategoriesSelected ? "green" : "neutral"}>
+                      {subcategoryIds.length} of {subcategoryOptions.length} selected
                     </Badge>
                     <Button
                       type="button"
@@ -909,14 +1279,21 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                       size="sm"
                       onClick={() =>
                         setSubcategoryIds(
-                          allSubcategoriesSelected
-                            ? []
-                            : subcategoryOptions.map((subcategory) => subcategory.id),
+                          subcategoryOptions.map((subcategory) => subcategory.id),
                         )
                       }
                       disabled={isPending || !selectedCategory || subcategoryOptions.length === 0}
                     >
-                      {allSubcategoriesSelected ? "Clear All" : "Select All"}
+                      Select all
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setSubcategoryIds([])}
+                      disabled={isPending || subcategoryIds.length === 0}
+                    >
+                      Clear selection
                     </Button>
                   </div>
                 </div>
@@ -1061,9 +1438,15 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                     helper={field.helper}
                     required={field.required}
                     isPending={isPending}
+                    selectedFile={selectedUploadFiles[field.name] ?? null}
+                    error={uploadFieldErrors[field.name] ?? null}
+                    onFileChange={handleUploadFileChange}
                   />
                 ))}
               </div>
+              {clientUploadError ? (
+                <FormStateMessage state={{ error: clientUploadError }} />
+              ) : null}
               <div>
                 <Label htmlFor="additionalInformation">
                   Additional Information
@@ -1162,7 +1545,7 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
               {currentStep < STEPS.length - 1 ? (
                 <Button
                   type="button"
-                  onClick={() => setCurrentStep((step) => Math.min(step + 1, STEPS.length - 1))}
+                  onClick={handleContinue}
                   disabled={isPending}
                 >
                   Continue
@@ -1175,7 +1558,7 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
             </div>
           </div>
 
-          <FormStateMessage state={state} />
+          <FormStateMessage state={displayState} />
         </CardContent>
       </Card>
     </form>

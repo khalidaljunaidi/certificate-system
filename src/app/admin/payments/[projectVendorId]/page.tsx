@@ -7,6 +7,7 @@ import {
   PaymentInstallmentStatusBadge,
   PaymentRecordStatusBadge,
 } from "@/components/admin/status-badges";
+import { PaymentCloseActionButton } from "@/components/forms/payment-close-action-button";
 import { PaymentInstallmentModalLauncher } from "@/components/forms/payment-installment-modal-launcher";
 import { PaymentRecordGovernanceForm } from "@/components/forms/payment-record-governance-form";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,6 @@ import {
   canManageRoles,
   canUpdatePayments,
   canViewPayments,
-  isPrimaryEvaluator,
 } from "@/lib/permissions";
 import { formatDate, formatDateTime, formatSarAmount } from "@/lib/utils";
 import { getPaymentRecordDetail } from "@/server/queries/payment-queries";
@@ -77,9 +77,11 @@ export default async function PaymentDetailPage({
     );
   }
 
+  const activeTab = getPaymentTab(query.tab);
   const detail = await getPaymentRecordDetail({
     viewer: session.user,
     projectVendorId,
+    activeTab,
   });
 
   if (!detail) {
@@ -87,7 +89,6 @@ export default async function PaymentDetailPage({
   }
 
   const record = detail.record;
-  const activeTab = getPaymentTab(query.tab);
   const redirectTo = `/admin/payments/${record.projectVendorId}?tab=notes`;
   const canManageInstallments =
     canCreatePaymentPlan(session.user) || canUpdatePayments(session.user);
@@ -95,7 +96,6 @@ export default async function PaymentDetailPage({
   const canCloseRecord = canClosePayments(session.user);
   const canExport = canExportPayments(session.user);
   const canViewTechnicalAuditDetails = canManageRoles(session.user);
-  const canForceClose = isPrimaryEvaluator(session.user.email);
   const assignmentLabel = `${record.projectName} | ${record.vendorName}${record.poNumber ? ` | PO ${record.poNumber}` : ""}${record.contractNumber ? ` | Contract ${record.contractNumber}` : ""}`;
   const workflowSteps = buildWorkflowSteps(record);
 
@@ -128,7 +128,14 @@ export default async function PaymentDetailPage({
               </p>
             ) : null}
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-center justify-start gap-3 xl:justify-end">
+            <RecommendedActionButton
+              record={record}
+              assignmentLabel={assignmentLabel}
+              canManageInstallments={canManageInstallments}
+              canCloseRecord={canCloseRecord}
+              hidePassiveAction
+            />
             <Button asChild variant="secondary">
               <Link href={`/admin/projects/${record.projectId}`}>Open Project</Link>
             </Button>
@@ -136,7 +143,7 @@ export default async function PaymentDetailPage({
               <Link href="/admin/payments">Back to Payments</Link>
             </Button>
             {canExport ? (
-              <Button asChild>
+              <Button asChild variant="secondary">
                 <Link href={`/admin/payments/${record.projectVendorId}/report`}>
                   Export PDF
                 </Link>
@@ -230,6 +237,7 @@ export default async function PaymentDetailPage({
                 record={record}
                 assignmentLabel={assignmentLabel}
                 canManageInstallments={canManageInstallments}
+                canCloseRecord={canCloseRecord}
               />
             </div>
           </CardContent>
@@ -255,7 +263,7 @@ export default async function PaymentDetailPage({
               closedAt={record.closedAt}
               canAssignFinanceOwner={canAssignOwner}
               canCloseRecord={canCloseRecord}
-              canForceClose={canForceClose}
+              canClosePayment={record.canClosePayment}
             />
           </CardContent>
         </Card>
@@ -293,6 +301,7 @@ export default async function PaymentDetailPage({
               record={record}
               assignmentLabel={assignmentLabel}
               canManageInstallments={canManageInstallments}
+              canCloseRecord={canCloseRecord}
             />
           ) : null}
           {activeTab === "installments" ? (
@@ -390,45 +399,33 @@ function buildWorkflowSteps(record: PaymentRecordView) {
   return [
     {
       label: "PO Amount Confirmed",
-      helper: record.amountMissing ? "Set PO amount" : getAmountDisplay(record),
-      state: getStepState(currentStep, 1, !record.amountMissing),
+      helper: getWorkflowStepSubtitle(record, currentStep, 1),
+      state: getStepState(currentStep, 1),
     },
     {
       label: "Invoice Received",
-      helper:
-        record.invoiceReceivedCount > 0
-          ? `${record.invoiceReceivedCount} invoice records`
-          : "Awaiting invoice",
-      state: getStepState(currentStep, 2, record.invoiceReceivedCount > 0),
+      helper: getWorkflowStepSubtitle(record, currentStep, 2),
+      state: getStepState(currentStep, 2),
     },
     {
       label: "Finance Review",
-      helper:
-        record.approvedInvoiceCount > 0
-          ? `${record.approvedInvoiceCount} approved`
-          : "Finance review pending",
-      state: getStepState(currentStep, 3, record.approvedInvoiceCount > 0),
+      helper: getWorkflowStepSubtitle(record, currentStep, 3),
+      state: getStepState(currentStep, 3),
     },
     {
       label: "Payment Scheduled",
-      helper:
-        record.scheduledInstallmentCount > 0
-          ? `${record.scheduledInstallmentCount} scheduled`
-          : "Scheduling pending",
-      state: getStepState(currentStep, 4, record.scheduledInstallmentCount > 0),
+      helper: getWorkflowStepSubtitle(record, currentStep, 4),
+      state: getStepState(currentStep, 4),
     },
     {
       label: "Paid",
-      helper:
-        record.paidInstallmentCount > 0
-          ? `${record.paidInstallmentCount} installments paid`
-          : "Awaiting payment",
-      state: getStepState(currentStep, 5, record.paidAmount >= record.totalAmount && !record.amountMissing),
+      helper: getWorkflowStepSubtitle(record, currentStep, 5),
+      state: getStepState(currentStep, 5),
     },
     {
       label: "Closed",
-      helper: record.closedAt ? formatDateTime(record.closedAt) : "Closure pending",
-      state: getStepState(currentStep, 6, Boolean(record.closedAt)),
+      helper: getWorkflowStepSubtitle(record, currentStep, 6),
+      state: getStepState(currentStep, 6),
     },
   ] as const;
 }
@@ -436,38 +433,114 @@ function buildWorkflowSteps(record: PaymentRecordView) {
 function getCurrentWorkflowStep(record: PaymentRecordView) {
   switch (record.status) {
     case "PO_AMOUNT_REQUIRED":
-      return 1;
+      return 0;
     case "READY_FOR_INVOICE":
     case "AWAITING_INVOICE":
-      return 2;
+      return 1;
     case "INVOICE_RECEIVED":
+      return 2;
     case "UNDER_FINANCE_REVIEW":
-      return 3;
+      return 2;
     case "PAYMENT_SCHEDULED":
       return 4;
     case "PARTIALLY_PAID":
+      return 4;
     case "FULLY_PAID":
       return 5;
     case "CLOSED":
       return 6;
     case "ON_HOLD":
     case "DISPUTED":
-      return record.invoiceReceivedCount > 0 ? 3 : 2;
+      if (record.scheduledInstallmentCount > 0) {
+        return 4;
+      }
+
+      if (record.approvedInvoiceCount > 0) {
+        return 3;
+      }
+
+      if (record.invoiceReceivedCount > 0) {
+        return 2;
+      }
+
+      return record.amountMissing ? 0 : 1;
     default:
-      return 2;
+      return record.amountMissing ? 0 : 1;
   }
 }
 
-function getStepState(currentStep: number, stepIndex: number, complete: boolean) {
-  if (complete) {
+function getStepState(currentStep: number, stepIndex: number) {
+  if (stepIndex <= currentStep) {
     return "complete";
   }
 
-  if (currentStep === stepIndex) {
-    return "current";
+  return "pending";
+}
+
+function getWorkflowStepSubtitle(
+  record: PaymentRecordView,
+  currentStep: number,
+  stepIndex: number,
+) {
+  if (stepIndex <= currentStep) {
+    return getCompletedWorkflowStepSubtitle(record, stepIndex);
   }
 
-  return "pending";
+  if (stepIndex === currentStep + 1) {
+    return getActiveWorkflowStepSubtitle(record, stepIndex);
+  }
+
+  return "Pending";
+}
+
+function getCompletedWorkflowStepSubtitle(
+  record: PaymentRecordView,
+  stepIndex: number,
+) {
+  switch (stepIndex) {
+    case 1:
+      return "Amount confirmed";
+    case 2:
+      return hasOdooInvoice(record)
+        ? "Odoo invoice confirmed"
+        : "Invoice received";
+    case 3:
+      return "Finance reviewed";
+    case 4:
+      return "Payment scheduled";
+    case 5:
+      return "Installments paid";
+    case 6:
+      return "Closed";
+    default:
+      return "Completed";
+  }
+}
+
+function getActiveWorkflowStepSubtitle(
+  record: PaymentRecordView,
+  stepIndex: number,
+) {
+  switch (stepIndex) {
+    case 1:
+      return record.amountMissing ? "Set PO amount" : "Amount confirmed";
+    case 2:
+      return "Awaiting invoice";
+    case 3:
+      return "Under finance review";
+    case 4:
+      return "Scheduling pending";
+    case 5:
+      return "Payment pending";
+    case 6:
+      return "Closure pending";
+    default:
+      return "Pending";
+  }
+}
+
+function hasOdooInvoice(record: PaymentRecordView) {
+  return record.installments.some((installment) => installment.invoiceExistsInOdoo);
 }
 
 function WorkflowStepTile({
@@ -556,10 +629,12 @@ function OverviewTab({
   record,
   assignmentLabel,
   canManageInstallments,
+  canCloseRecord,
 }: {
   record: PaymentRecordView;
   assignmentLabel: string;
   canManageInstallments: boolean;
+  canCloseRecord: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -584,6 +659,7 @@ function OverviewTab({
               record={record}
               assignmentLabel={assignmentLabel}
               canManageInstallments={canManageInstallments}
+              canCloseRecord={canCloseRecord}
             />
           </div>
         </div>
@@ -794,7 +870,14 @@ function InvoicesTab({
                       {installment.condition}
                     </p>
                   </td>
-                  <td className="px-4 py-4">{installment.invoiceNumber ?? "-"}</td>
+                  <td className="px-4 py-4">
+                    <p>{installment.invoiceNumber ?? "-"}</p>
+                    {installment.invoiceExistsInOdoo ? (
+                      <p className="mt-1 text-xs text-[var(--color-muted)]">
+                        Odoo: {installment.odooInvoiceReference ?? "Uploaded"}
+                      </p>
+                    ) : null}
+                  </td>
                   <td className="px-4 py-4">{formatDate(installment.invoiceDate)}</td>
                   <td className="px-4 py-4">
                     {installment.invoiceAmount !== null
@@ -805,7 +888,14 @@ function InvoicesTab({
                   <td className="px-4 py-4">
                     {installment.taxInvoiceValidated ? "Validated" : "Pending"}
                   </td>
-                  <td className="px-4 py-4">{installment.invoiceStatus.replaceAll("_", " ")}</td>
+                  <td className="px-4 py-4">
+                    <p>{formatInvoiceStatusLabel(installment.invoiceStatus)}</p>
+                    {installment.odooInvoiceStatus ? (
+                      <p className="mt-1 text-xs text-[var(--color-muted)]">
+                        Uploaded to Odoo
+                      </p>
+                    ) : null}
+                  </td>
                   <td className="px-4 py-4">
                     <div className="flex justify-end gap-2">
                       {canManageInstallments ? (
@@ -903,14 +993,17 @@ function FinanceReviewTab({
                     {installment.condition} | {formatSarAmount(installment.amount)}
                   </p>
                   <p className="mt-1 text-xs text-[var(--color-muted)]">
-                    Invoice {installment.invoiceNumber ?? "not registered"} | {installment.invoiceStatus.replaceAll("_", " ")}
+                    Invoice {installment.invoiceNumber ?? "not registered"} | {formatInvoiceStatusLabel(installment.invoiceStatus)}
+                    {installment.invoiceExistsInOdoo
+                      ? ` | Odoo ${installment.odooInvoiceReference ?? "uploaded"}`
+                      : ""}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <PaymentInstallmentStatusBadge status={installment.status} />
                   {installment.invoiceStatus !== "MISSING" ? (
                     <StatusBadge
-                      label={installment.invoiceStatus.replaceAll("_", " ")}
+                      label={formatInvoiceStatusLabel(installment.invoiceStatus)}
                       tone="purple"
                     />
                   ) : null}
@@ -918,6 +1011,14 @@ function FinanceReviewTab({
               </div>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <SummaryLine label="Invoice Amount" value={installment.invoiceAmount !== null ? formatSarAmount(installment.invoiceAmount) : "-"} />
+                <SummaryLine
+                  label="Odoo Invoice"
+                  value={
+                    installment.invoiceExistsInOdoo
+                      ? installment.odooInvoiceReference ?? "Uploaded to Odoo"
+                      : "Not marked in Odoo"
+                  }
+                />
                 <SummaryLine label="Finance Notes" value={installment.financeReviewNotes ?? "No finance review notes yet."} />
               </div>
               {canManageInstallments ? (
@@ -1177,10 +1278,14 @@ function RecommendedActionButton({
   record,
   assignmentLabel,
   canManageInstallments,
+  canCloseRecord,
+  hidePassiveAction = false,
 }: {
   record: PaymentRecordView;
   assignmentLabel: string;
   canManageInstallments: boolean;
+  canCloseRecord: boolean;
+  hidePassiveAction?: boolean;
 }) {
   const redirectTo = `/admin/payments/${record.projectVendorId}?tab=overview`;
 
@@ -1192,7 +1297,32 @@ function RecommendedActionButton({
     );
   }
 
+  if (record.recommendedAction === "CLOSE_PAYMENT") {
+    if (!canCloseRecord) {
+      return hidePassiveAction ? null : (
+        <Button asChild variant="secondary">
+          <Link href={`/admin/payments/${record.projectVendorId}?tab=notes#payment-governance`}>
+            Review Closure
+          </Link>
+        </Button>
+      );
+    }
+
+    return (
+      <PaymentCloseActionButton
+        projectVendorId={record.projectVendorId}
+        disabled={!record.canClosePayment}
+        disabledReason="Payment cannot be closed until all installments are fully paid"
+        label="Close Payment"
+      />
+    );
+  }
+
   if (!canManageInstallments) {
+    if (hidePassiveAction) {
+      return null;
+    }
+
     return (
       <Button asChild variant="secondary">
         <Link href={`/admin/payments/${record.projectVendorId}?tab=overview`}>
@@ -1286,14 +1416,8 @@ function RecommendedActionButton({
     );
   }
 
-  if (record.recommendedAction === "CLOSE_PAYMENT") {
-    return (
-      <Button asChild>
-        <Link href={`/admin/payments/${record.projectVendorId}?tab=notes#payment-governance`}>
-          Review Closure
-        </Link>
-      </Button>
-    );
+  if (hidePassiveAction) {
+    return null;
   }
 
   return (
@@ -1514,6 +1638,31 @@ function getAuditComparisonRows(details: unknown) {
       nextKey: "nextInvoiceStatus",
     },
     {
+      label: "Invoice Exists In Odoo",
+      previousKey: "previousInvoiceExistsInOdoo",
+      nextKey: "nextInvoiceExistsInOdoo",
+    },
+    {
+      label: "Odoo Invoice Status",
+      previousKey: "previousOdooInvoiceStatus",
+      nextKey: "nextOdooInvoiceStatus",
+    },
+    {
+      label: "Odoo Invoice Reference",
+      previousKey: "previousOdooInvoiceReference",
+      nextKey: "nextOdooInvoiceReference",
+    },
+    {
+      label: "Odoo Upload Date",
+      previousKey: "previousOdooInvoiceUploadedAt",
+      nextKey: "nextOdooInvoiceUploadedAt",
+    },
+    {
+      label: "Odoo Notes",
+      previousKey: "previousOdooInvoiceNotes",
+      nextKey: "nextOdooInvoiceNotes",
+    },
+    {
       label: "Invoice Number",
       previousKey: "previousInvoiceNumber",
       nextKey: "nextInvoiceNumber",
@@ -1556,6 +1705,22 @@ function getAmountDisplay(record: PaymentRecordView) {
   return record.amountMissing
     ? "PO amount not set"
     : formatSarAmount(record.totalAmount);
+}
+
+function formatInvoiceStatusLabel(status: PaymentRecordView["installments"][number]["invoiceStatus"]) {
+  switch (status) {
+    case "APPROVED_FOR_PAYMENT":
+      return "Approved";
+    case "VALIDATED":
+      return "Validated";
+    case "RECEIVED":
+      return "Received";
+    case "REJECTED":
+      return "Rejected";
+    case "MISSING":
+    default:
+      return "Missing";
+  }
 }
 
 function getSetPoAmountHref(

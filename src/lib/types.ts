@@ -7,6 +7,7 @@ import type {
   NotificationSeverity,
   NotificationType,
   NotificationDeliveryStatus,
+  OdooSyncStatus,
   OperationalTaskPriority,
   OperationalTaskStatus,
   OperationalTaskType,
@@ -295,6 +296,15 @@ export type VendorRegistryItem = {
   categoryName: string | null;
   subcategoryId: string | null;
   subcategoryName: string | null;
+  subcategorySelections: Array<{
+    id: string;
+    name: string;
+    externalKey: string | null;
+  }>;
+  odooSyncStatus: OdooSyncStatus;
+  odooPartnerId: number | null;
+  odooSyncError: string | null;
+  odooSyncedAt: Date | null;
   projectCount: number;
   activeProjectCount: number;
   assignmentCount: number;
@@ -322,6 +332,15 @@ export type VendorRegistryView = {
     categoryName: string | null;
     subcategoryId: string | null;
     subcategoryName: string | null;
+    subcategorySelections: Array<{
+      id: string;
+      name: string;
+      externalKey: string | null;
+    }>;
+    odooSyncStatus: OdooSyncStatus;
+    odooPartnerId: number | null;
+    odooSyncError: string | null;
+    odooSyncedAt: Date | null;
   };
   assignmentGroups: Array<{
     projectId: string;
@@ -485,6 +504,7 @@ export type VendorRegistrationRequestView = {
   categoryId: string;
   categoryName: string;
   categoryCode: string | null;
+  categorySubcategoryCount: number;
   primarySubcategoryId: string;
   primarySubcategoryName: string;
   primarySubcategoryCode: string | null;
@@ -520,7 +540,14 @@ export type VendorRegistrationRequestView = {
   declarationSignedAt: Date | null;
   supplierId: string | null;
   approvedVendorId: string | null;
+  certificateCode: string | null;
+  certificateYear: number | null;
+  certificateSequence: number | null;
   certificatePdfStoragePath: string | null;
+  odooSyncStatus: OdooSyncStatus;
+  odooPartnerId: number | null;
+  odooSyncError: string | null;
+  odooSyncedAt: Date | null;
   submittedAt: Date;
   reviewedAt: Date | null;
   reviewedByName: string | null;
@@ -756,8 +783,14 @@ export type ProjectVendorPaymentInstallmentView = {
   invoiceStatus:
     | "MISSING"
     | "RECEIVED"
+    | "VALIDATED"
     | "REJECTED"
     | "APPROVED_FOR_PAYMENT";
+  invoiceExistsInOdoo: boolean;
+  odooInvoiceStatus: "UPLOADED_TO_ODOO" | null;
+  odooInvoiceReference: string | null;
+  odooInvoiceUploadedAt: Date | null;
+  odooInvoiceNotes: string | null;
   financeReviewNotes: string | null;
   financeReviewedAt: Date | null;
   financeReviewedByName: string | null;
@@ -790,6 +823,7 @@ export type ProjectVendorPaymentSummaryView = {
   paidAmount: number;
   remainingAmount: number;
   progressPercent: number;
+  canClosePayment: boolean;
   installmentCount: number;
   invoiceReceivedCount: number;
   approvedInvoiceCount: number;
@@ -852,6 +886,7 @@ export type PaymentRecordListItemView = {
   paidAmount: number;
   remainingAmount: number;
   progressPercent: number;
+  canClosePayment: boolean;
   nextDueDate: Date | null;
   status: PaymentRecordStatusView;
   workflowOverrideStatus: "ON_HOLD" | "DISPUTED" | null;

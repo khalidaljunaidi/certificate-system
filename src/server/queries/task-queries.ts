@@ -9,7 +9,6 @@ import type {
   TaskLookupOptions,
 } from "@/lib/types";
 import { buildAdminContextHref } from "@/lib/context-links";
-import { syncOperationalTaskAlerts } from "@/server/services/task-service";
 
 type TaskViewer = {
   id: string;
@@ -29,6 +28,54 @@ type TaskFilters = {
 type TaskQueryOptions = {
   limit?: number;
 };
+
+const TASK_LOOKUP_OPTIONS_CACHE_MS = 60_000;
+let taskLookupOptionsCache:
+  | {
+      expiresAt: number;
+      value: TaskLookupOptions;
+    }
+  | null = null;
+let taskFilterOptionsCache:
+  | {
+      expiresAt: number;
+      value: Pick<TaskLookupOptions, "users" | "monthlyCycles">;
+    }
+  | null = null;
+
+async function getTaskUsers() {
+  return prisma.user.findMany({
+    where: {
+      isActive: true,
+    },
+    orderBy: {
+      name: "asc",
+    },
+    take: 100,
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      title: true,
+      role: true,
+    },
+  });
+}
+
+async function getTaskMonthlyCycles() {
+  return prisma.monthlyCycle.findMany({
+    orderBy: [{ isActive: "desc" }, { year: "desc" }, { month: "desc" }],
+    take: 24,
+    select: {
+      id: true,
+      label: true,
+      month: true,
+      year: true,
+      status: true,
+      isActive: true,
+    },
+  });
+}
 
 function mapTaskItem(task: {
   id: string;
@@ -130,22 +177,12 @@ function mapTaskItem(task: {
 }
 
 export async function getTaskLookupOptions(): Promise<TaskLookupOptions> {
+  if (taskLookupOptionsCache && taskLookupOptionsCache.expiresAt > Date.now()) {
+    return taskLookupOptionsCache.value;
+  }
+
   const [users, projects, vendors, assignments, monthlyCycles, certificates] = await Promise.all([
-    prisma.user.findMany({
-      where: {
-        isActive: true,
-      },
-      orderBy: {
-        name: "asc",
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        title: true,
-        role: true,
-      },
-    }),
+    getTaskUsers(),
     prisma.project.findMany({
       where: {
         isArchived: false,
@@ -153,6 +190,7 @@ export async function getTaskLookupOptions(): Promise<TaskLookupOptions> {
       orderBy: {
         projectName: "asc",
       },
+      take: 100,
       select: {
         id: true,
         projectCode: true,
@@ -166,6 +204,7 @@ export async function getTaskLookupOptions(): Promise<TaskLookupOptions> {
       orderBy: {
         vendorName: "asc",
       },
+      take: 100,
       select: {
         id: true,
         vendorId: true,
@@ -176,6 +215,7 @@ export async function getTaskLookupOptions(): Promise<TaskLookupOptions> {
       orderBy: {
         createdAt: "desc",
       },
+      take: 100,
       select: {
         id: true,
         projectId: true,
@@ -196,17 +236,7 @@ export async function getTaskLookupOptions(): Promise<TaskLookupOptions> {
         },
       },
     }),
-    prisma.monthlyCycle.findMany({
-      orderBy: [{ isActive: "desc" }, { year: "desc" }, { month: "desc" }],
-      select: {
-        id: true,
-        label: true,
-        month: true,
-        year: true,
-        status: true,
-        isActive: true,
-      },
-    }),
+    getTaskMonthlyCycles(),
     prisma.certificate.findMany({
       where: {
         isArchived: false,
@@ -214,6 +244,7 @@ export async function getTaskLookupOptions(): Promise<TaskLookupOptions> {
       orderBy: {
         createdAt: "desc",
       },
+      take: 100,
       select: {
         id: true,
         projectId: true,
@@ -225,7 +256,7 @@ export async function getTaskLookupOptions(): Promise<TaskLookupOptions> {
     }),
   ]);
 
-  return {
+  const value = {
     users,
     projects,
     vendors,
@@ -241,6 +272,37 @@ export async function getTaskLookupOptions(): Promise<TaskLookupOptions> {
     monthlyCycles,
     certificates,
   };
+
+  taskLookupOptionsCache = {
+    expiresAt: Date.now() + TASK_LOOKUP_OPTIONS_CACHE_MS,
+    value,
+  };
+
+  return value;
+}
+
+export async function getTaskFilterOptions(): Promise<
+  Pick<TaskLookupOptions, "users" | "monthlyCycles">
+> {
+  if (taskFilterOptionsCache && taskFilterOptionsCache.expiresAt > Date.now()) {
+    return taskFilterOptionsCache.value;
+  }
+
+  const [users, monthlyCycles] = await Promise.all([
+    getTaskUsers(),
+    getTaskMonthlyCycles(),
+  ]);
+  const value = {
+    users,
+    monthlyCycles,
+  };
+
+  taskFilterOptionsCache = {
+    expiresAt: Date.now() + TASK_LOOKUP_OPTIONS_CACHE_MS,
+    value,
+  };
+
+  return value;
 }
 
 export async function getOperationalTasksForViewer(
@@ -248,8 +310,6 @@ export async function getOperationalTasksForViewer(
   filters: TaskFilters = {},
   options: TaskQueryOptions = {},
 ) {
-  await syncOperationalTaskAlerts();
-
   const where = {
     ...(filters.search
       ? {

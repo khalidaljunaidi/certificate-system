@@ -36,7 +36,7 @@ import {
   getVendorGovernanceOptions,
   getVendorRegistry,
 } from "@/server/queries/vendor-queries";
-import { getVendorRegistrationRequests } from "@/server/queries/vendor-registration-queries";
+import { getVendorRegistrationRequestSummaries } from "@/server/queries/vendor-registration-queries";
 
 type VendorsPageProps = {
   searchParams: Promise<{
@@ -59,10 +59,10 @@ export default async function VendorsPage({ searchParams }: VendorsPageProps) {
   const canOpenPayments = canViewPayments(session.user);
 
   const [vendors, options, recentRequests, recentInvitations] = await Promise.all([
-    getVendorRegistry(filters, { limit: 50 }),
+    getVendorRegistry(filters, { limit: 25 }),
     getVendorGovernanceOptions(),
     canManageVendor
-      ? getVendorRegistrationRequests({}, { limit: 4 })
+      ? getVendorRegistrationRequestSummaries({}, { limit: 4 })
       : Promise.resolve([]),
     canManageVendor ? getSupplierInvitations(3) : Promise.resolve([]),
   ]);
@@ -91,12 +91,6 @@ export default async function VendorsPage({ searchParams }: VendorsPageProps) {
     id: category.id,
     name: category.name,
     code: category.externalKey,
-    subcategories: category.subcategories.map((subcategory) => ({
-      id: subcategory.id,
-      name: subcategory.name,
-      code: subcategory.externalKey,
-      categoryId: subcategory.categoryId,
-    })),
   }));
   const activeVendors = vendors.filter((vendor) => vendor.status === "ACTIVE").length;
   const evaluatedVendors = vendors.filter((vendor) => vendor.latestEvaluationYear).length;
@@ -229,7 +223,7 @@ export default async function VendorsPage({ searchParams }: VendorsPageProps) {
                           {request.companyName}
                         </Link>
                         <p className="mt-1 text-xs leading-6 text-[var(--color-muted)]">
-                          {request.requestNumber} • {request.countryName} • {request.categoryName}
+                          {request.requestNumber} • {request.country.name} • {request.primaryCategory.name}
                         </p>
                       </div>
                       <RegistrationStatusBadge status={request.status} />
@@ -518,9 +512,10 @@ export default async function VendorsPage({ searchParams }: VendorsPageProps) {
                               <p className="line-clamp-2 text-sm font-semibold leading-6 text-[var(--color-ink)]">
                                 {vendor.categoryName ?? "Unassigned category"}
                               </p>
-                              <p className="mt-1 line-clamp-2 text-xs leading-6 text-[var(--color-muted)]">
-                                {vendor.subcategoryName ?? "No subcategory"}
-                              </p>
+                              <SubcategoryChips
+                                subcategories={vendor.subcategorySelections}
+                                className="mt-2"
+                              />
                             </div>
                           </td>
                           <td className="px-4 py-4">
@@ -609,7 +604,7 @@ export default async function VendorsPage({ searchParams }: VendorsPageProps) {
                       <MobileStat
                         label="Taxonomy"
                         value={vendor.categoryName ?? "Unassigned category"}
-                        meta={vendor.subcategoryName ?? "No subcategory"}
+                        meta={formatSubcategorySummary(vendor.subcategorySelections)}
                       />
                       <MobileStat
                         label="Projects"
@@ -713,6 +708,59 @@ function MobileStat({
       <p className="mt-1 line-clamp-2 text-xs leading-6 text-[var(--color-muted)]">
         {meta}
       </p>
+    </div>
+  );
+}
+
+function formatSubcategorySummary(
+  subcategories: Array<{ name: string; externalKey: string | null }>,
+) {
+  if (subcategories.length === 0) {
+    return "No subcategories";
+  }
+
+  const visible = subcategories.slice(0, 2).map((subcategory) => subcategory.name);
+  const remaining = subcategories.length - visible.length;
+
+  return remaining > 0
+    ? `${visible.join(", ")} + ${remaining} more`
+    : visible.join(", ");
+}
+
+function SubcategoryChips({
+  subcategories,
+  className,
+}: {
+  subcategories: Array<{
+    id: string;
+    name: string;
+    externalKey: string | null;
+  }>;
+  className?: string;
+}) {
+  if (subcategories.length === 0) {
+    return (
+      <p className={`text-xs leading-6 text-[var(--color-muted)] ${className ?? ""}`}>
+        No subcategories
+      </p>
+    );
+  }
+
+  const visible = subcategories.slice(0, 3);
+  const remaining = subcategories.length - visible.length;
+
+  return (
+    <div className={`flex flex-wrap gap-1.5 ${className ?? ""}`}>
+      {visible.map((subcategory) => (
+        <Chip key={subcategory.id} tone="neutral" size="sm" title={subcategory.name}>
+          {subcategory.name}
+        </Chip>
+      ))}
+      {remaining > 0 ? (
+        <Chip tone="purple" size="sm" title={subcategories.map((item) => item.name).join(", ")}>
+          +{remaining} more
+        </Chip>
+      ) : null}
     </div>
   );
 }

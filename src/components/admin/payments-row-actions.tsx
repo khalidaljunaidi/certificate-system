@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { PaymentCloseActionButton } from "@/components/forms/payment-close-action-button";
 import { PaymentInstallmentModalLauncher } from "@/components/forms/payment-installment-modal-launcher";
 import { DropdownActionMenu } from "@/components/ui/dropdown-action-menu";
 import type { PaymentRecordListItemView } from "@/lib/types";
@@ -152,16 +153,23 @@ export function PaymentsRowActions({
           <MenuLink href={financeReviewHref} onClick={closeMenu}>
             Open Finance Review
           </MenuLink>
-          {canClose ? (
-            <MenuLink
-              href={`${detailHref}?tab=notes#payment-governance`}
-              onClick={closeMenu}
-            >
-              {record.recommendedAction === "CLOSE_PAYMENT"
-                ? "Close Payment"
-                : record.closedAt
-                  ? "Review Closed Record"
-                  : "Open Governance"}
+          {canClose && record.recommendedAction === "CLOSE_PAYMENT" ? (
+            <div className="rounded-[14px] px-1 py-1">
+              <PaymentCloseActionButton
+                projectVendorId={record.projectVendorId}
+                disabled={!record.canClosePayment}
+                disabledReason="Payment cannot be closed until all installments are fully paid"
+                label="Close Payment"
+                pendingLabel="Closing..."
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start rounded-[14px] px-3 text-[13px]"
+                onSuccess={closeMenu}
+              />
+            </div>
+          ) : canClose ? (
+            <MenuLink href={`${detailHref}?tab=notes#payment-governance`} onClick={closeMenu}>
+              {record.closedAt ? "Review Closed Record" : "Open Governance"}
             </MenuLink>
           ) : null}
           {canExport ? (

@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import { createClient } from "@supabase/supabase-js";
 
 import {
@@ -28,6 +31,34 @@ function sanitizeStorageSegment(value: string) {
     .replaceAll(/^-|-$/g, "");
 }
 
+function getLocalStorageRoot() {
+  return path.join(process.cwd(), ".storage");
+}
+
+function resolveLocalStoragePath(storagePath: string) {
+  const root = getLocalStorageRoot();
+  const resolvedPath = path.resolve(root, storagePath);
+
+  if (resolvedPath !== root && !resolvedPath.startsWith(`${root}${path.sep}`)) {
+    throw new Error("Invalid storage path.");
+  }
+
+  return resolvedPath;
+}
+
+async function uploadLocalStorageObject(input: {
+  storagePath: string;
+  pdfBuffer: Buffer;
+}) {
+  const targetPath = resolveLocalStoragePath(input.storagePath);
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.writeFile(targetPath, input.pdfBuffer);
+
+  return {
+    path: input.storagePath,
+  };
+}
+
 async function uploadStorageObject(input: {
   storagePath: string;
   pdfBuffer: Buffer;
@@ -35,9 +66,7 @@ async function uploadStorageObject(input: {
   upsert?: boolean;
 }) {
   if (!isStorageConfigured()) {
-    return {
-      path: null,
-    };
+    return uploadLocalStorageObject(input);
   }
 
   const client = getSupabaseAdminClient();
@@ -119,7 +148,20 @@ export async function uploadProjectVendorPaymentInvoice(input: {
 
 export async function downloadStorageObject(storagePath: string) {
   if (!isStorageConfigured()) {
-    return null;
+    try {
+      return await fs.readFile(resolveLocalStoragePath(storagePath));
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "ENOENT"
+      ) {
+        return null;
+      }
+
+      throw error;
+    }
   }
 
   const client = getSupabaseAdminClient();

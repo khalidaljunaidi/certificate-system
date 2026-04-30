@@ -18,6 +18,9 @@ const EXPECTED_SUBCATEGORY_COUNT = VENDOR_TAXONOMY.reduce(
 );
 
 let vendorCatalogSyncPromise: Promise<void> | null = null;
+let vendorCatalogCheckedAt = 0;
+
+const VENDOR_CATALOG_CHECK_CACHE_MS = 5 * 60 * 1000;
 
 async function syncVendorTaxonomy() {
   for (const categoryInput of VENDOR_TAXONOMY) {
@@ -136,28 +139,15 @@ async function syncVendorCatalogData() {
 }
 
 export async function ensureVendorCatalogData() {
-  const [
-    categories,
-    subcategories,
-    countries,
-    cityCount,
-    saudiCityCount,
-  ] = await Promise.all([
-    prisma.vendorCategory.findMany({
-      select: {
-        externalKey: true,
-      },
-    }),
-    prisma.vendorSubcategory.findMany({
-      select: {
-        externalKey: true,
-      },
-    }),
-    prisma.country.findMany({
-      select: {
-        code: true,
-      },
-    }),
+  if (Date.now() - vendorCatalogCheckedAt < VENDOR_CATALOG_CHECK_CACHE_MS) {
+    return;
+  }
+
+  const [categoryCount, subcategoryCount, countryCount, cityCount, saudiCityCount] =
+    await Promise.all([
+      prisma.vendorCategory.count(),
+      prisma.vendorSubcategory.count(),
+      prisma.country.count(),
     prisma.city.count(),
     prisma.city.count({
       where: {
@@ -166,31 +156,15 @@ export async function ensureVendorCatalogData() {
     }),
   ]);
 
-  const categoryKeys = new Set(
-    categories.map((category) => category.externalKey).filter(Boolean),
-  );
-  const subcategoryKeys = new Set(
-    subcategories
-      .map((subcategory) => subcategory.externalKey)
-      .filter(Boolean),
-  );
-  const countryCodes = new Set(countries.map((country) => country.code));
-
   const needsSync =
-    categories.length < EXPECTED_CATEGORY_COUNT ||
-    subcategories.length < EXPECTED_SUBCATEGORY_COUNT ||
-    countries.length < EXPECTED_COUNTRY_COUNT ||
+    categoryCount < EXPECTED_CATEGORY_COUNT ||
+    subcategoryCount < EXPECTED_SUBCATEGORY_COUNT ||
+    countryCount < EXPECTED_COUNTRY_COUNT ||
     cityCount < EXPECTED_CITY_COUNT ||
-    saudiCityCount < EXPECTED_SAUDI_CITY_COUNT ||
-    VENDOR_TAXONOMY.some((category) => !categoryKeys.has(category.code)) ||
-    VENDOR_TAXONOMY.some((category) =>
-      category.subcategories.some(
-        (subcategory) => !subcategoryKeys.has(subcategory.code),
-      ),
-    ) ||
-    COUNTRY_CATALOG.some((country) => !countryCodes.has(country.code));
+    saudiCityCount < EXPECTED_SAUDI_CITY_COUNT;
 
   if (!needsSync) {
+    vendorCatalogCheckedAt = Date.now();
     return;
   }
 
@@ -201,4 +175,5 @@ export async function ensureVendorCatalogData() {
   }
 
   await vendorCatalogSyncPromise;
+  vendorCatalogCheckedAt = Date.now();
 }

@@ -42,28 +42,114 @@ async function assertValidVendorGovernanceInput(
     | z.infer<typeof vendorGovernanceSchema>
     | z.infer<typeof vendorMasterSchema>,
 ) {
-  if (!values.subcategoryId) {
-    return values.categoryId ?? null;
+  const uniqueSubcategoryIds = Array.from(
+    new Set([
+      ...(values.subcategoryIds ?? []),
+      ...(values.subcategoryId ? [values.subcategoryId] : []),
+    ].filter(Boolean)),
+  );
+
+  if (uniqueSubcategoryIds.length === 0) {
+    if (!values.categoryId) {
+      return {
+        categoryId: null,
+        primarySubcategoryId: null,
+        subcategoryIds: [],
+      };
+    }
+
+    const category = await tx.vendorCategory.findUnique({
+      where: {
+        id: values.categoryId,
+      },
+      select: {
+        id: true,
+        _count: {
+          select: {
+            subcategories: true,
+          },
+        },
+      },
+    });
+
+    if (!category) {
+      throw new Error("The selected vendor category was not found.");
+    }
+
+    if (category._count.subcategories > 0) {
+      throw new Error("Select at least one subcategory for this vendor category.");
+    }
+
+    return {
+      categoryId: values.categoryId,
+      primarySubcategoryId: null,
+      subcategoryIds: [],
+    };
   }
 
-  const subcategory = await tx.vendorSubcategory.findUnique({
+  const subcategories = await tx.vendorSubcategory.findMany({
     where: {
-      id: values.subcategoryId,
+      id: {
+        in: uniqueSubcategoryIds,
+      },
     },
     select: {
+      id: true,
       categoryId: true,
     },
   });
 
-  if (!subcategory) {
-    throw new Error("The selected vendor subcategory was not found.");
+  if (subcategories.length !== uniqueSubcategoryIds.length) {
+    throw new Error("One or more selected vendor subcategories were not found.");
   }
 
-  if (values.categoryId && values.categoryId !== subcategory.categoryId) {
-    throw new Error("The selected subcategory does not belong to this category.");
+  const resolvedCategoryId = values.categoryId ?? subcategories[0]?.categoryId ?? null;
+
+  if (!resolvedCategoryId) {
+    throw new Error("Choose a category before selecting subcategories.");
   }
 
-  return subcategory.categoryId;
+  if (
+    subcategories.some(
+      (subcategory) => subcategory.categoryId !== resolvedCategoryId,
+    )
+  ) {
+    throw new Error("Selected subcategories must belong to the selected category.");
+  }
+
+  return {
+    categoryId: resolvedCategoryId,
+    primarySubcategoryId: uniqueSubcategoryIds[0] ?? null,
+    subcategoryIds: uniqueSubcategoryIds,
+  };
+}
+
+async function syncVendorSubcategorySelections(
+  tx: Prisma.TransactionClient,
+  vendorId: string,
+  subcategoryIds: string[],
+) {
+  const uniqueSubcategoryIds = Array.from(
+    new Set(subcategoryIds.filter(Boolean)),
+  );
+
+  await tx.vendorSubcategorySelection.deleteMany({
+    where: {
+      vendorId,
+    },
+  });
+
+  if (uniqueSubcategoryIds.length === 0) {
+    return;
+  }
+
+  await tx.vendorSubcategorySelection.createMany({
+    data: uniqueSubcategoryIds.map((subcategoryId) => ({
+      vendorId,
+      subcategoryId,
+    })),
+    skipDuplicates: true,
+  });
 }
 
 function parseScorecardPayload(input: {
@@ -107,6 +193,11 @@ export async function saveVendorMaster(
             notes: true,
             categoryId: true,
             subcategoryId: true,
+            subcategorySelections: {
+              select: {
+                subcategoryId: true,
+              },
+            },
           },
         })
       : null;
@@ -131,7 +222,7 @@ export async function saveVendorMaster(
       throw new Error("This vendor ID is already assigned to another vendor.");
     }
 
-    const categoryId = await assertValidVendorGovernanceInput(tx, values);
+    const governance = await assertValidVendorGovernanceInput(tx, values);
     const vendorPayload = {
       vendorName: values.vendorName,
       vendorEmail: values.vendorEmail.toLowerCase(),
@@ -140,8 +231,8 @@ export async function saveVendorMaster(
       status: values.status,
       classification: values.classification?.trim() || null,
       notes: values.notes?.trim() || null,
-      categoryId,
-      subcategoryId: values.subcategoryId ?? null,
+      categoryId: governance.categoryId,
+      subcategoryId: governance.primarySubcategoryId,
     };
 
     const vendor = currentVendor
@@ -154,6 +245,8 @@ export async function saveVendorMaster(
       : await tx.vendor.create({
           data: vendorPayload,
         });
+
+    await syncVendorSubcategorySelections(tx, vendor.id, governance.subcategoryIds);
 
     await createAuditLog(tx, {
       action: currentVendor ? "UPDATED" : "CREATED",
@@ -170,10 +263,15 @@ export async function saveVendorMaster(
             nextCategoryId: vendor.categoryId,
             previousSubcategoryId: currentVendor.subcategoryId,
             nextSubcategoryId: vendor.subcategoryId,
+            previousSubcategoryIds: currentVendor.subcategorySelections.map(
+              (selection) => selection.subcategoryId,
+            ),
+            nextSubcategoryIds: governance.subcategoryIds,
           }
         : {
             vendorId: vendor.vendorId,
             status: vendor.status,
+            subcategoryIds: governance.subcategoryIds,
           },
     });
 
@@ -194,6 +292,11 @@ export async function updateVendorGovernance(
         id: true,
         categoryId: true,
         subcategoryId: true,
+        subcategorySelections: {
+          select: {
+            subcategoryId: true,
+          },
+        },
       },
     });
 
@@ -201,18 +304,19 @@ export async function updateVendorGovernance(
       throw new Error("Vendor not found.");
     }
 
-    const categoryId = await assertValidVendorGovernanceInput(tx, values);
-    const subcategoryId = values.subcategoryId ?? null;
+    const governance = await assertValidVendorGovernanceInput(tx, values);
 
     const updated = await tx.vendor.update({
       where: {
         id: vendor.id,
       },
       data: {
-        categoryId,
-        subcategoryId,
+        categoryId: governance.categoryId,
+        subcategoryId: governance.primarySubcategoryId,
       },
     });
+
+    await syncVendorSubcategorySelections(tx, updated.id, governance.subcategoryIds);
 
     await createAuditLog(tx, {
       action: "UPDATED",
@@ -224,6 +328,10 @@ export async function updateVendorGovernance(
         nextCategoryId: updated.categoryId,
         previousSubcategoryId: vendor.subcategoryId,
         nextSubcategoryId: updated.subcategoryId,
+        previousSubcategoryIds: vendor.subcategorySelections.map(
+          (selection) => selection.subcategoryId,
+        ),
+        nextSubcategoryIds: governance.subcategoryIds,
       },
     });
 

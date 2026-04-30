@@ -1,269 +1,192 @@
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Sparkles } from "lucide-react";
 
 import { CompanyLogo } from "@/components/brand/company-logo";
-import { Button } from "@/components/ui/button";
-
-const SUPPLIER_REGISTRATION_STEPS = [
-  {
-    number: "1",
-    title: "Submit company details",
-    description: "Legal info, contact, and services.",
-  },
-  {
-    number: "2",
-    title: "Upload required documents",
-    description: "CR, VAT, and company profile.",
-  },
-  {
-    number: "3",
-    title: "Procurement review",
-    description: "Our team validates your submission.",
-  },
-  {
-    number: "4",
-    title: "Get approved & onboarded",
-    description: "Receive confirmation and start with us.",
-  },
-] as const;
 
 export default function Home() {
   return (
-    <main className="theme-landing relative isolate min-h-screen overflow-hidden bg-[var(--tg-dark)] text-white">
+    <main className="relative isolate flex h-screen min-h-[100svh] overflow-hidden bg-[#080711] px-6 text-[#F8F7FB]">
       <style>{`
-        @keyframes landing-particle-rise {
-          0% { transform: translate3d(0, 24px, 0); opacity: 0; }
+        @keyframes hero-reveal {
+          from {
+            opacity: 0;
+            transform: translate3d(0, 24px, 0) scale(0.98);
+            filter: blur(8px);
+          }
+          to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0) scale(1);
+            filter: blur(0);
+          }
+        }
+
+        @keyframes cinematic-video-zoom {
+          0%, 100% { transform: scale(1.03) translate3d(0, 0, 0); }
+          50% { transform: scale(1.11) translate3d(-1.2%, -0.8%, 0); }
+        }
+
+        @keyframes fallback-aurora {
+          0%, 100% { transform: translate3d(-3%, -2%, 0) rotate(-3deg) scale(1); opacity: 0.72; }
+          50% { transform: translate3d(3%, 2%, 0) rotate(3deg) scale(1.08); opacity: 1; }
+        }
+
+        @keyframes light-sweep {
+          0% { transform: translate3d(-140%, 18%, 0) rotate(-15deg); opacity: 0; }
+          22% { opacity: 0.42; }
+          58% { opacity: 0.16; }
+          100% { transform: translate3d(142%, -12%, 0) rotate(-15deg); opacity: 0; }
+        }
+
+        @keyframes particle-rise {
+          0% { transform: translate3d(0, 44px, 0); opacity: 0; }
           20% { opacity: 0.72; }
-          100% { transform: translate3d(0, -96vh, 0); opacity: 0; }
+          100% { transform: translate3d(0, -92vh, 0); opacity: 0; }
         }
 
-        @keyframes landing-grid-drift {
-          0%, 100% { transform: translate3d(0, 0, 0); opacity: 0.2; }
-          50% { transform: translate3d(-14px, 10px, 0); opacity: 0.34; }
+        @keyframes grain-drift {
+          0%, 100% { transform: translate3d(0, 0, 0); }
+          25% { transform: translate3d(-2%, 1%, 0); }
+          50% { transform: translate3d(1%, -2%, 0); }
+          75% { transform: translate3d(2%, 2%, 0); }
         }
 
-        @keyframes ai-caption-shimmer {
-          0% { background-position: 0% 50%; opacity: 0.78; }
-          50% { background-position: 100% 50%; opacity: 1; }
-          100% { background-position: 0% 50%; opacity: 0.78; }
+        .hero-content {
+          animation: hero-reveal 1100ms cubic-bezier(0.16, 1, 0.3, 1) 160ms both;
         }
 
-        .landing-grid {
-          animation: landing-grid-drift 18s ease-in-out infinite;
+        .hero-video {
+          animation: cinematic-video-zoom 26s ease-in-out infinite;
         }
 
-        .ai-caption {
-          animation: ai-caption-shimmer 5.5s ease-in-out infinite;
+        .fallback-aurora {
+          animation: fallback-aurora 16s ease-in-out infinite;
+        }
+
+        .gold-sweep {
+          animation: light-sweep 8.5s ease-in-out infinite;
+        }
+
+        .cinematic-noise {
+          animation: grain-drift 1.1s steps(2, end) infinite;
+          background-image:
+            radial-gradient(circle at 18% 22%, rgba(255,255,255,0.16) 0 1px, transparent 1px),
+            radial-gradient(circle at 72% 16%, rgba(255,255,255,0.11) 0 1px, transparent 1px),
+            radial-gradient(circle at 44% 78%, rgba(255,255,255,0.09) 0 1px, transparent 1px),
+            radial-gradient(circle at 86% 64%, rgba(255,255,255,0.12) 0 1px, transparent 1px);
+          background-size: 92px 92px, 137px 137px, 171px 171px, 229px 229px;
         }
 
         @media (prefers-reduced-motion: reduce) {
-          .landing-particle,
-          .landing-grid,
-          .ai-caption {
+          .hero-content,
+          .hero-video,
+          .fallback-aurora,
+          .gold-sweep,
+          .cinematic-noise,
+          .hero-particle {
             animation: none !important;
           }
         }
       `}</style>
 
-      <div className="absolute inset-0 [background:var(--tg-dark-gradient)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_14%,rgba(200,164,92,0.2),transparent_30%),radial-gradient(circle_at_18%_80%,rgba(229,201,138,0.12),transparent_36%)]" />
-      <div className="landing-grid pointer-events-none absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.055)_1px,transparent_1px)] [background-size:76px_76px] [mask-image:radial-gradient(circle_at_66%_48%,black,transparent_72%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.028),transparent_22%,rgba(200,164,92,0.06)_56%,transparent_82%)]" />
-      <ParticleField />
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="fallback-aurora absolute inset-[-18%] bg-[radial-gradient(circle_at_50%_16%,rgba(200,164,92,0.42),transparent_22%),radial-gradient(circle_at_17%_72%,rgba(122,72,210,0.34),transparent_32%),radial-gradient(circle_at_82%_68%,rgba(229,201,138,0.18),transparent_28%),linear-gradient(135deg,#070610_0%,#1B1033_54%,#2A1B4D_100%)] blur-2xl" />
+        <div className="absolute inset-0 bg-[linear-gradient(115deg,transparent_0%,rgba(200,164,92,0.12)_18%,transparent_34%,rgba(107,62,185,0.18)_60%,transparent_78%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.05),transparent_18%),radial-gradient(circle_at_50%_110%,rgba(200,164,92,0.18),transparent_32%)]" />
+        <ParticleField />
+      </div>
 
-      <section className="relative z-10 mx-auto grid min-h-screen w-full max-w-7xl items-center gap-10 px-5 py-10 sm:px-8 lg:grid-cols-[minmax(0,0.95fr)_minmax(420px,1.05fr)] lg:px-10">
-        <div className="max-w-3xl">
-          <div className="inline-flex items-center gap-4 rounded-[28px] border border-white/10 bg-white/[0.055] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.24)] backdrop-blur-xl">
+      <video
+        className="hero-video absolute inset-0 h-full w-full object-cover opacity-90"
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="metadata"
+        aria-hidden="true"
+      >
+        <source src="/hero.mp4" type="video/mp4" />
+      </video>
+
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(6,5,13,0.66)_0%,rgba(8,7,17,0.34)_42%,rgba(8,7,17,0.78)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.04)_0%,rgba(0,0,0,0.22)_42%,rgba(0,0,0,0.82)_100%)]" />
+      <div className="gold-sweep pointer-events-none absolute left-1/2 top-1/2 h-[170vh] w-[28vw] -translate-x-1/2 -translate-y-1/2 bg-[linear-gradient(90deg,transparent,rgba(229,201,138,0.32),rgba(200,164,92,0.18),transparent)] blur-3xl" />
+      <div className="cinematic-noise pointer-events-none absolute inset-[-10%] opacity-[0.13] mix-blend-screen" />
+
+      <section className="relative z-10 mx-auto flex h-full min-h-[100svh] w-full max-w-6xl items-center justify-center text-center">
+        <div className="hero-content flex w-full flex-col items-center">
+          <div className="relative flex w-full justify-center">
+            <div className="absolute left-1/2 top-1/2 h-32 w-[min(82vw,720px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#C8A45C]/28 blur-[54px] sm:h-40" />
+            <div className="absolute left-1/2 top-1/2 h-px w-[min(86vw,780px)] -translate-x-1/2 -translate-y-1/2 bg-[linear-gradient(90deg,transparent,rgba(229,201,138,0.9),transparent)] blur-sm" />
             <CompanyLogo
-              width={64}
-              height={64}
+              width={900}
+              height={180}
               priority
-              className="h-14 w-14 rounded-2xl object-contain shadow-[0_16px_45px_rgba(0,0,0,0.36)]"
+              className="relative h-auto w-[min(86vw,760px)] object-contain drop-shadow-[0_28px_82px_rgba(229,201,138,0.34)]"
             />
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-[0.09em] text-[var(--tg-gold-soft)]">
-                The Gathering KSA
-              </p>
-              <p className="mt-1 text-base font-semibold text-white">
-                Procurement Operations Platform
-              </p>
-            </div>
           </div>
 
-          <h1 className="mt-9 max-w-4xl text-3xl font-semibold leading-tight tracking-tight text-white sm:text-4xl xl:text-5xl">
-            Intelligent procurement control, supplier governance, and finance
-            visibility.
-          </h1>
-
-          <p className="mt-6 max-w-2xl text-base leading-8 text-white/70 sm:text-lg">
-            Manage supplier onboarding, vendor assignments, certificates,
-            payments, tasks, and governance from one secure internal platform.
+          <p className="mt-12 text-sm font-medium uppercase tracking-[0.24em] text-[#E5C98A] drop-shadow-[0_14px_38px_rgba(0,0,0,0.58)] sm:mt-14 sm:text-base">
+            Procurement &amp; Vendor Platform
           </p>
 
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Button
-              asChild
-              size="lg"
-              className="h-12 justify-center rounded-2xl px-6 text-sm font-semibold"
+          <div className="mt-12 flex w-full max-w-3xl flex-col gap-4 sm:flex-row sm:justify-center sm:gap-5">
+            <Link
+              href="/vendor-registration"
+              className="group relative inline-flex min-h-[68px] min-w-[270px] items-center justify-center gap-3 overflow-hidden rounded-[1.45rem] bg-[linear-gradient(135deg,#F8E7B5_0%,#D8B86B_44%,#A9792D_100%)] px-10 text-[13px] font-bold uppercase tracking-[0.12em] text-[#1B1033] shadow-[0_28px_90px_rgba(200,164,92,0.36),inset_0_1px_0_rgba(255,255,255,0.52)] transition duration-300 hover:scale-[1.035] hover:shadow-[0_34px_118px_rgba(229,201,138,0.52),inset_0_1px_0_rgba(255,255,255,0.62)] focus:outline-none focus:ring-2 focus:ring-[#F4DFA5] focus:ring-offset-2 focus:ring-offset-[#080711]"
             >
-              <Link href="/admin/dashboard">
-                Open Admin Workspace
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-            <Button
-              asChild
-              variant="secondary"
-              size="lg"
-              className="h-12 justify-center rounded-2xl border border-white/22 bg-white/[0.1] px-6 text-sm font-semibold !text-white shadow-none hover:bg-white/[0.16] hover:!text-white"
+              <span className="absolute inset-x-4 top-0 h-px bg-white/65" />
+              <span className="relative">Register as Vendor</span>
+              <ArrowIcon className="relative h-4 w-4 transition duration-300 group-hover:translate-x-1" />
+            </Link>
+            <Link
+              href="/login"
+              className="group relative inline-flex min-h-[68px] min-w-[270px] items-center justify-center gap-3 overflow-hidden rounded-[1.45rem] border border-[#E5C98A]/48 bg-[linear-gradient(135deg,rgba(27,16,51,0.74),rgba(11,11,20,0.42))] px-10 text-[13px] font-bold uppercase tracking-[0.12em] text-white shadow-[0_24px_88px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl transition duration-300 hover:scale-[1.035] hover:border-[#E5C98A]/80 hover:bg-white/[0.11] hover:shadow-[0_30px_110px_rgba(229,201,138,0.2),inset_0_1px_0_rgba(255,255,255,0.18)] focus:outline-none focus:ring-2 focus:ring-[#E5C98A] focus:ring-offset-2 focus:ring-offset-[#080711]"
             >
-              <Link href="/supplier-registration">
-                Supplier Registration
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
+              <span className="absolute inset-x-4 top-0 h-px bg-[#E5C98A]/38" />
+              <span className="relative">Team Login</span>
+              <ArrowIcon className="relative h-4 w-4 transition duration-300 group-hover:translate-x-1" />
+            </Link>
           </div>
-
         </div>
-
-        <BrandIntelligencePanel />
-
-        <SupplierGuide />
       </section>
     </main>
   );
 }
 
+function ArrowIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 18 18"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        d="M4 9h9.25M9.75 4.5 14.25 9l-4.5 4.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function ParticleField() {
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {Array.from({ length: 28 }).map((_, index) => (
+    <div className="pointer-events-none absolute inset-0">
+      {Array.from({ length: 34 }).map((_, index) => (
         <span
           key={index}
-          className="landing-particle absolute h-1 w-1 rounded-full bg-[var(--tg-gold)]/70"
+          className="hero-particle absolute h-1 w-1 rounded-full bg-[#E5C98A]/70"
           style={{
-            left: `${(index * 37) % 100}%`,
-            bottom: `${(index * 19) % 86}%`,
-            animation: `landing-particle-rise ${15 + (index % 7)}s linear infinite`,
-            animationDelay: `${index * -0.66}s`,
-            opacity: 0.2 + (index % 5) * 0.08,
+            left: `${(index * 31) % 100}%`,
+            bottom: `${(index * 17) % 96}%`,
+            animation: `particle-rise ${14 + (index % 8)}s linear infinite`,
+            animationDelay: `${index * -0.52}s`,
+            opacity: 0.12 + (index % 5) * 0.08,
           }}
         />
       ))}
     </div>
-  );
-}
-
-function BrandIntelligencePanel() {
-  return (
-    <aside className="relative mx-auto w-full max-w-[610px]">
-      <div className="absolute -inset-8 rounded-[44px] bg-[radial-gradient(circle,rgba(200,164,92,0.18),transparent_64%)] blur-2xl" />
-      <div className="relative overflow-hidden rounded-[34px] border border-[rgba(229,201,138,0.16)] bg-[linear-gradient(145deg,rgba(255,255,255,0.11),rgba(255,255,255,0.03))] p-6 shadow-[0_38px_120px_rgba(0,0,0,0.34)] backdrop-blur-xl sm:p-7">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(229,201,138,0.16),transparent_34%),radial-gradient(circle_at_78%_78%,rgba(42,27,77,0.46),transparent_44%)]" />
-        <div className="absolute inset-x-10 top-10 h-px bg-[linear-gradient(90deg,transparent,rgba(229,201,138,0.76),transparent)]" />
-
-        <div className="relative">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-[11px] font-medium uppercase tracking-[0.09em] text-[var(--tg-gold-soft)]">
-                Platform Intelligence
-              </p>
-              <h2 className="mt-3 max-w-md text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-                Governance visibility, designed for executive control.
-              </h2>
-            </div>
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-[rgba(229,201,138,0.22)] bg-[rgba(200,164,92,0.12)] text-[var(--tg-gold-soft)]">
-              <Sparkles className="h-6 w-6" />
-            </div>
-          </div>
-
-          <div className="mt-7 rounded-[26px] border border-white/10 bg-black/22 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-medium uppercase tracking-[0.09em] text-white/48">
-                Live Control Layer
-              </span>
-              <span className="ai-caption rounded-full border border-[rgba(229,201,138,0.28)] bg-[rgba(200,164,92,0.12)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.09em] text-[var(--tg-gold-soft)]">
-                Fully operated by AI
-              </span>
-            </div>
-
-            <div className="mt-5 space-y-3">
-              {[
-                "Supplier intake and document readiness",
-                "Project, vendor, certificate, and payment alignment",
-                "Task governance with controlled internal visibility",
-              ].map((item) => (
-                <div
-                  key={item}
-                  className="flex items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.055] px-4 py-3"
-                >
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[var(--tg-gold-soft)]" />
-                  <span className="text-sm leading-6 text-white/76">{item}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <VisualSignal label="Suppliers" value="Onboard" />
-            <VisualSignal label="Finance" value="Track" />
-            <VisualSignal label="Governance" value="Control" />
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function VisualSignal({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.065] px-4 py-3">
-      <p className="text-[10px] font-medium uppercase tracking-[0.09em] text-white/48">
-        {label}
-      </p>
-      <p className="mt-1 text-sm font-semibold text-white">{value}</p>
-    </div>
-  );
-}
-
-function SupplierGuide() {
-  return (
-    <section className="lg:col-span-2">
-      <div className="rounded-[30px] border border-white/12 bg-white/[0.06] p-5 shadow-[0_24px_82px_rgba(0,0,0,0.22)] backdrop-blur-xl sm:p-6">
-        <div>
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight text-white">
-              How to register as a supplier
-            </h2>
-            <p className="mt-2 text-sm text-white/62">
-              Complete your registration in a few simple steps.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {SUPPLIER_REGISTRATION_STEPS.map((step) => (
-            <div
-              key={step.number}
-              className="rounded-2xl border border-white/10 bg-black/18 p-4 transition duration-300 hover:-translate-y-0.5 hover:border-[rgba(200,164,92,0.34)] hover:bg-white/[0.08]"
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[rgba(200,164,92,0.34)] bg-[rgba(200,164,92,0.14)] text-sm font-semibold text-[var(--tg-gold-soft)]">
-                  {step.number}
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-sm font-semibold text-white">
-                    {step.title}
-                  </h3>
-                  <p className="mt-1 text-xs leading-5 text-white/58">
-                    {step.description}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
   );
 }
