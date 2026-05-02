@@ -5,11 +5,20 @@ import { redirect } from "next/navigation";
 
 import { requireAdminSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getNotificationHeaderStateForUser } from "@/server/queries/notification-queries";
 
 function revalidateNotificationSurfaces() {
   revalidatePath("/admin/notifications");
   revalidatePath("/admin/dashboard");
   revalidatePath("/admin", "layout");
+}
+
+export async function getNotificationHeaderStateAction(limit = 5) {
+  const session = await requireAdminSession();
+
+  return getNotificationHeaderStateForUser(session.user.id, {
+    limit,
+  });
 }
 
 export async function markNotificationReadAction(formData: FormData) {

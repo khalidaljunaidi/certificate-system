@@ -4,7 +4,11 @@ import { Bell, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { markNotificationActionedByIdAction, markNotificationReadByIdAction } from "@/actions/notification-actions";
+import {
+  getNotificationHeaderStateAction,
+  markNotificationActionedByIdAction,
+  markNotificationReadByIdAction,
+} from "@/actions/notification-actions";
 import { NotificationSeverityBadge } from "@/components/admin/status-badges";
 import { getNotificationHref } from "@/lib/notifications";
 import type { NotificationItem } from "@/lib/types";
@@ -21,9 +25,15 @@ export function NotificationBell({
   const [items, setItems] = useState<NotificationItem[]>(() => notifications);
   const [unreadCount, setUnreadCount] = useState(count);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
   const unreadLabel = unreadCount > 99 ? "99+" : String(unreadCount);
+
+  useEffect(() => {
+    setItems(notifications);
+    setUnreadCount(count);
+  }, [count, notifications]);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -54,6 +64,18 @@ export function NotificationBell({
   function removeNotification(notificationId: string) {
     setItems((current) => current.filter((item) => item.id !== notificationId));
     setUnreadCount((current) => Math.max(0, current - 1));
+  }
+
+  async function refreshUnreadPreview() {
+    setPreviewLoading(true);
+
+    try {
+      const latest = await getNotificationHeaderStateAction(5);
+      setItems(latest.notificationPreview);
+      setUnreadCount(latest.unreadCount);
+    } finally {
+      setPreviewLoading(false);
+    }
   }
 
   async function markAsRead(notificationId: string, shouldRefresh = true) {
@@ -89,7 +111,14 @@ export function NotificationBell({
     <div ref={rootRef} className="tg-notification-shell relative">
       <button
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          const nextOpen = !open;
+          setOpen(nextOpen);
+
+          if (nextOpen && (unreadCount > 0 || count > 0)) {
+            void refreshUnreadPreview();
+          }
+        }}
         className="relative z-40 inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[rgba(17,17,17,0.08)] bg-white/88 text-[var(--color-ink)] shadow-[0_12px_28px_rgba(17,17,17,0.08)] transition-[transform,box-shadow,background-color,border-color] duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_18px_34px_rgba(17,17,17,0.12)]"
         aria-label="Open notifications"
         aria-expanded={open}
@@ -135,7 +164,11 @@ export function NotificationBell({
             <div className="max-h-[24rem] overflow-y-auto px-3 py-3">
               {items.length === 0 ? (
                 <div className="rounded-[22px] border border-dashed border-[var(--color-border)] px-4 py-6 text-sm leading-6 text-[var(--color-muted)]">
-                  No unread notifications right now.
+                  {previewLoading
+                    ? "Loading unread notifications..."
+                    : unreadCount > 0
+                      ? "Refreshing unread notifications. If this stays empty, open the notification center."
+                      : "No unread notifications right now."}
                 </div>
               ) : (
                 <div className="space-y-2">
