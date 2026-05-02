@@ -20,7 +20,8 @@
     "postinstall": "prisma generate",
     "smoke:vendor-registration-certificate-pdf": "tsx scripts/smoke-vendor-registration-certificate-pdf.ts",
     "smoke:performance": "tsx scripts/smoke-performance-routes.ts",
-    "cleanup:test-vendor-odoo": "tsx scripts/cleanup-test-vendor-odoo.ts"
+    "cleanup:test-vendor-odoo": "tsx scripts/cleanup-test-vendor-odoo.ts",
+    "capture:ceo-presentation": "tsx scripts/capture-ceo-presentation.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -64,6 +65,7 @@
     "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^9.39.4",
     "eslint-config-next": "16.2.4",
+    "playwright": "^1.59.1",
     "prisma": "^7.7.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
