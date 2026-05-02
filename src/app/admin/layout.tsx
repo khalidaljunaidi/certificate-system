@@ -9,7 +9,7 @@ import {
   warnIfRouteTimingExceeded,
 } from "@/lib/server-performance";
 import {
-  getUnreadNotificationCount,
+  getNotificationHeaderStateForUser,
 } from "@/server/queries/notification-queries";
 
 export default async function AdminLayout({
@@ -29,9 +29,11 @@ export default async function AdminLayout({
     allowPasswordChangeBypass: true,
   });
   const restrictedMode = !session.user.passwordChanged;
-  const unreadCount = restrictedMode
-    ? 0
-    : await getUnreadNotificationCount(session.user.id);
+  const notificationHeaderState = restrictedMode
+    ? { unreadCount: 0, notificationPreview: [] }
+    : await getNotificationHeaderStateForUser(session.user.id, {
+        limit: 5,
+      });
 
   return (
     <AdminShell
@@ -40,8 +42,8 @@ export default async function AdminLayout({
         email: session.user.email,
         title: session.user.title,
       }}
-      unreadCount={unreadCount}
-      notificationPreview={[]}
+      unreadCount={notificationHeaderState.unreadCount}
+      notificationPreview={notificationHeaderState.notificationPreview}
       restrictedMode={restrictedMode}
       canManageRoles={canManageRoles(session.user)}
       canManageSettings={canManageWorkflowEmailSettings(session.user)}
