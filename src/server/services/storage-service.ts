@@ -31,13 +31,31 @@ function sanitizeStorageSegment(value: string) {
     .replaceAll(/^-|-$/g, "");
 }
 
-function getLocalStorageRoot() {
-  return path.join(process.cwd(), ".storage");
+export function getWritableStorageRoot() {
+  const configuredStorageDir = process.env.FILE_STORAGE_DIR?.trim();
+
+  if (configuredStorageDir) {
+    return path.isAbsolute(configuredStorageDir)
+      ? configuredStorageDir
+      : path.join(
+          /*turbopackIgnore: true*/ process.cwd(),
+          configuredStorageDir,
+        );
+  }
+
+  if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+    return path.join("/tmp", "tg-certificate-system");
+  }
+
+  return path.join(/*turbopackIgnore: true*/ process.cwd(), ".storage");
 }
 
 function resolveLocalStoragePath(storagePath: string) {
-  const root = getLocalStorageRoot();
-  const resolvedPath = path.resolve(root, storagePath);
+  const root = getWritableStorageRoot();
+  const resolvedPath = path.resolve(
+    /*turbopackIgnore: true*/ root,
+    /*turbopackIgnore: true*/ storagePath,
+  );
 
   if (resolvedPath !== root && !resolvedPath.startsWith(`${root}${path.sep}`)) {
     throw new Error("Invalid storage path.");
