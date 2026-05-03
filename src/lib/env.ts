@@ -33,5 +33,5 @@ export function getSupabaseServiceRoleKey() {
 }
 
 export function getSupabaseBucket() {
-  return process.env.SUPABASE_STORAGE_BUCKET ?? "completion-certificates";
+  return process.env.SUPABASE_STORAGE_BUCKET_CERTIFICATES ?? "certificate-pdfs";
 }

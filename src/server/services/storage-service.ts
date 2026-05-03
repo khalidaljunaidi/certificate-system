@@ -12,7 +12,6 @@ export const STORAGE_BUCKETS = {
   vendorRegistration:
     process.env.SUPABASE_STORAGE_BUCKET_VENDOR_REGISTRATION ??
     process.env.SUPABASE_VENDOR_REGISTRATION_ATTACHMENTS_BUCKET ??
-    process.env.SUPABASE_STORAGE_BUCKET ??
     "vendor-registration-attachments",
   certificates:
     process.env.SUPABASE_STORAGE_BUCKET_CERTIFICATES ?? "certificate-pdfs",
@@ -426,10 +425,6 @@ async function downloadWithLegacyFallback(input: {
   return null;
 }
 
-function legacyDefaultBucket() {
-  return process.env.SUPABASE_STORAGE_BUCKET;
-}
-
 export async function uploadCertificatePdf(
   certificateId: string,
   certificateCode: string,
@@ -519,7 +514,6 @@ export async function downloadStorageObject(storagePath: string) {
   return downloadWithLegacyFallback({
     bucket: STORAGE_BUCKETS.certificates,
     path: storagePath,
-    legacyBuckets: [legacyDefaultBucket()].filter(Boolean) as string[],
   });
 }
 
@@ -529,7 +523,6 @@ export async function downloadVendorRegistrationAttachment(storagePath: string) 
     path: storagePath,
     legacyBuckets: [
       process.env.SUPABASE_VENDOR_REGISTRATION_ATTACHMENTS_BUCKET,
-      legacyDefaultBucket(),
     ].filter(Boolean) as string[],
   });
 }
@@ -538,7 +531,6 @@ export async function downloadProjectVendorPaymentInvoice(storagePath: string) {
   return downloadWithLegacyFallback({
     bucket: STORAGE_BUCKETS.paymentInvoices,
     path: storagePath,
-    legacyBuckets: [legacyDefaultBucket()].filter(Boolean) as string[],
   });
 }
 
@@ -546,6 +538,5 @@ export async function downloadCertificatePdf(storagePath: string) {
   return downloadWithLegacyFallback({
     bucket: STORAGE_BUCKETS.certificates,
     path: storagePath,
-    legacyBuckets: [legacyDefaultBucket()].filter(Boolean) as string[],
   });
 }
