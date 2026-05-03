@@ -435,6 +435,16 @@ function collectRegistrationFiles(formData: FormData):
     ),
   };
 
+  for (const [documentType, file] of Object.entries(files)) {
+    if (file instanceof File) {
+      console.info("[vendor-registration-file-mapping]", {
+        documentType,
+        originalFileName: file.name,
+        sizeBytes: file.size,
+      });
+    }
+  }
+
   if (Object.keys(fieldErrors).length > 0) {
     logValidationWarning("submitVendorRegistrationAction", fieldErrors);
 
