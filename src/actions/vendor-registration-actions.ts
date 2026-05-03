@@ -44,6 +44,7 @@ const supplierRegistrationFileLabels: Record<string, string> = {
 
 const DUPLICATE_VENDOR_REGISTRATION_MESSAGE =
   "A registration already exists with the same CR, VAT, or email.";
+const FILE_TOO_LARGE_MESSAGE = "File is too large. Maximum allowed size is 10MB.";
 const SUPPLIER_REGISTRATION_UPLOAD_ERROR =
   "Document upload failed. Please try again or contact procurement.";
 const SUPPLIER_REGISTRATION_GENERIC_ERROR =
@@ -65,14 +66,43 @@ function isAllowedSupplierRegistrationFile(file: File) {
   );
 }
 
+function getFileSizeMb(file: File) {
+  return Number((file.size / (1024 * 1024)).toFixed(2));
+}
+
+function logSupplierRegistrationFileWarning(input: {
+  documentType: string;
+  file: File;
+  reason: string;
+}) {
+  console.warn("[supplier-registration-file-validation]", {
+    action: "submitVendorRegistrationAction",
+    documentType: input.documentType,
+    fileName: input.file.name,
+    mimeType: input.file.type || "unknown",
+    fileSizeMB: getFileSizeMb(input.file),
+    reason: input.reason,
+  });
+}
+
 function assertValidSupplierRegistrationFile(file: File, fieldName: string) {
   const label = supplierRegistrationFileLabels[fieldName] ?? fieldName;
 
   if (file.size > MAX_SUPPLIER_REGISTRATION_FILE_BYTES) {
-    throw new Error(`${label} must be 10MB or less.`);
+    logSupplierRegistrationFileWarning({
+      documentType: label,
+      file,
+      reason: "file-too-large",
+    });
+    throw new Error(`${label}: ${FILE_TOO_LARGE_MESSAGE}`);
   }
 
   if (!isAllowedSupplierRegistrationFile(file)) {
+    logSupplierRegistrationFileWarning({
+      documentType: label,
+      file,
+      reason: "unsupported-file-type",
+    });
     throw new Error(`${label} must be a PDF, JPG, or PNG file.`);
   }
 }
@@ -249,7 +279,9 @@ function toRegistrationFileValidationState(error: unknown): ActionState | null {
   }
 
   const fieldEntry = Object.entries(supplierRegistrationFileLabels).find(
-    ([, label]) => error.message.startsWith(`${label} `),
+    ([, label]) =>
+      error.message.startsWith(`${label} `) ||
+      error.message.startsWith(`${label}: `),
   );
 
   if (!fieldEntry) {
@@ -257,14 +289,17 @@ function toRegistrationFileValidationState(error: unknown): ActionState | null {
   }
 
   const [fieldName] = fieldEntry;
+  const message = error.message.includes(FILE_TOO_LARGE_MESSAGE)
+    ? FILE_TOO_LARGE_MESSAGE
+    : error.message;
   const fieldErrors = {
-    [fieldName]: [error.message],
+    [fieldName]: [message],
   };
 
   logValidationWarning("submitVendorRegistrationAction", fieldErrors);
 
   return {
-    error: error.message,
+    error: message,
     fieldErrors,
   };
 }

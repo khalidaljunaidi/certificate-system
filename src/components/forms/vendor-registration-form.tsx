@@ -76,6 +76,7 @@ const COVERAGE_SCOPE_OPTIONS = [
 ] as const;
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const FILE_TOO_LARGE_MESSAGE = "File is too large. Maximum allowed size is 10MB.";
 const ALLOWED_UPLOAD_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
@@ -416,7 +417,7 @@ function InlineFieldError({ message }: { message: string | null }) {
 
 function validateUploadFile(file: File, label: string) {
   if (file.size > MAX_UPLOAD_BYTES) {
-    return `${label} must be 10MB or less.`;
+    return FILE_TOO_LARGE_MESSAGE;
   }
 
   if (!isAllowedUploadFile(file)) {
@@ -436,7 +437,6 @@ function isAllowedUploadFile(file: File) {
 }
 
 function validateUploadInputs(uploadFiles: SelectedUploadFiles) {
-  let totalBytes = 0;
   const fieldErrors: UploadFieldErrors = {};
 
   for (const field of ATTACHMENT_FIELDS) {
@@ -450,7 +450,6 @@ function validateUploadInputs(uploadFiles: SelectedUploadFiles) {
       continue;
     }
 
-    totalBytes += file.size;
     const fileError = validateUploadFile(file, field.label);
 
     if (fileError) {
@@ -465,14 +464,6 @@ function validateUploadInputs(uploadFiles: SelectedUploadFiles) {
   if (firstFieldError) {
     return {
       message: firstFieldError,
-      fieldErrors,
-    };
-  }
-
-  if (totalBytes > MAX_UPLOAD_BYTES) {
-    return {
-      message:
-        "The combined upload size must stay under 10MB for this submission. Please reduce file sizes and try again.",
       fieldErrors,
     };
   }
