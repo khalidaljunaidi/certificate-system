@@ -417,6 +417,7 @@ async function validateRegistrationCatalog(values: ParsedRegistrationSubmission)
 
 async function buildAttachmentRecord(input: {
   requestNumber: string;
+  attachmentId?: string;
   type: "CR" | "VAT" | "COMPANY_PROFILE" | "FINANCIALS" | "BANK_CERTIFICATE" | "SIGNATURE" | "STAMP";
   file: File;
 }) {
@@ -434,8 +435,10 @@ async function buildAttachmentRecord(input: {
   }
 
   const buffer = Buffer.from(await input.file.arrayBuffer());
+  const attachmentId = input.attachmentId ?? crypto.randomUUID();
   const uploadResult = await uploadVendorRegistrationAttachment({
     requestNumber: input.requestNumber,
+    attachmentId,
     attachmentType: input.type,
     originalFileName: input.file.name || `${input.type}.pdf`,
     buffer,
@@ -447,6 +450,7 @@ async function buildAttachmentRecord(input: {
     `vendor-registrations/${input.requestNumber}/${input.type}/${Date.now()}-${input.file.name}`;
 
   return {
+    id: attachmentId,
     fileName: input.file.name || `${input.type}.pdf`,
     mimeType: input.file.type,
     storagePath,
@@ -642,6 +646,7 @@ export async function submitVendorRegistrationRequest(input: {
 
         await tx.vendorRegistrationAttachment.createMany({
           data: attachmentEntries.map(({ type, attachment }) => ({
+            id: attachment.id,
             requestId: created.id,
             type,
             fileName: attachment.fileName,
@@ -764,6 +769,7 @@ export async function replaceVendorRegistrationAttachment(input: {
 
   const nextAttachment = await buildAttachmentRecord({
     requestNumber: current.request.requestNumber,
+    attachmentId: current.id,
     type: current.type,
     file: input.file,
   });

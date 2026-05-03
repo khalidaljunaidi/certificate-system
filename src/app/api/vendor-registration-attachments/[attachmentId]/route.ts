@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentAuthenticatedUser } from "@/lib/auth";
 import { canManageVendorGovernance } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { downloadStorageObject } from "@/server/services/storage-service";
+import { downloadVendorRegistrationAttachment } from "@/server/services/storage-service";
 
 type VendorRegistrationAttachmentRouteProps = {
   params: Promise<{
@@ -46,13 +46,10 @@ export async function GET(
     return new NextResponse("Attachment not found", { status: 404 });
   }
 
-  const buffer = await downloadStorageObject(attachment.storagePath);
+  const buffer = await downloadVendorRegistrationAttachment(attachment.storagePath);
 
   if (!buffer) {
-    return new NextResponse(
-      "Attachment file is not available in storage. Use Replace File on the registration detail page to upload the document internally.",
-      { status: 404 },
-    );
+    return new NextResponse("File must be re-uploaded", { status: 404 });
   }
 
   const dispositionType = new URL(request.url).searchParams.has("download")

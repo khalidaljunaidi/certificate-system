@@ -2,6 +2,7 @@
 
 import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { ZodError } from "zod";
 
 import { EMPTY_ACTION_STATE, toActionState } from "@/actions/utils";
 import { requireAdminSession } from "@/lib/auth";
@@ -45,6 +46,52 @@ function readInvoiceFile(formData: FormData) {
   }
 
   return value;
+}
+
+function logPaymentValidationWarning(
+  action: string,
+  fieldErrors: Record<string, string[]>,
+) {
+  console.warn("[server-action-validation]", {
+    action,
+    fields: Object.keys(fieldErrors),
+  });
+}
+
+function toPaymentValidationState(error: unknown): ActionState | null {
+  if (error instanceof ZodError) {
+    const fieldErrors = error.flatten().fieldErrors;
+    logPaymentValidationWarning(
+      "saveProjectVendorPaymentInstallmentAction",
+      fieldErrors,
+    );
+
+    return {
+      error: "Please review the highlighted fields.",
+      fieldErrors,
+    };
+  }
+
+  if (
+    error instanceof Error &&
+    error.message.toLowerCase().includes("invoice attachment")
+  ) {
+    const fieldErrors = {
+      invoiceAttachment: [error.message],
+    };
+
+    logPaymentValidationWarning(
+      "saveProjectVendorPaymentInstallmentAction",
+      fieldErrors,
+    );
+
+    return {
+      error: error.message,
+      fieldErrors,
+    };
+  }
+
+  return null;
 }
 
 function buildPaymentRedirectTarget(input: {
@@ -198,6 +245,11 @@ export async function saveProjectVendorPaymentInstallmentAction(
       }),
     };
   } catch (error) {
+    const validationState = toPaymentValidationState(error);
+    if (validationState) {
+      return validationState;
+    }
+
     await logSystemError({
       action: "ProjectPaymentSave",
       error,

@@ -347,6 +347,18 @@ function AttachmentField({
   );
 }
 
+function InlineFieldError({ message }: { message: string | null }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <p className="mt-2 rounded-[14px] bg-[rgba(185,28,28,0.08)] px-3 py-2 text-xs font-medium text-[#991b1b]">
+      {message}
+    </p>
+  );
+}
+
 function validateUploadFile(file: File, label: string) {
   if (file.size > MAX_UPLOAD_BYTES) {
     return `${label} must be 10MB or less.`;
@@ -724,6 +736,8 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
     () => firstFieldError(state.fieldErrors),
     [state.fieldErrors],
   );
+  const fieldError = (fieldName: string) =>
+    state.fieldErrors?.[fieldName]?.[0] ?? null;
 
   const displayState = clientUploadError
     ? { error: clientUploadError }
@@ -914,6 +928,7 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                   required
                   disabled={isPending}
                 />
+                <InlineFieldError message={fieldError("companyEmail")} />
               </div>
               <div>
                 <Label htmlFor="companyPhone">
@@ -932,12 +947,14 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                   CR Number <span className="text-[#991b1b]">*</span>
                 </Label>
                 <Input id="crNumber" name="crNumber" required disabled={isPending} />
+                <InlineFieldError message={fieldError("crNumber")} />
               </div>
               <div>
                 <Label htmlFor="vatNumber">
                   VAT Number <span className="text-[#991b1b]">*</span>
                 </Label>
                 <Input id="vatNumber" name="vatNumber" required disabled={isPending} />
+                <InlineFieldError message={fieldError("vatNumber")} />
               </div>
             </div>
           </SectionPanel>
@@ -1439,7 +1456,11 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                     required={field.required}
                     isPending={isPending}
                     selectedFile={selectedUploadFiles[field.name] ?? null}
-                    error={uploadFieldErrors[field.name] ?? null}
+                    error={
+                      uploadFieldErrors[field.name] ??
+                      fieldError(field.name) ??
+                      null
+                    }
                     onFileChange={handleUploadFileChange}
                   />
                 ))}
@@ -1484,6 +1505,7 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                       required
                       disabled={isPending}
                     />
+                    <InlineFieldError message={fieldError("declarationName")} />
                   </div>
                   <div>
                     <Label htmlFor="declarationTitle">
@@ -1495,6 +1517,7 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                       required
                       disabled={isPending}
                     />
+                    <InlineFieldError message={fieldError("declarationTitle")} />
                   </div>
                 </div>
                 <label className="mt-5 flex items-start gap-3 rounded-[20px] border border-[var(--color-border)] bg-white p-4 text-sm leading-7 text-[var(--color-ink)]">
@@ -1512,6 +1535,7 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                     best of my knowledge.
                   </span>
                 </label>
+                <InlineFieldError message={fieldError("declarationAccepted")} />
               </div>
 
               <div className="rounded-[24px] border border-[var(--color-border)] bg-white p-5">

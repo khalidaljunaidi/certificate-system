@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { Prisma } from "@prisma/client";
+import { ZodError } from "zod";
 
 import { EMPTY_ACTION_STATE, toActionState } from "@/actions/utils";
 import { requireAdminSession } from "@/lib/auth";
@@ -39,6 +41,9 @@ const supplierRegistrationFileLabels: Record<string, string> = {
   bankCertificateAttachment: "Bank Certificate",
   replacementAttachment: "Attachment",
 };
+
+const DUPLICATE_VENDOR_REGISTRATION_MESSAGE =
+  "A registration already exists with the same CR, VAT, or email.";
 
 function withNotice(path: string, notice: string) {
   const safePath = path.startsWith("/") ? path : "/admin/vendor-registrations";
@@ -91,6 +96,118 @@ function getOptionalFile(formData: FormData, fieldName: string) {
   assertValidSupplierRegistrationFile(value, fieldName);
 
   return value;
+}
+
+function logValidationWarning(action: string, fieldErrors: Record<string, string[]>) {
+  console.warn("[server-action-validation]", {
+    action,
+    fields: Object.keys(fieldErrors),
+  });
+}
+
+function normalizeRegistrationFieldErrors(
+  fieldErrors: Record<string, string[]>,
+) {
+  const normalized = { ...fieldErrors };
+
+  if (normalized.declarationAccepted?.length) {
+    normalized.declarationAccepted = ["Please accept the final declaration."];
+  }
+
+  return normalized;
+}
+
+function toRegistrationValidationState(error: unknown): ActionState | null {
+  if (!(error instanceof ZodError)) {
+    return null;
+  }
+
+  const fieldErrors = normalizeRegistrationFieldErrors(
+    error.flatten().fieldErrors,
+  );
+
+  logValidationWarning("submitVendorRegistrationAction", fieldErrors);
+
+  return {
+    error: "Please review the highlighted fields.",
+    fieldErrors,
+  };
+}
+
+function isDuplicateRegistrationError(error: unknown) {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2002"
+  ) {
+    const target = Array.isArray(error.meta?.target)
+      ? (error.meta.target as string[])
+      : [];
+
+    return target.some((field) =>
+      [
+        "companyEmail",
+        "crNumber",
+        "vatNumber",
+        "vendorEmail",
+        "vendorId",
+      ].includes(field),
+    );
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+
+  return (
+    message.includes("already exists") &&
+    (message.includes("cr") ||
+      message.includes("vat") ||
+      message.includes("email") ||
+      message.includes("master registry"))
+  );
+}
+
+function toDuplicateRegistrationState(): ActionState {
+  const fieldErrors = {
+    crNumber: [DUPLICATE_VENDOR_REGISTRATION_MESSAGE],
+    vatNumber: [DUPLICATE_VENDOR_REGISTRATION_MESSAGE],
+    companyEmail: [DUPLICATE_VENDOR_REGISTRATION_MESSAGE],
+  };
+
+  logValidationWarning("submitVendorRegistrationAction", fieldErrors);
+
+  return {
+    error: DUPLICATE_VENDOR_REGISTRATION_MESSAGE,
+    fieldErrors,
+  };
+}
+
+function toRegistrationFileValidationState(error: unknown): ActionState | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+
+  const fieldEntry = Object.entries(supplierRegistrationFileLabels).find(
+    ([, label]) => error.message.startsWith(`${label} `),
+  );
+
+  if (!fieldEntry) {
+    return null;
+  }
+
+  const [fieldName] = fieldEntry;
+  const fieldErrors = {
+    [fieldName]: [error.message],
+  };
+
+  logValidationWarning("submitVendorRegistrationAction", fieldErrors);
+
+  return {
+    error: error.message,
+    fieldErrors,
+  };
 }
 
 function parseRegistrationFormData(formData: FormData) {
@@ -193,18 +310,38 @@ export async function submitVendorRegistrationAction(
       redirectTo: `/supplier-registration?submitted=${request.requestNumber}`,
     };
   } catch (error) {
-    await logSystemError({
-      action: "SupplierRegistrationSubmit",
-      error,
-      severity: "ERROR",
-    });
+    const validationState = toRegistrationValidationState(error);
+    if (validationState) {
+      return validationState;
+    }
+
+    if (isDuplicateRegistrationError(error)) {
+      return toDuplicateRegistrationState();
+    }
+
+    const fileValidationState = toRegistrationFileValidationState(error);
+    if (fileValidationState) {
+      return fileValidationState;
+    }
 
     if (isInternalSupplierRegistrationError(error)) {
+      await logSystemError({
+        action: "SupplierRegistrationSubmit",
+        error,
+        severity: "ERROR",
+      });
+
       return {
         error:
           "We could not submit the registration due to a system processing delay. Please try again.",
       };
     }
+
+    await logSystemError({
+      action: "SupplierRegistrationSubmit",
+      error,
+      severity: "ERROR",
+    });
 
     return toActionState(error);
   }

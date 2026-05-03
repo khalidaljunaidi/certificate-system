@@ -253,6 +253,8 @@ function PaymentInstallmentModal({
     saveProjectVendorPaymentInstallmentAction,
     EMPTY_ACTION_STATE,
   );
+  const fieldError = (fieldName: string) =>
+    state.fieldErrors?.[fieldName]?.[0] ?? null;
 
   const copy = useMemo(() => getDialogCopy(mode, installment), [installment, mode]);
   const workflowIntent = getWorkflowIntent(mode);
@@ -380,7 +382,7 @@ function PaymentInstallmentModal({
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Amount (SAR)" required>
+              <Field label="Amount (SAR)" required error={fieldError("amount")}>
                 <Input
                   name="amount"
                   type="number"
@@ -412,7 +414,7 @@ function PaymentInstallmentModal({
                 ) : null}
               </Field>
 
-              <Field label="Due Date" required>
+              <Field label="Due Date" required error={fieldError("dueDate")}>
                 <Input
                   name="dueDate"
                   type="date"
@@ -423,7 +425,7 @@ function PaymentInstallmentModal({
                 />
               </Field>
 
-              <Field label="Condition" required>
+              <Field label="Condition" required error={fieldError("condition")}>
                 <Input
                   name="condition"
                   defaultValue={installment?.condition ?? ""}
@@ -447,7 +449,11 @@ function PaymentInstallmentModal({
 
               {mode === "invoice" || mode === "review" || mode === "schedule" || mode === "mark-paid" ? (
                 <>
-                  <Field label="Invoice Number" required={mode === "invoice"}>
+                  <Field
+                    label="Invoice Number"
+                    required={mode === "invoice"}
+                    error={fieldError("invoiceNumber")}
+                  >
                     <Input
                       name="invoiceNumber"
                       defaultValue={installment?.invoiceNumber ?? ""}
@@ -456,7 +462,11 @@ function PaymentInstallmentModal({
                     />
                   </Field>
 
-                  <Field label="Invoice Date" required={mode === "invoice"}>
+                  <Field
+                    label="Invoice Date"
+                    required={mode === "invoice"}
+                    error={fieldError("invoiceDate")}
+                  >
                     <Input
                       name="invoiceDate"
                       type="date"
@@ -466,7 +476,11 @@ function PaymentInstallmentModal({
                     />
                   </Field>
 
-                  <Field label="Invoice Amount (SAR)" required={mode === "invoice"}>
+                  <Field
+                    label="Invoice Amount (SAR)"
+                    required={mode === "invoice"}
+                    error={fieldError("invoiceAmount")}
+                  >
                     <Input
                       name="invoiceAmount"
                       type="number"
@@ -485,7 +499,11 @@ function PaymentInstallmentModal({
                     />
                   </Field>
 
-                  <Field label="Invoice Received Date" required={mode === "invoice"}>
+                  <Field
+                    label="Invoice Received Date"
+                    required={mode === "invoice"}
+                    error={fieldError("invoiceReceivedDate")}
+                  >
                     <Input
                       name="invoiceReceivedDate"
                       type="date"
@@ -569,7 +587,10 @@ function PaymentInstallmentModal({
                         </>
                       ) : null}
 
-                      <Field label="Invoice Attachment">
+                      <Field
+                        label="Invoice Attachment"
+                        error={fieldError("invoiceAttachment")}
+                      >
                         <Input
                           name="invoiceAttachment"
                           type="file"
@@ -587,7 +608,11 @@ function PaymentInstallmentModal({
 
               {mode === "review" ? (
                 <>
-                  <Field label="Finance Decision" required>
+                  <Field
+                    label="Finance Decision"
+                    required
+                    error={fieldError("invoiceStatus")}
+                  >
                     <Select
                       name="invoiceStatus"
                       value={invoiceDecision}
@@ -618,7 +643,11 @@ function PaymentInstallmentModal({
               {mode === "schedule" ? (
                 <>
                   <input type="hidden" name="invoiceStatus" value="APPROVED_FOR_PAYMENT" />
-                  <Field label="Scheduled Payment Date" required>
+                  <Field
+                    label="Scheduled Payment Date"
+                    required
+                    error={fieldError("scheduledPaymentDate")}
+                  >
                     <Input
                       name="scheduledPaymentDate"
                       type="date"
@@ -649,7 +678,11 @@ function PaymentInstallmentModal({
                       disabled={isPending}
                     />
                   </Field>
-                  <Field label="Payment Date" required>
+                  <Field
+                    label="Payment Date"
+                    required
+                    error={fieldError("paymentDate")}
+                  >
                     <Input
                       name="paymentDate"
                       type="date"
@@ -710,10 +743,12 @@ function getSubmitLabel(mode: PaymentWorkflowModalMode) {
 function Field({
   label,
   required,
+  error,
   children,
 }: {
   label: string;
   required?: boolean;
+  error?: string | null;
   children: ReactNode;
 }) {
   return (
@@ -723,6 +758,11 @@ function Field({
         {required ? <span className="text-[#991b1b]"> *</span> : null}
       </Label>
       <div className="mt-2">{children}</div>
+      {error ? (
+        <p className="mt-2 rounded-[14px] bg-[rgba(185,28,28,0.08)] px-3 py-2 text-xs font-medium text-[#991b1b]">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
