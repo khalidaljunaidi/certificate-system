@@ -27,6 +27,55 @@ import { syncVendorToOdoo } from "@/server/services/vendor-odoo-sync-service";
 
 type ParsedRegistrationSubmission = z.infer<typeof vendorRegistrationSubmissionSchema>;
 type ParsedRegistrationReview = z.infer<typeof vendorRegistrationReviewSchema>;
+type VendorRegistrationAttachmentType =
+  | "CR"
+  | "VAT"
+  | "COMPANY_PROFILE"
+  | "FINANCIALS"
+  | "BANK_CERTIFICATE";
+
+const vendorRegistrationAttachmentFieldNames: Record<
+  VendorRegistrationAttachmentType,
+  string
+> = {
+  CR: "crAttachment",
+  VAT: "vatAttachment",
+  COMPANY_PROFILE: "companyProfileAttachment",
+  FINANCIALS: "financialsAttachment",
+  BANK_CERTIFICATE: "bankCertificateAttachment",
+};
+
+const vendorRegistrationAttachmentLabels: Record<
+  VendorRegistrationAttachmentType,
+  string
+> = {
+  CR: "CR",
+  VAT: "VAT",
+  COMPANY_PROFILE: "Company Profile",
+  FINANCIALS: "Financials",
+  BANK_CERTIFICATE: "Bank Certificate",
+};
+
+export class VendorRegistrationAttachmentUploadError extends Error {
+  fieldErrors: Record<string, string[]>;
+
+  constructor(fieldErrors: Record<string, string[]>) {
+    super("One or more vendor registration documents failed to upload.");
+    this.name = "VendorRegistrationAttachmentUploadError";
+    this.fieldErrors = fieldErrors;
+  }
+}
+
+export function isVendorRegistrationAttachmentUploadError(
+  error: unknown,
+): error is VendorRegistrationAttachmentUploadError {
+  return (
+    error instanceof VendorRegistrationAttachmentUploadError ||
+    (error instanceof Error &&
+      error.name === "VendorRegistrationAttachmentUploadError" &&
+      "fieldErrors" in error)
+  );
+}
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
@@ -458,6 +507,76 @@ async function buildAttachmentRecord(input: {
   };
 }
 
+function getFileSizeMb(file: File) {
+  return Number((file.size / (1024 * 1024)).toFixed(2));
+}
+
+async function buildVendorRegistrationAttachmentEntries(input: {
+  requestNumber: string;
+  files: Partial<Record<VendorRegistrationAttachmentType, File | undefined>>;
+}) {
+  const attachmentEntries: Array<{
+    type: VendorRegistrationAttachmentType;
+    attachment: Awaited<ReturnType<typeof buildAttachmentRecord>>;
+  }> = [];
+  const fieldErrors: Record<string, string[]> = {};
+
+  for (const [type, file] of Object.entries(input.files) as Array<
+    [VendorRegistrationAttachmentType, File | undefined]
+  >) {
+    if (!file) {
+      continue;
+    }
+
+    try {
+      const attachment = await buildAttachmentRecord({
+        requestNumber: input.requestNumber,
+        type,
+        file,
+      });
+
+      attachmentEntries.push({
+        type,
+        attachment,
+      });
+    } catch (error) {
+      const label = vendorRegistrationAttachmentLabels[type] ?? type;
+      const fieldName = vendorRegistrationAttachmentFieldNames[type] ?? type;
+      const message = `${label} failed to upload. Please try again.`;
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown upload error";
+
+      fieldErrors[fieldName] = [message];
+
+      console.warn("[vendor-registration-attachment-upload]", {
+        documentType: label,
+        fileName: file.name,
+        mimeType: file.type || "unknown",
+        fileSizeMB: getFileSizeMb(file),
+        errorMessage,
+      });
+
+      await logSystemError({
+        action: "VendorRegistrationAttachmentUpload",
+        error,
+        severity: "ERROR",
+        context: {
+          documentType: label,
+          fileName: file.name,
+          mimeType: file.type || "unknown",
+          fileSizeMB: getFileSizeMb(file),
+        },
+      }).catch(() => undefined);
+    }
+  }
+
+  if (Object.keys(fieldErrors).length > 0) {
+    throw new VendorRegistrationAttachmentUploadError(fieldErrors);
+  }
+
+  return attachmentEntries;
+}
+
 async function notifyVendorRegistrationSubmitted(input: {
   requestId: string;
   companyName: string;
@@ -545,26 +664,10 @@ export async function submitVendorRegistrationRequest(input: {
         ]),
     ),
   };
-  const attachmentEntries = await Promise.all(
-    (Object.entries(input.files) as Array<
-      [
-        "CR" | "VAT" | "COMPANY_PROFILE" | "FINANCIALS" | "BANK_CERTIFICATE",
-        File | undefined,
-      ]
-    >)
-      .filter((entry): entry is [
-        "CR" | "VAT" | "COMPANY_PROFILE" | "FINANCIALS" | "BANK_CERTIFICATE",
-        File,
-      ] => Boolean(entry[1]))
-      .map(async ([type, file]) => ({
-      type,
-      attachment: await buildAttachmentRecord({
-        requestNumber,
-        type,
-        file,
-      }),
-    })),
-  );
+  const attachmentEntries = await buildVendorRegistrationAttachmentEntries({
+    requestNumber,
+    files: input.files,
+  });
 
   const request = await prisma
     .$transaction(

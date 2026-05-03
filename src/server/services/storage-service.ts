@@ -396,7 +396,12 @@ export async function deleteFile(input: StorageObjectInput) {
   }
 }
 
-export async function getSignedUrl(input: StorageObjectInput & { expiresIn: number }) {
+export async function getSignedUrl(
+  input: StorageObjectInput & {
+    expiresIn: number;
+    download?: string | boolean;
+  },
+) {
   const bucket = normalizeBucketName(input.bucket);
   const objectPath = normalizeObjectPath(input.path);
 
@@ -408,9 +413,19 @@ export async function getSignedUrl(input: StorageObjectInput & { expiresIn: numb
 
   const client = getSupabaseAdminClient();
 
-  const { data, error } = await client.storage
-    .from(bucket)
-    .createSignedUrl(objectPath, input.expiresIn);
+  const signedUrlOptions =
+    input.download === undefined
+      ? undefined
+      : {
+          download: input.download,
+        };
+  const { data, error } = signedUrlOptions
+    ? await client.storage
+        .from(bucket)
+        .createSignedUrl(objectPath, input.expiresIn, signedUrlOptions)
+    : await client.storage
+        .from(bucket)
+        .createSignedUrl(objectPath, input.expiresIn);
 
   if (error) {
     throw new Error(`Failed to create signed URL: ${error.message}`);

@@ -13,6 +13,7 @@ import type { ActionState } from "@/lib/types";
 import { testOdooConnection } from "@/server/services/odoo-service";
 import {
   approveVendorRegistrationRequest,
+  isVendorRegistrationAttachmentUploadError,
   replaceVendorRegistrationAttachment,
   rejectVendorRegistrationRequest,
   submitVendorRegistrationRequest,
@@ -454,6 +455,18 @@ export async function submitVendorRegistrationAction(
         reason: "file-validation",
       });
       return fileValidationState;
+    }
+
+    if (isVendorRegistrationAttachmentUploadError(error)) {
+      await logSupplierRegistrationSubmitError(error, {
+        fieldErrors: error.fieldErrors,
+        reason: "document-upload",
+      });
+
+      return {
+        error: SUPPLIER_REGISTRATION_UPLOAD_ERROR,
+        fieldErrors: error.fieldErrors,
+      };
     }
 
     if (isSupplierRegistrationStorageError(error)) {
