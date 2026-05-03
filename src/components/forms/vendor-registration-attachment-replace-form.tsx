@@ -11,10 +11,14 @@ import { FormStateMessage } from "@/components/forms/form-state-message";
 
 type VendorRegistrationAttachmentReplaceFormProps = {
   attachmentId: string;
+  documentType: string;
+  storagePath: string;
 };
 
 export function VendorRegistrationAttachmentReplaceForm({
   attachmentId,
+  documentType,
+  storagePath,
 }: VendorRegistrationAttachmentReplaceFormProps) {
   const router = useRouter();
   const [state, formAction, isPending] = useActionState(
@@ -32,11 +36,16 @@ export function VendorRegistrationAttachmentReplaceForm({
   return (
     <form action={formAction} className="mt-3 grid gap-3">
       <input type="hidden" name="attachmentId" value={attachmentId} />
-      {process.env.NODE_ENV !== "production" ? (
-        <p className="rounded-[12px] bg-[rgba(49,19,71,0.06)] px-3 py-2 text-[10px] font-medium text-[var(--color-muted)]">
-          Attachment ID: {attachmentId}
-        </p>
-      ) : null}
+      <input
+        type="hidden"
+        name="expectedAttachmentType"
+        value={documentType}
+      />
+      <div className="rounded-[12px] bg-[rgba(49,19,71,0.06)] px-3 py-2 text-[10px] font-medium leading-5 text-[var(--color-muted)]">
+        <p>Attachment ID: {attachmentId}</p>
+        <p>Document Type: {documentType}</p>
+        <p className="break-all">Storage Path: {storagePath}</p>
+      </div>
       <Input
         name="attachmentFile"
         type="file"

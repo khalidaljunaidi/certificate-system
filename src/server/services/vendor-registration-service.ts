@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 import { createElement } from "react";
-import { Prisma, VendorRegistrationStatus } from "@prisma/client";
+import {
+  Prisma,
+  VendorRegistrationStatus,
+  type VendorRegistrationAttachmentType as PrismaVendorRegistrationAttachmentType,
+} from "@prisma/client";
 import { z } from "zod";
 
 import {
@@ -868,6 +872,7 @@ export async function submitVendorRegistrationRequest(input: {
 
 export async function replaceVendorRegistrationAttachment(input: {
   attachmentId: string;
+  expectedType?: PrismaVendorRegistrationAttachmentType;
   file: File;
   userId: string;
 }) {
@@ -879,7 +884,9 @@ export async function replaceVendorRegistrationAttachment(input: {
       id: true,
       type: true,
       fileName: true,
+      mimeType: true,
       storagePath: true,
+      sizeBytes: true,
       requestId: true,
       request: {
         select: {
@@ -891,6 +898,30 @@ export async function replaceVendorRegistrationAttachment(input: {
 
   if (!current) {
     throw new Error("Attachment record was not found.");
+  }
+
+  console.info("[vendor-registration-attachment-replace-before]", {
+    receivedAttachmentId: input.attachmentId,
+    existingAttachmentId: current.id,
+    existingDocumentType: current.type,
+    existingFileName: current.fileName,
+    existingFileSize: current.sizeBytes,
+    existingMimeType: current.mimeType,
+    existingStoragePath: current.storagePath,
+  });
+
+  console.info("[vendor-registration-attachment-replace-uploaded-file]", {
+    attachmentId: input.attachmentId,
+    expectedDocumentType: input.expectedType,
+    fileName: input.file.name,
+    fileSize: input.file.size,
+    fileType: input.file.type || "unknown",
+  });
+
+  if (input.expectedType && current.type !== input.expectedType) {
+    throw new Error(
+      `Attachment document type mismatch. Expected ${input.expectedType}, found ${current.type}.`,
+    );
   }
 
   const nextAttachment = await buildAttachmentRecord({
@@ -942,6 +973,29 @@ export async function replaceVendorRegistrationAttachment(input: {
       timeout: 15000,
     },
   );
+
+  const updated = await prisma.vendorRegistrationAttachment.findUnique({
+    where: {
+      id: current.id,
+    },
+    select: {
+      id: true,
+      type: true,
+      fileName: true,
+      mimeType: true,
+      storagePath: true,
+      sizeBytes: true,
+    },
+  });
+
+  console.info("[vendor-registration-attachment-replace-after]", {
+    attachmentId: current.id,
+    documentType: updated?.type ?? null,
+    fileName: updated?.fileName ?? null,
+    fileSize: updated?.sizeBytes ?? null,
+    mimeType: updated?.mimeType ?? null,
+    storagePath: updated?.storagePath ?? null,
+  });
 
   return {
     requestId: current.requestId,

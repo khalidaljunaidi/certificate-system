@@ -47,6 +47,29 @@ export default async function VendorRegistrationDetailPage({
   const allSubcategoriesSelected =
     request.categorySubcategoryCount > 0 &&
     request.selectedSubcategories.length >= request.categorySubcategoryCount;
+  const attachmentDisplayOrder = [
+    "CR",
+    "VAT",
+    "COMPANY_PROFILE",
+    "FINANCIALS",
+    "BANK_CERTIFICATE",
+    "SIGNATURE",
+    "STAMP",
+  ] as const;
+  const attachmentDisplayOrderSet = new Set<string>(attachmentDisplayOrder);
+  const attachmentsByType = new Map(
+    request.attachments.map((attachment) => [attachment.type, attachment]),
+  );
+  const orderedAttachments = [
+    ...attachmentDisplayOrder
+      .map((type) => attachmentsByType.get(type))
+      .filter((attachment): attachment is (typeof request.attachments)[number] =>
+        Boolean(attachment),
+    ),
+    ...request.attachments.filter(
+      (attachment) => !attachmentDisplayOrderSet.has(attachment.type),
+    ),
+  ];
 
   return (
     <div className="space-y-8">
@@ -241,12 +264,12 @@ export default async function VendorRegistrationDetailPage({
               <CardTitle>Attachments</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {request.attachments.length === 0 ? (
+              {orderedAttachments.length === 0 ? (
                 <p className="text-sm leading-7 text-[var(--color-muted)]">
                   No attachments were submitted.
                 </p>
               ) : (
-                request.attachments.map((attachment) => (
+                orderedAttachments.map((attachment) => (
                   <div
                     key={attachment.id}
                     className="rounded-[20px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-4"
@@ -260,6 +283,13 @@ export default async function VendorRegistrationDetailPage({
                           {attachment.fileName} |{" "}
                           {Math.round(attachment.sizeBytes / 1024)} KB
                         </p>
+                        <div className="mt-3 rounded-[12px] bg-white px-3 py-2 text-[10px] font-medium leading-5 text-[var(--color-muted)]">
+                          <p>Attachment ID: {attachment.id}</p>
+                          <p>Document Type: {attachment.type}</p>
+                          <p className="break-all">
+                            Storage Path: {attachment.storagePath}
+                          </p>
+                        </div>
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-2">
                         <Button asChild size="sm" variant="secondary">
@@ -286,6 +316,8 @@ export default async function VendorRegistrationDetailPage({
                       </summary>
                       <VendorRegistrationAttachmentReplaceForm
                         attachmentId={attachment.id}
+                        documentType={attachment.type}
+                        storagePath={attachment.storagePath}
                       />
                     </details>
                   </div>

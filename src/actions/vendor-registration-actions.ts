@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { Prisma } from "@prisma/client";
+import { Prisma, type VendorRegistrationAttachmentType } from "@prisma/client";
 import type { z } from "zod";
 
 import { EMPTY_ACTION_STATE, toActionState } from "@/actions/utils";
@@ -49,6 +49,15 @@ const SUPPLIER_REGISTRATION_UPLOAD_ERROR =
   "Document upload failed. Please try again or contact procurement.";
 const SUPPLIER_REGISTRATION_GENERIC_ERROR =
   "We could not submit the registration. Please try again or contact procurement.";
+const VENDOR_REGISTRATION_ATTACHMENT_TYPES = new Set<string>([
+  "CR",
+  "VAT",
+  "COMPANY_PROFILE",
+  "FINANCIALS",
+  "BANK_CERTIFICATE",
+  "SIGNATURE",
+  "STAMP",
+]);
 type ParsedVendorRegistrationSubmission = z.infer<
   typeof vendorRegistrationSubmissionSchema
 >;
@@ -724,6 +733,9 @@ export async function replaceVendorRegistrationAttachmentAction(
     }
 
     const attachmentId = String(formData.get("attachmentId") ?? "");
+    const expectedAttachmentType = String(
+      formData.get("expectedAttachmentType") ?? "",
+    );
     const file = formData.get("attachmentFile");
 
     if (!attachmentId) {
@@ -731,6 +743,15 @@ export async function replaceVendorRegistrationAttachmentAction(
         error: "Attachment update failed. Please try again.",
         fieldErrors: {
           attachmentId: ["Attachment record is missing."],
+        },
+      };
+    }
+
+    if (!VENDOR_REGISTRATION_ATTACHMENT_TYPES.has(expectedAttachmentType)) {
+      return {
+        error: "Attachment update failed. Please try again.",
+        fieldErrors: {
+          expectedAttachmentType: ["Attachment document type is invalid."],
         },
       };
     }
@@ -760,6 +781,7 @@ export async function replaceVendorRegistrationAttachmentAction(
 
     const result = await replaceVendorRegistrationAttachment({
       attachmentId,
+      expectedType: expectedAttachmentType as VendorRegistrationAttachmentType,
       file,
       userId: session.user.id,
     });
@@ -772,6 +794,30 @@ export async function replaceVendorRegistrationAttachmentAction(
       noticeKey: "attachment-updated",
     };
   } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("Attachment document type mismatch")
+    ) {
+      await logSystemError({
+        action: "VendorRegistrationAttachmentReplace",
+        error,
+        severity: "WARNING",
+        context: {
+          attachmentId: String(formData.get("attachmentId") ?? ""),
+          expectedAttachmentType: String(
+            formData.get("expectedAttachmentType") ?? "",
+          ),
+        },
+      });
+
+      return {
+        error: error.message,
+        fieldErrors: {
+          expectedAttachmentType: [error.message],
+        },
+      };
+    }
+
     await logSystemError({
       action: "VendorRegistrationAttachmentReplace",
       error,
