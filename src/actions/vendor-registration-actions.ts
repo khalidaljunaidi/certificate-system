@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
-import { ZodError } from "zod";
+import type { z } from "zod";
 
 import { EMPTY_ACTION_STATE, toActionState } from "@/actions/utils";
 import { requireAdminSession } from "@/lib/auth";
@@ -50,6 +50,9 @@ const SUPPLIER_REGISTRATION_UPLOAD_ERROR =
   "Document upload failed. Please try again or contact procurement.";
 const SUPPLIER_REGISTRATION_GENERIC_ERROR =
   "We could not submit the registration. Please try again or contact procurement.";
+type ParsedVendorRegistrationSubmission = z.infer<
+  typeof vendorRegistrationSubmissionSchema
+>;
 
 function withNotice(path: string, notice: string) {
   const safePath = path.startsWith("/") ? path : "/admin/vendor-registrations";
@@ -86,7 +89,7 @@ function logSupplierRegistrationFileWarning(input: {
   });
 }
 
-function assertValidSupplierRegistrationFile(file: File, fieldName: string) {
+function validateSupplierRegistrationFile(file: File, fieldName: string) {
   const label = supplierRegistrationFileLabels[fieldName] ?? fieldName;
 
   if (file.size > MAX_SUPPLIER_REGISTRATION_FILE_BYTES) {
@@ -95,7 +98,7 @@ function assertValidSupplierRegistrationFile(file: File, fieldName: string) {
       file,
       reason: "file-too-large",
     });
-    throw new Error(`${label}: ${FILE_TOO_LARGE_MESSAGE}`);
+    return FILE_TOO_LARGE_MESSAGE;
   }
 
   if (!isAllowedSupplierRegistrationFile(file)) {
@@ -104,31 +107,52 @@ function assertValidSupplierRegistrationFile(file: File, fieldName: string) {
       file,
       reason: "unsupported-file-type",
     });
-    throw new Error(`${label} must be a PDF, JPG, or PNG file.`);
+    return `${label} must be a PDF, JPG, or PNG file.`;
   }
+
+  return null;
 }
 
-function getRequiredFile(formData: FormData, fieldName: string) {
+function getRequiredFile(
+  formData: FormData,
+  fieldName: string,
+  fieldErrors: Record<string, string[]>,
+) {
   const value = formData.get(fieldName);
   const label = supplierRegistrationFileLabels[fieldName] ?? fieldName;
 
   if (!(value instanceof File) || value.size === 0) {
-    throw new Error(`${label} is required.`);
+    fieldErrors[fieldName] = [`${label} is required.`];
+    return undefined;
   }
 
-  assertValidSupplierRegistrationFile(value, fieldName);
+  const validationError = validateSupplierRegistrationFile(value, fieldName);
+
+  if (validationError) {
+    fieldErrors[fieldName] = [validationError];
+    return undefined;
+  }
 
   return value;
 }
 
-function getOptionalFile(formData: FormData, fieldName: string) {
+function getOptionalFile(
+  formData: FormData,
+  fieldName: string,
+  fieldErrors: Record<string, string[]>,
+) {
   const value = formData.get(fieldName);
 
   if (!(value instanceof File) || value.size === 0) {
     return undefined;
   }
 
-  assertValidSupplierRegistrationFile(value, fieldName);
+  const validationError = validateSupplierRegistrationFile(value, fieldName);
+
+  if (validationError) {
+    fieldErrors[fieldName] = [validationError];
+    return undefined;
+  }
 
   return value;
 }
@@ -205,23 +229,6 @@ function normalizeRegistrationFieldErrors(
   }
 
   return normalized;
-}
-
-function toRegistrationValidationState(error: unknown): ActionState | null {
-  if (!(error instanceof ZodError)) {
-    return null;
-  }
-
-  const fieldErrors = normalizeRegistrationFieldErrors(
-    error.flatten().fieldErrors,
-  );
-
-  logValidationWarning("submitVendorRegistrationAction", fieldErrors);
-
-  return {
-    error: "Please review the highlighted fields.",
-    fieldErrors,
-  };
 }
 
 function isDuplicateRegistrationError(error: unknown) {
@@ -305,8 +312,22 @@ function toRegistrationFileValidationState(error: unknown): ActionState | null {
   };
 }
 
-function parseRegistrationFormData(formData: FormData) {
-  return vendorRegistrationSubmissionSchema.parse({
+function getFirstFieldError(fieldErrors: Record<string, string[]>) {
+  return Object.values(fieldErrors)
+    .flatMap((messages) => messages)
+    .find(Boolean);
+}
+
+function parseRegistrationFormData(formData: FormData):
+  | {
+      success: true;
+      values: ParsedVendorRegistrationSubmission;
+    }
+  | {
+      success: false;
+      state: ActionState;
+    } {
+  const result = vendorRegistrationSubmissionSchema.safeParse({
     companyName: formData.get("companyName"),
     legalName: formData.get("legalName"),
     companyEmail: formData.get("companyEmail"),
@@ -360,6 +381,85 @@ function parseRegistrationFormData(formData: FormData) {
     declarationTitle: formData.get("declarationTitle"),
     declarationAccepted: formData.get("declarationAccepted"),
   });
+
+  if (!result.success) {
+    const fieldErrors = normalizeRegistrationFieldErrors(
+      result.error.flatten().fieldErrors,
+    );
+
+    logValidationWarning("submitVendorRegistrationAction", fieldErrors);
+
+    return {
+      success: false,
+      state: {
+        error: "Please review the highlighted fields.",
+        fieldErrors,
+      },
+    };
+  }
+
+  return {
+    success: true,
+    values: result.data,
+  };
+}
+
+function collectRegistrationFiles(formData: FormData):
+  | {
+      success: true;
+      files: {
+        CR: File;
+        VAT: File;
+        COMPANY_PROFILE: File;
+        FINANCIALS?: File;
+        BANK_CERTIFICATE?: File;
+      };
+    }
+  | {
+      success: false;
+      state: ActionState;
+    } {
+  const fieldErrors: Record<string, string[]> = {};
+  const files = {
+    CR: getRequiredFile(formData, "crAttachment", fieldErrors),
+    VAT: getRequiredFile(formData, "vatAttachment", fieldErrors),
+    COMPANY_PROFILE: getRequiredFile(
+      formData,
+      "companyProfileAttachment",
+      fieldErrors,
+    ),
+    FINANCIALS: getOptionalFile(formData, "financialsAttachment", fieldErrors),
+    BANK_CERTIFICATE: getOptionalFile(
+      formData,
+      "bankCertificateAttachment",
+      fieldErrors,
+    ),
+  };
+
+  if (Object.keys(fieldErrors).length > 0) {
+    logValidationWarning("submitVendorRegistrationAction", fieldErrors);
+
+    return {
+      success: false,
+      state: {
+        error:
+          getFirstFieldError(fieldErrors) ??
+          "Please review the highlighted document uploads.",
+        fieldErrors,
+      },
+    };
+  }
+
+  return {
+    success: true,
+    files: {
+      CR: files.CR as File,
+      VAT: files.VAT as File,
+      COMPANY_PROFILE: files.COMPANY_PROFILE as File,
+      FINANCIALS: files.FINANCIALS,
+      BANK_CERTIFICATE: files.BANK_CERTIFICATE,
+    },
+  };
 }
 
 function isInternalSupplierRegistrationError(error: unknown) {
@@ -406,17 +506,37 @@ export async function submitVendorRegistrationAction(
 ): Promise<ActionState> {
   try {
     void prevState;
-    const values = parseRegistrationFormData(formData);
+    const parsedRegistration = parseRegistrationFormData(formData);
+
+    if (!parsedRegistration.success) {
+      await logSupplierRegistrationSubmitError(
+        new Error(parsedRegistration.state.error ?? "Validation failed."),
+        {
+          fieldErrors: parsedRegistration.state.fieldErrors,
+          persist: false,
+          reason: "validation",
+        },
+      );
+      return parsedRegistration.state;
+    }
+
+    const collectedFiles = collectRegistrationFiles(formData);
+
+    if (!collectedFiles.success) {
+      await logSupplierRegistrationSubmitError(
+        new Error(collectedFiles.state.error ?? "File validation failed."),
+        {
+          fieldErrors: collectedFiles.state.fieldErrors,
+          persist: false,
+          reason: "file-validation",
+        },
+      );
+      return collectedFiles.state;
+    }
 
     const request = await submitVendorRegistrationRequest({
-      values,
-      files: {
-        CR: getRequiredFile(formData, "crAttachment"),
-        VAT: getRequiredFile(formData, "vatAttachment"),
-        COMPANY_PROFILE: getRequiredFile(formData, "companyProfileAttachment"),
-        FINANCIALS: getOptionalFile(formData, "financialsAttachment"),
-        BANK_CERTIFICATE: getOptionalFile(formData, "bankCertificateAttachment"),
-      },
+      values: parsedRegistration.values,
+      files: collectedFiles.files,
     });
 
     revalidatePath("/admin/vendor-registrations");
@@ -427,16 +547,6 @@ export async function submitVendorRegistrationAction(
       redirectTo: `/supplier-registration?submitted=${request.requestNumber}`,
     };
   } catch (error) {
-    const validationState = toRegistrationValidationState(error);
-    if (validationState) {
-      await logSupplierRegistrationSubmitError(error, {
-        fieldErrors: validationState.fieldErrors,
-        persist: false,
-        reason: "validation",
-      });
-      return validationState;
-    }
-
     if (isDuplicateRegistrationError(error)) {
       console.warn("[supplier-registration-submit]", {
         action: "submitVendorRegistrationAction",
@@ -514,11 +624,23 @@ export async function reviewVendorRegistrationAction(
       };
     }
 
-    const values = vendorRegistrationReviewSchema.parse({
+    const parsedReview = vendorRegistrationReviewSchema.safeParse({
       requestId: formData.get("requestId"),
       decision: formData.get("decision"),
       rejectionReason: formData.get("rejectionReason") || undefined,
     });
+
+    if (!parsedReview.success) {
+      const fieldErrors = parsedReview.error.flatten().fieldErrors;
+      logValidationWarning("reviewVendorRegistrationAction", fieldErrors);
+
+      return {
+        error: "Please review the highlighted fields.",
+        fieldErrors,
+      };
+    }
+
+    const values = parsedReview.data;
 
     if (values.decision === "APPROVE") {
       const result = await approveVendorRegistrationRequest({
@@ -596,23 +718,28 @@ export async function replaceVendorRegistrationAttachmentAction(
       const file = formData.get("attachmentFile");
 
       if (!attachmentId) {
-        throw new Error("Attachment record is missing.");
+        nextUrl = withNotice(redirectTo, "attachment-update-failed");
+      } else if (!(file instanceof File) || file.size === 0) {
+        nextUrl = withNotice(redirectTo, "attachment-update-failed");
+      } else {
+        const fileError = validateSupplierRegistrationFile(
+          file,
+          "replacementAttachment",
+        );
+
+        if (fileError) {
+          nextUrl = withNotice(redirectTo, "attachment-update-failed");
+        } else {
+          const result = await replaceVendorRegistrationAttachment({
+            attachmentId,
+            file,
+            userId: session.user.id,
+          });
+
+          revalidatePath("/admin/vendor-registrations");
+          revalidatePath(`/admin/vendor-registrations/${result.requestId}`);
+        }
       }
-
-      if (!(file instanceof File) || file.size === 0) {
-        throw new Error("Please choose a replacement file.");
-      }
-
-      assertValidSupplierRegistrationFile(file, "replacementAttachment");
-
-      const result = await replaceVendorRegistrationAttachment({
-        attachmentId,
-        file,
-        userId: session.user.id,
-      });
-
-      revalidatePath("/admin/vendor-registrations");
-      revalidatePath(`/admin/vendor-registrations/${result.requestId}`);
     }
   } catch (error) {
     await logSystemError({
