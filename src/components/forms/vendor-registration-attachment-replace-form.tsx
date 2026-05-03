@@ -32,6 +32,11 @@ export function VendorRegistrationAttachmentReplaceForm({
   return (
     <form action={formAction} className="mt-3 grid gap-3">
       <input type="hidden" name="attachmentId" value={attachmentId} />
+      {process.env.NODE_ENV !== "production" ? (
+        <p className="rounded-[12px] bg-[rgba(49,19,71,0.06)] px-3 py-2 text-[10px] font-medium text-[var(--color-muted)]">
+          Attachment ID: {attachmentId}
+        </p>
+      ) : null}
       <Input
         name="attachmentFile"
         type="file"

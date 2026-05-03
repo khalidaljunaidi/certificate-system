@@ -498,6 +498,13 @@ async function buildAttachmentRecord(input: {
     uploadResult.path ??
     `vendor-registrations/${input.requestNumber}/${input.type}/${Date.now()}-${input.file.name}`;
 
+  console.info("[vendor-registration-attachment-record]", {
+    documentType: input.type,
+    originalFileName: input.file.name || `${input.type}.pdf`,
+    sizeBytes: input.file.size,
+    storagePath,
+  });
+
   return {
     id: attachmentId,
     fileName: input.file.name || `${input.type}.pdf`,
@@ -533,6 +540,13 @@ async function buildVendorRegistrationAttachmentEntries(input: {
         requestNumber: input.requestNumber,
         type,
         file,
+      });
+
+      console.info("[vendor-registration-attachment-entry]", {
+        documentType: type,
+        originalFileName: attachment.fileName,
+        sizeBytes: attachment.sizeBytes,
+        storagePath: attachment.storagePath,
       });
 
       attachmentEntries.push({
@@ -759,6 +773,15 @@ export async function submitVendorRegistrationRequest(input: {
           })),
         });
 
+        for (const { type, attachment } of attachmentEntries) {
+          console.info("[vendor-registration-attachment-persisted]", {
+            documentType: type,
+            originalFileName: attachment.fileName,
+            sizeBytes: attachment.sizeBytes,
+            storagePath: attachment.storagePath,
+          });
+        }
+
         await createAuditLog(tx, {
           action: "CREATED",
           entityType: "VendorRegistrationRequest",
@@ -889,6 +912,14 @@ export async function replaceVendorRegistrationAttachment(input: {
           storagePath: nextAttachment.storagePath,
           sizeBytes: nextAttachment.sizeBytes,
         },
+      });
+
+      console.info("[vendor-registration-attachment-replaced]", {
+        attachmentId: current.id,
+        documentType: current.type,
+        originalFileName: nextAttachment.fileName,
+        sizeBytes: nextAttachment.sizeBytes,
+        storagePath: nextAttachment.storagePath,
       });
 
       await createAuditLog(tx, {
