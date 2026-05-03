@@ -36,8 +36,6 @@ type StorageObjectInput = {
   path: string;
 };
 
-const checkedBuckets = new Set<string>();
-
 function isStorageConfigured() {
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
@@ -55,15 +53,29 @@ function assertSupabaseStorageConfigured() {
 }
 
 function normalizeSupabaseUrl() {
-  const url = getSupabaseUrl().trim().replace(/\/+$/g, "");
+  const rawUrl = getSupabaseUrl()
+    .trim()
+    .replace(/^["']+|["']+$/g, "");
 
-  if (url.includes("/storage/v1")) {
+  const parsed = new URL(rawUrl);
+  const normalized = `${parsed.protocol}//${parsed.host}`;
+
+  if (parsed.protocol !== "https:") {
     throw new Error(
-      "SUPABASE_URL must be the Supabase project URL, not the Storage API URL.",
+      "SUPABASE_URL must start with https://.",
     );
   }
 
-  return url;
+  if (
+    !parsed.hostname.endsWith(".supabase.co") &&
+    parsed.hostname !== "supabase.co"
+  ) {
+    throw new Error(
+      `SUPABASE_URL must be a valid Supabase project domain. Current host: ${parsed.hostname}`,
+    );
+  }
+
+  return normalized;
 }
 
 function getSupabaseAdminClient() {
@@ -247,25 +259,18 @@ async function deleteLocalFile(input: StorageObjectInput) {
   }
 }
 
-async function ensureSupabaseBucket(
-  client: ReturnType<typeof getSupabaseAdminClient>,
+export async function assertStorageBucketExists(
   bucket: string,
 ) {
   const normalizedBucket = normalizeBucketName(bucket);
+  assertSupabaseStorageConfigured();
 
-  if (checkedBuckets.has(normalizedBucket)) {
+  const client = getSupabaseAdminClient();
+
+  const { data, error } = await client.storage.listBuckets();
+
+  if (data?.some((item) => item.name === normalizedBucket)) {
     return normalizedBucket;
-  }
-
-  const { data, error } = await client.storage.getBucket(normalizedBucket);
-
-  if (data && !error) {
-    checkedBuckets.add(normalizedBucket);
-    return normalizedBucket;
-  }
-
-  if (error && isSupabaseNotFoundError(error)) {
-    throw new Error(`Storage bucket is missing: ${normalizedBucket}`);
   }
 
   if (error) {
@@ -274,8 +279,28 @@ async function ensureSupabaseBucket(
     );
   }
 
-  checkedBuckets.add(normalizedBucket);
-  return normalizedBucket;
+  throw new Error(`Storage bucket is missing: ${normalizedBucket}`);
+}
+
+function getSafeStorageUrlHost() {
+  try {
+    return new URL(normalizeSupabaseUrl()).hostname;
+  } catch {
+    return "invalid-supabase-url";
+  }
+}
+
+function logStorageOperation(input: {
+  provider: "supabase";
+  bucketName: string;
+  objectPath: string;
+}) {
+  console.info("[storage]", {
+    provider: input.provider,
+    urlHost: getSafeStorageUrlHost(),
+    bucketName: input.bucketName,
+    objectPath: input.objectPath,
+  });
 }
 
 export async function uploadFile(input: UploadFileInput) {
@@ -293,7 +318,11 @@ export async function uploadFile(input: UploadFileInput) {
   assertSupabaseStorageConfigured();
 
   const client = getSupabaseAdminClient();
-  await ensureSupabaseBucket(client, bucket);
+  logStorageOperation({
+    provider: "supabase",
+    bucketName: bucket,
+    objectPath,
+  });
 
   const { error } = await client.storage.from(bucket).upload(objectPath, input.buffer, {
     contentType: input.contentType,
@@ -324,7 +353,6 @@ export async function downloadFile(input: StorageObjectInput) {
   assertSupabaseStorageConfigured();
 
   const client = getSupabaseAdminClient();
-  await ensureSupabaseBucket(client, bucket);
 
   const { data, error } = await client.storage.from(bucket).download(objectPath);
 
@@ -360,7 +388,6 @@ export async function deleteFile(input: StorageObjectInput) {
   assertSupabaseStorageConfigured();
 
   const client = getSupabaseAdminClient();
-  await ensureSupabaseBucket(client, bucket);
 
   const { error } = await client.storage.from(bucket).remove([objectPath]);
 
@@ -380,7 +407,6 @@ export async function getSignedUrl(input: StorageObjectInput & { expiresIn: numb
   assertSupabaseStorageConfigured();
 
   const client = getSupabaseAdminClient();
-  await ensureSupabaseBucket(client, bucket);
 
   const { data, error } = await client.storage
     .from(bucket)

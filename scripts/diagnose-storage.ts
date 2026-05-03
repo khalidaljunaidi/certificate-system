@@ -49,6 +49,8 @@ async function diagnoseBucket(
   const objectPath = `diagnostics/${label}-${timestamp}.txt`;
   const expected = Buffer.from(`storage diagnostic ${label} ${timestamp}`, "utf8");
 
+  await storage.assertStorageBucketExists(bucket);
+
   await storage.uploadFile({
     bucket,
     path: objectPath,
