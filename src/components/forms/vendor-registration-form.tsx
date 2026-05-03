@@ -121,10 +121,65 @@ type SelectedUploadFiles = Partial<Record<AttachmentFieldName, File>>;
 type UploadFieldErrors = Partial<Record<AttachmentFieldName, string>>;
 
 type VendorRegistrationFormProps = {
-  options: VendorRegistrationFormOptions;
+  options?: VendorRegistrationFormOptions;
 };
 
 type CoverageScope = (typeof COVERAGE_SCOPE_OPTIONS)[number]["value"];
+type LazyCityOption = {
+  id: string;
+  countryCode: string;
+  name: string;
+  region: string;
+};
+
+const EMPTY_VENDOR_REGISTRATION_OPTIONS: VendorRegistrationFormOptions = {
+  countries: [],
+  categories: [],
+};
+
+async function fetchRegistrationOptions<T>(url: string): Promise<T> {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not load registration options (${response.status}).`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+function mergeCityOptions(
+  countries: VendorRegistrationFormOptions["countries"],
+  cities: LazyCityOption[],
+) {
+  const groupedCities = new Map<string, LazyCityOption[]>();
+
+  for (const city of cities) {
+    const current = groupedCities.get(city.countryCode) ?? [];
+    current.push(city);
+    groupedCities.set(city.countryCode, current);
+  }
+
+  return countries.map((country) => {
+    const nextCities = groupedCities.get(country.code);
+
+    if (!nextCities) {
+      return country;
+    }
+
+    return {
+      ...country,
+      cities: nextCities.map((city) => ({
+        id: city.id,
+        name: city.name,
+        region: city.region,
+      })),
+    };
+  });
+}
 
 function getCoverageCityIds(input: {
   countries: VendorRegistrationFormOptions["countries"];
@@ -571,12 +626,16 @@ function getStepForField(fieldName: string) {
   return 7;
 }
 
-export function VendorRegistrationForm({ options }: VendorRegistrationFormProps) {
+export function VendorRegistrationForm({
+  options: initialOptions = EMPTY_VENDOR_REGISTRATION_OPTIONS,
+}: VendorRegistrationFormProps) {
   const router = useRouter();
   const [state, formAction, isPending] = useActionState(
     submitVendorRegistrationAction,
     EMPTY_ACTION_STATE,
   );
+  const [options, setOptions] =
+    useState<VendorRegistrationFormOptions>(initialOptions);
   const [currentStep, setCurrentStep] = useState(0);
   const [countryCode, setCountryCode] = useState("");
   const [coverageScope, setCoverageScope] =
@@ -591,6 +650,14 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
   const [uploadFieldErrors, setUploadFieldErrors] = useState<UploadFieldErrors>(
     {},
   );
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+  const [loadingCountries, setLoadingCountries] = useState(false);
+  const [loadingCities, setLoadingCities] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [loadingSubcategories, setLoadingSubcategories] = useState(false);
+  const [loadedCityRequestKey, setLoadedCityRequestKey] = useState("");
+  const [loadedSubcategoryCategoryIds, setLoadedSubcategoryCategoryIds] =
+    useState<string[]>([]);
 
   const selectedCountry = useMemo(
     () => options.countries.find((country) => country.code === countryCode) ?? null,
@@ -618,6 +685,216 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
 
     return [...groups.entries()];
   }, [options.countries]);
+
+  useEffect(() => {
+    if (currentStep < 1 || options.countries.length > 0 || loadingCountries) {
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingCountries(true);
+    setOptionsError(null);
+
+    fetchRegistrationOptions<{
+      countries: VendorRegistrationFormOptions["countries"];
+    }>("/api/vendor-registration/options/countries")
+      .then(({ countries }) => {
+        if (cancelled) {
+          return;
+        }
+
+        setOptions((current) => ({
+          ...current,
+          countries,
+        }));
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setOptionsError(
+            error instanceof Error
+              ? error.message
+              : "Could not load registration options.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingCountries(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStep, loadingCountries, options.countries.length]);
+
+  useEffect(() => {
+    if (currentStep < 3 || options.categories.length > 0 || loadingCategories) {
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingCategories(true);
+    setOptionsError(null);
+
+    fetchRegistrationOptions<{
+      categories: VendorRegistrationFormOptions["categories"];
+    }>("/api/vendor-registration/options/categories")
+      .then(({ categories }) => {
+        if (cancelled) {
+          return;
+        }
+
+        setOptions((current) => ({
+          ...current,
+          categories,
+        }));
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setOptionsError(
+            error instanceof Error
+              ? error.message
+              : "Could not load registration options.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingCategories(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStep, loadingCategories, options.categories.length]);
+
+  useEffect(() => {
+    const cityRequestKey = `${countryCode}:${coverageScope}`;
+
+    if (
+      !countryCode ||
+      currentStep !== 1 ||
+      loadingCities ||
+      loadedCityRequestKey === cityRequestKey
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const params = new URLSearchParams({
+      countryCode,
+      coverageScope,
+    });
+
+    setLoadingCities(true);
+    setOptionsError(null);
+
+    fetchRegistrationOptions<{
+      cities: LazyCityOption[];
+    }>(`/api/vendor-registration/options/cities?${params.toString()}`)
+      .then(({ cities }) => {
+        if (cancelled) {
+          return;
+        }
+
+        setOptions((current) => ({
+          ...current,
+          countries: mergeCityOptions(current.countries, cities),
+        }));
+        setLoadedCityRequestKey(cityRequestKey);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setOptionsError(
+            error instanceof Error
+              ? error.message
+              : "Could not load city options.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingCities(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    countryCode,
+    coverageScope,
+    currentStep,
+    loadedCityRequestKey,
+    loadingCities,
+  ]);
+
+  useEffect(() => {
+    if (
+      !categoryId ||
+      !selectedCategory ||
+      selectedCategory.subcategories.length > 0 ||
+      loadedSubcategoryCategoryIds.includes(categoryId) ||
+      loadingSubcategories
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const params = new URLSearchParams({
+      categoryId,
+    });
+
+    setLoadingSubcategories(true);
+    setOptionsError(null);
+
+    fetchRegistrationOptions<{
+      subcategories: VendorRegistrationFormOptions["categories"][number]["subcategories"];
+    }>(`/api/vendor-registration/options/subcategories?${params.toString()}`)
+      .then(({ subcategories }) => {
+        if (cancelled) {
+          return;
+        }
+
+        setOptions((current) => ({
+          ...current,
+          categories: current.categories.map((category) =>
+            category.id === categoryId
+              ? {
+                  ...category,
+                  subcategories,
+                }
+              : category,
+          ),
+        }));
+        setLoadedSubcategoryCategoryIds((current) => [...current, categoryId]);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setOptionsError(
+            error instanceof Error
+              ? error.message
+              : "Could not load subcategory options.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingSubcategories(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    categoryId,
+    loadedSubcategoryCategoryIds,
+    loadingSubcategories,
+    selectedCategory,
+  ]);
 
   const cityGroups = useMemo(() => {
     if (!selectedCountry) {
@@ -739,11 +1016,13 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
   const fieldError = (fieldName: string) =>
     state.fieldErrors?.[fieldName]?.[0] ?? null;
 
-  const displayState = clientUploadError
-    ? { error: clientUploadError }
-    : serverFieldError
-      ? { error: serverFieldError }
-      : state;
+  const displayState = optionsError
+    ? { error: optionsError }
+    : clientUploadError
+      ? { error: clientUploadError }
+      : serverFieldError
+        ? { error: serverFieldError }
+        : state;
 
   const hiddenCityInputs =
     coverageScope === "SPECIFIC_CITIES" ? (
@@ -903,6 +1182,8 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
             </div>
           </div>
 
+          <FormStateMessage state={displayState} />
+
           <SectionPanel active={currentStep === 0}>
             <div className="grid gap-4 md:grid-cols-2">
               <div>
@@ -970,9 +1251,11 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                   name="countryCode"
                   value={countryCode}
                   onChange={(event) => setCountryCode(event.target.value)}
-                  disabled={isPending}
+                  disabled={isPending || loadingCountries}
                 >
-                  <option value="">Select country</option>
+                  <option value="">
+                    {loadingCountries ? "Loading countries..." : "Select country"}
+                  </option>
                     {countryGroups.map(([region, countries]) => (
                       <optgroup key={region} label={region}>
                         {countries.map((country) => (
@@ -1077,9 +1360,17 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                         disabled={isPending || !selectedCountry}
                       />
                     </div>
-                    {!selectedCountry ? (
+                    {loadingCities && selectedCountry ? (
+                      <div className="rounded-[20px] border border-dashed border-[var(--color-border)] p-5 text-sm leading-7 text-[var(--color-muted)]">
+                        Loading city list...
+                      </div>
+                    ) : !selectedCountry ? (
                       <div className="rounded-[20px] border border-dashed border-[var(--color-border)] p-5 text-sm leading-7 text-[var(--color-muted)]">
                         Choose a country first to unlock the city list.
+                      </div>
+                    ) : cityGroups.length === 0 ? (
+                      <div className="rounded-[20px] border border-dashed border-[var(--color-border)] p-5 text-sm leading-7 text-[var(--color-muted)]">
+                        No cities are configured for this selection yet.
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -1262,9 +1553,11 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                       setCategoryId(event.target.value);
                       setSubcategoryIds([]);
                     }}
-                    disabled={isPending}
+                    disabled={isPending || loadingCategories}
                   >
-                    <option value="">Select category</option>
+                    <option value="">
+                      {loadingCategories ? "Loading categories..." : "Select category"}
+                    </option>
                     {options.categories.map((category) => (
                       <option key={category.id} value={category.id}>
                         {category.name}
@@ -1315,7 +1608,11 @@ export function VendorRegistrationForm({ options }: VendorRegistrationFormProps)
                   </div>
                 </div>
 
-                {!selectedCategory ? (
+                {loadingSubcategories && selectedCategory ? (
+                  <div className="mt-4 rounded-[20px] border border-dashed border-[var(--color-border)] p-5 text-sm leading-7 text-[var(--color-muted)]">
+                    Loading subcategories...
+                  </div>
+                ) : !selectedCategory ? (
                   <div className="mt-4 rounded-[20px] border border-dashed border-[var(--color-border)] p-5 text-sm leading-7 text-[var(--color-muted)]">
                     Choose a category first to unlock the subcategory list.
                   </div>

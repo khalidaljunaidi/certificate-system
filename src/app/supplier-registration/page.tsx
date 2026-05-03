@@ -6,7 +6,6 @@ import { PageShell } from "@/components/layout/page-shell";
 import { VendorRegistrationForm } from "@/components/forms/vendor-registration-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { getVendorRegistrationFormOptions } from "@/server/queries/vendor-registration-queries";
 
 type SupplierRegistrationPageProps = {
   searchParams: Promise<{
@@ -22,7 +21,7 @@ export default async function SupplierRegistrationPage({
   const content = submittedRequestNumber ? (
     <SubmittedRegistrationPanel requestNumber={submittedRequestNumber} />
   ) : (
-    <VendorRegistrationForm options={await getVendorRegistrationFormOptions()} />
+    <VendorRegistrationForm />
   );
 
   return (

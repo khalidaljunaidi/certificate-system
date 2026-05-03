@@ -18,8 +18,9 @@ import { requireAdminSession } from "@/lib/auth";
 import { canManageVendorGovernance } from "@/lib/permissions";
 import { absoluteUrl, formatDateTime } from "@/lib/utils";
 import {
-  getVendorRegistrationFormOptions,
-  getVendorRegistrationRequests,
+  getVendorRegistrationFilterOptions,
+  getVendorRegistrationRequestList,
+  getVendorRegistrationStatusCounts,
 } from "@/server/queries/vendor-registration-queries";
 import { getSupplierInvitations } from "@/server/queries/supplier-invitation-queries";
 
@@ -30,6 +31,7 @@ type VendorRegistrationsPageProps = {
     countryCode?: string;
     categoryId?: string;
     notice?: string;
+    page?: string;
   }>;
 };
 
@@ -48,25 +50,17 @@ export default async function VendorRegistrationsPage({
     );
   }
 
-  const filters = await searchParams;
-  const [requests, options] = await Promise.all([
-    getVendorRegistrationRequests(filters, { limit: 25 }),
-    getVendorRegistrationFormOptions(),
+  const search = await searchParams;
+  const { page: pageParam, ...filters } = search;
+  const page = Math.max(Number(pageParam ?? "1") || 1, 1);
+  const [listData, options, counts, invitations] = await Promise.all([
+    getVendorRegistrationRequestList(filters, { limit: 30, page }),
+    getVendorRegistrationFilterOptions(),
+    getVendorRegistrationStatusCounts(filters),
+    getSupplierInvitations(5),
   ]);
-  const invitations = await getSupplierInvitations(5);
+  const { requests, pagination } = listData;
   const registrationUrl = absoluteUrl("/supplier-registration");
-
-  const counts = requests.reduce(
-    (accumulator, request) => {
-      accumulator[request.status] += 1;
-      return accumulator;
-    },
-    {
-      PENDING_REVIEW: 0,
-      APPROVED: 0,
-      REJECTED: 0,
-    },
-  );
 
   return (
     <PageShell>
@@ -302,8 +296,69 @@ export default async function VendorRegistrationsPage({
           ))
         )}
       </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-[var(--color-muted)]">
+          Page {pagination.page} | Showing up to {pagination.limit} requests
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <Button asChild variant="secondary">
+            <Link
+              aria-disabled={!pagination.hasPrevious}
+              href={
+                pagination.hasPrevious
+                  ? buildVendorRegistrationPageHref(filters, pagination.page - 1)
+                  : buildVendorRegistrationPageHref(filters, pagination.page)
+              }
+              className={!pagination.hasPrevious ? "pointer-events-none opacity-50" : ""}
+            >
+              Previous
+            </Link>
+          </Button>
+          <Button asChild variant="secondary">
+            <Link
+              aria-disabled={!pagination.hasNext}
+              href={
+                pagination.hasNext
+                  ? buildVendorRegistrationPageHref(filters, pagination.page + 1)
+                  : buildVendorRegistrationPageHref(filters, pagination.page)
+              }
+              className={!pagination.hasNext ? "pointer-events-none opacity-50" : ""}
+            >
+              Next
+            </Link>
+          </Button>
+        </div>
+      </div>
     </PageShell>
   );
+}
+
+function buildVendorRegistrationPageHref(
+  filters: {
+    search?: string;
+    status?: string;
+    countryCode?: string;
+    categoryId?: string;
+    notice?: string;
+  },
+  page: number,
+) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(filters)) {
+    if (value && key !== "notice") {
+      params.set(key, value);
+    }
+  }
+
+  if (page > 1) {
+    params.set("page", String(page));
+  }
+
+  const query = params.toString();
+
+  return query ? `/admin/vendor-registrations?${query}` : "/admin/vendor-registrations";
 }
 
 function renderInvitationNotice(notice?: string) {

@@ -44,6 +44,10 @@ const supplierRegistrationFileLabels: Record<string, string> = {
 
 const DUPLICATE_VENDOR_REGISTRATION_MESSAGE =
   "A registration already exists with the same CR, VAT, or email.";
+const SUPPLIER_REGISTRATION_UPLOAD_ERROR =
+  "Document upload failed. Please try again or contact procurement.";
+const SUPPLIER_REGISTRATION_GENERIC_ERROR =
+  "We could not submit the registration. Please try again or contact procurement.";
 
 function withNotice(path: string, notice: string) {
   const safePath = path.startsWith("/") ? path : "/admin/vendor-registrations";
@@ -103,6 +107,61 @@ function logValidationWarning(action: string, fieldErrors: Record<string, string
     action,
     fields: Object.keys(fieldErrors),
   });
+}
+
+function getSafeErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  return "Unknown error";
+}
+
+async function logSupplierRegistrationSubmitError(
+  error: unknown,
+  context?: {
+    fieldErrors?: Record<string, string[]>;
+    persist?: boolean;
+    reason?: string;
+  },
+) {
+  const errorMessage = getSafeErrorMessage(error);
+  const fieldNames = context?.fieldErrors
+    ? Object.keys(context.fieldErrors)
+    : undefined;
+  const log = context?.persist === false ? console.warn : console.error;
+
+  log("[supplier-registration-submit]", {
+    action: "submitVendorRegistrationAction",
+    errorMessage,
+    fields: fieldNames,
+    reason: context?.reason,
+  });
+
+  if (context?.persist === false) {
+    return;
+  }
+
+  try {
+    await logSystemError({
+      action: "SupplierRegistrationSubmit",
+      error,
+      severity: "ERROR",
+      context: {
+        reason: context?.reason,
+        fields: fieldNames,
+      },
+    });
+  } catch (loggingError) {
+    console.error("[supplier-registration-submit-log-failed]", {
+      action: "submitVendorRegistrationAction",
+      errorMessage: getSafeErrorMessage(loggingError),
+    });
+  }
 }
 
 function normalizeRegistrationFieldErrors(
@@ -283,6 +342,28 @@ function isInternalSupplierRegistrationError(error: unknown) {
   );
 }
 
+function isSupplierRegistrationStorageError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+
+  return (
+    message.includes("failed to upload file") ||
+    message.includes("document upload") ||
+    message.includes("supabase storage") ||
+    message.includes("storage bucket") ||
+    message.includes("bucket is missing") ||
+    message.includes("invalid path specified") ||
+    message.includes("storage object path") ||
+    message.includes("storage bucket name") ||
+    message.includes("supabase_url") ||
+    message.includes("supabase_service_role_key") ||
+    message.includes("fetch failed")
+  );
+}
+
 export async function submitVendorRegistrationAction(
   prevState: ActionState = EMPTY_ACTION_STATE,
   formData: FormData,
@@ -312,23 +393,47 @@ export async function submitVendorRegistrationAction(
   } catch (error) {
     const validationState = toRegistrationValidationState(error);
     if (validationState) {
+      await logSupplierRegistrationSubmitError(error, {
+        fieldErrors: validationState.fieldErrors,
+        persist: false,
+        reason: "validation",
+      });
       return validationState;
     }
 
     if (isDuplicateRegistrationError(error)) {
+      console.warn("[supplier-registration-submit]", {
+        action: "submitVendorRegistrationAction",
+        errorMessage: DUPLICATE_VENDOR_REGISTRATION_MESSAGE,
+        fields: ["crNumber", "vatNumber", "companyEmail"],
+        reason: "duplicate",
+      });
       return toDuplicateRegistrationState();
     }
 
     const fileValidationState = toRegistrationFileValidationState(error);
     if (fileValidationState) {
+      await logSupplierRegistrationSubmitError(error, {
+        fieldErrors: fileValidationState.fieldErrors,
+        persist: false,
+        reason: "file-validation",
+      });
       return fileValidationState;
     }
 
+    if (isSupplierRegistrationStorageError(error)) {
+      await logSupplierRegistrationSubmitError(error, {
+        reason: "document-upload",
+      });
+
+      return {
+        error: SUPPLIER_REGISTRATION_UPLOAD_ERROR,
+      };
+    }
+
     if (isInternalSupplierRegistrationError(error)) {
-      await logSystemError({
-        action: "SupplierRegistrationSubmit",
-        error,
-        severity: "ERROR",
+      await logSupplierRegistrationSubmitError(error, {
+        reason: "internal-processing",
       });
 
       return {
@@ -337,13 +442,13 @@ export async function submitVendorRegistrationAction(
       };
     }
 
-    await logSystemError({
-      action: "SupplierRegistrationSubmit",
-      error,
-      severity: "ERROR",
+    await logSupplierRegistrationSubmitError(error, {
+      reason: "unhandled",
     });
 
-    return toActionState(error);
+    return {
+      error: SUPPLIER_REGISTRATION_GENERIC_ERROR,
+    };
   }
 }
 
