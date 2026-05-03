@@ -234,7 +234,6 @@ export function CertificateDocument({ model }: { model: CertificatePdfModel }) {
 
                 <VerificationBlock
                   qrDataUrl={model.qrDataUrl}
-                  verificationUrl={model.verificationUrl}
                 />
               </View>
 
@@ -330,10 +329,8 @@ function CertificateField({
 
 function VerificationBlock({
   qrDataUrl,
-  verificationUrl,
 }: {
   qrDataUrl: string;
-  verificationUrl: string;
 }) {
   return (
     <View style={styles.verificationBlock}>
@@ -341,7 +338,6 @@ function VerificationBlock({
       <Image src={qrDataUrl} style={styles.qrImage} />
       <Text style={styles.verifyTitle}>Scan to verify</Text>
       <Text style={styles.verifySubtitle}>certificate authenticity</Text>
-      <Text style={styles.verifyUrl}>{truncateText(verificationUrl, 62)}</Text>
     </View>
   );
 }
@@ -602,13 +598,6 @@ const styles = StyleSheet.create({
     color: gold,
     fontSize: 6.8,
     fontWeight: 700,
-    textAlign: "center",
-  },
-  verifyUrl: {
-    marginTop: 5,
-    color: muted,
-    fontSize: 5.7,
-    lineHeight: 1.2,
     textAlign: "center",
   },
   summaryRow: {
