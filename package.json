@@ -21,7 +21,8 @@
     "smoke:vendor-registration-certificate-pdf": "tsx scripts/smoke-vendor-registration-certificate-pdf.ts",
     "smoke:performance": "tsx scripts/smoke-performance-routes.ts",
     "cleanup:test-vendor-odoo": "tsx scripts/cleanup-test-vendor-odoo.ts",
-    "capture:ceo-presentation": "tsx scripts/capture-ceo-presentation.ts"
+    "capture:ceo-presentation": "tsx scripts/capture-ceo-presentation.ts",
+    "diagnose:storage": "tsx scripts/diagnose-storage.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

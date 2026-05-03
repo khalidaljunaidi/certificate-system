@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentAuthenticatedUser } from "@/lib/auth";
 import { canViewPayments, shouldScopePaymentsToAssignedRecords } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { downloadStorageObject } from "@/server/services/storage-service";
+import { downloadProjectVendorPaymentInvoice } from "@/server/services/storage-service";
 
 type PaymentInvoiceRouteProps = {
   params: Promise<{
@@ -50,10 +50,10 @@ export async function GET(_: Request, { params }: PaymentInvoiceRouteProps) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const buffer = await downloadStorageObject(installment.invoiceStoragePath);
+  const buffer = await downloadProjectVendorPaymentInvoice(installment.invoiceStoragePath);
 
   if (!buffer) {
-    return new NextResponse("Invoice storage is not configured", { status: 404 });
+    return new NextResponse("File must be re-uploaded", { status: 404 });
   }
 
   return new NextResponse(Buffer.from(buffer), {
@@ -63,4 +63,3 @@ export async function GET(_: Request, { params }: PaymentInvoiceRouteProps) {
     },
   });
 }
-

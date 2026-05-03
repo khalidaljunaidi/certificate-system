@@ -4,21 +4,71 @@ import path from "node:path";
 import { createClient } from "@supabase/supabase-js";
 
 import {
-  getSupabaseBucket,
   getSupabaseServiceRoleKey,
   getSupabaseUrl,
 } from "@/lib/env";
+
+export const STORAGE_BUCKETS = {
+  vendorRegistration:
+    process.env.SUPABASE_STORAGE_BUCKET_VENDOR_REGISTRATION ??
+    process.env.SUPABASE_VENDOR_REGISTRATION_ATTACHMENTS_BUCKET ??
+    process.env.SUPABASE_STORAGE_BUCKET ??
+    "vendor-registration-attachments",
+  certificates:
+    process.env.SUPABASE_STORAGE_BUCKET_CERTIFICATES ?? "certificate-pdfs",
+  paymentInvoices:
+    process.env.SUPABASE_STORAGE_BUCKET_PAYMENT_INVOICES ?? "payment-invoices",
+  reports: process.env.SUPABASE_STORAGE_BUCKET_REPORTS ?? "report-exports",
+  general: process.env.SUPABASE_STORAGE_BUCKET_GENERAL ?? "general-attachments",
+} as const;
+
+type StorageBucket = string;
+
+type UploadFileInput = {
+  bucket: StorageBucket;
+  path: string;
+  buffer: Buffer;
+  contentType: string;
+  upsert?: boolean;
+};
+
+type StorageObjectInput = {
+  bucket: StorageBucket;
+  path: string;
+};
+
+const checkedBuckets = new Set<string>();
 
 function isStorageConfigured() {
   return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 }
 
-function isProductionStorageRuntime() {
-  return Boolean(process.env.VERCEL || process.env.NODE_ENV === "production");
+function shouldUseSupabaseStorage() {
+  return Boolean(process.env.VERCEL || process.env.NODE_ENV === "production" || isStorageConfigured());
+}
+
+function assertSupabaseStorageConfigured() {
+  if (!isStorageConfigured()) {
+    throw new Error(
+      "Supabase Storage is required for persistent file storage. Configure SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+    );
+  }
+}
+
+function normalizeSupabaseUrl() {
+  const url = getSupabaseUrl().trim().replace(/\/+$/g, "");
+
+  if (url.includes("/storage/v1")) {
+    throw new Error(
+      "SUPABASE_URL must be the Supabase project URL, not the Storage API URL.",
+    );
+  }
+
+  return url;
 }
 
 function getSupabaseAdminClient() {
-  return createClient(getSupabaseUrl(), getSupabaseServiceRoleKey(), {
+  return createClient(normalizeSupabaseUrl(), getSupabaseServiceRoleKey(), {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
@@ -26,21 +76,67 @@ function getSupabaseAdminClient() {
   });
 }
 
-function getVendorRegistrationAttachmentsBucket() {
-  return (
-    process.env.SUPABASE_VENDOR_REGISTRATION_ATTACHMENTS_BUCKET ??
-    process.env.SUPABASE_STORAGE_BUCKET ??
-    "vendor-registration-attachments"
-  );
+function normalizeBucketName(bucket: string) {
+  const normalized = bucket.trim().replace(/^\/+|\/+$/g, "");
+
+  if (!normalized) {
+    throw new Error("Storage bucket name is required.");
+  }
+
+  if (/^https?:\/\//i.test(normalized) || normalized.includes("/")) {
+    throw new Error(
+      `Storage bucket name must be plain, not a URL or path: ${bucket}`,
+    );
+  }
+
+  if (!/^[A-Za-z0-9._-]+$/.test(normalized)) {
+    throw new Error(
+      `Storage bucket name contains unsupported characters: ${bucket}`,
+    );
+  }
+
+  return normalized;
 }
 
-function sanitizeStorageSegment(value: string) {
-  return value
+function normalizeObjectPath(objectPath: string) {
+  const normalized = objectPath
+    .trim()
+    .replaceAll("\\", "/")
+    .replace(/^\/+/, "")
+    .replace(/\/{2,}/g, "/");
+
+  if (!normalized) {
+    throw new Error("Storage object path is required.");
+  }
+
+  if (/^https?:\/\//i.test(normalized)) {
+    throw new Error("Storage object path must not be a URL.");
+  }
+
+  if (
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../")
+  ) {
+    throw new Error("Storage object path must not include parent traversal.");
+  }
+
+  return normalized;
+}
+
+export function sanitizeStorageFileName(value: string) {
+  const normalized = value
     .trim()
     .toLowerCase()
     .replaceAll(/[^a-z0-9._-]+/g, "-")
     .replaceAll(/-+/g, "-")
     .replaceAll(/^-|-$/g, "");
+
+  return normalized || "file";
+}
+
+function sanitizeStorageSegment(value: string) {
+  return sanitizeStorageFileName(value).replaceAll(".", "-");
 }
 
 function isSupabaseNotFoundError(error: unknown) {
@@ -76,18 +172,15 @@ export function getWritableStorageRoot() {
         );
   }
 
-  if (process.env.VERCEL || process.env.NODE_ENV === "production") {
-    return path.join("/tmp", "tg-certificate-system");
-  }
-
   return path.join(/*turbopackIgnore: true*/ process.cwd(), ".storage");
 }
 
-function resolveLocalStoragePath(storagePath: string) {
+function resolveLocalStoragePath(bucket: string, objectPath: string) {
   const root = getWritableStorageRoot();
   const resolvedPath = path.resolve(
     /*turbopackIgnore: true*/ root,
-    /*turbopackIgnore: true*/ storagePath,
+    /*turbopackIgnore: true*/ bucket,
+    /*turbopackIgnore: true*/ objectPath,
   );
 
   if (resolvedPath !== root && !resolvedPath.startsWith(`${root}${path.sep}`)) {
@@ -97,197 +190,144 @@ function resolveLocalStoragePath(storagePath: string) {
   return resolvedPath;
 }
 
-async function uploadLocalStorageObject(input: {
-  storagePath: string;
-  pdfBuffer: Buffer;
-}) {
-  const targetPath = resolveLocalStoragePath(input.storagePath);
+async function uploadLocalFile(input: UploadFileInput) {
+  const bucket = normalizeBucketName(input.bucket);
+  const objectPath = normalizeObjectPath(input.path);
+  const targetPath = resolveLocalStoragePath(bucket, objectPath);
+
   await fs.mkdir(path.dirname(targetPath), { recursive: true });
-  await fs.writeFile(targetPath, input.pdfBuffer);
+  await fs.writeFile(targetPath, input.buffer);
 
   return {
-    path: input.storagePath,
+    bucket,
+    path: objectPath,
   };
 }
 
-async function ensureSupabaseBucket(client: ReturnType<typeof getSupabaseAdminClient>, bucket: string) {
-  const { data, error } = await client.storage.getBucket(bucket);
+async function downloadLocalFile(input: StorageObjectInput) {
+  try {
+    return await fs.readFile(
+      resolveLocalStoragePath(
+        normalizeBucketName(input.bucket),
+        normalizeObjectPath(input.path),
+      ),
+    );
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return null;
+    }
 
-  if (data && !error) {
-    return;
-  }
-
-  if (error && !isSupabaseNotFoundError(error)) {
-    throw new Error(`Failed to check storage bucket "${bucket}": ${error.message}`);
-  }
-
-  const { error: createError } = await client.storage.createBucket(bucket, {
-    public: false,
-  });
-
-  if (createError && !createError.message.toLowerCase().includes("already exists")) {
-    throw new Error(`Failed to create storage bucket "${bucket}": ${createError.message}`);
+    throw error;
   }
 }
 
-async function uploadSupabaseStorageObject(input: {
-  bucket: string;
-  storagePath: string;
-  pdfBuffer: Buffer;
-  contentType: string;
-  upsert?: boolean;
-}) {
-  const client = getSupabaseAdminClient();
-  await ensureSupabaseBucket(client, input.bucket);
+async function deleteLocalFile(input: StorageObjectInput) {
+  try {
+    await fs.unlink(
+      resolveLocalStoragePath(
+        normalizeBucketName(input.bucket),
+        normalizeObjectPath(input.path),
+      ),
+    );
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return;
+    }
 
-  const { error } = await client.storage
-    .from(input.bucket)
-    .upload(input.storagePath, input.pdfBuffer, {
-      contentType: input.contentType,
-      upsert: input.upsert ?? true,
+    throw error;
+  }
+}
+
+async function ensureSupabaseBucket(
+  client: ReturnType<typeof getSupabaseAdminClient>,
+  bucket: string,
+) {
+  const normalizedBucket = normalizeBucketName(bucket);
+
+  if (checkedBuckets.has(normalizedBucket)) {
+    return normalizedBucket;
+  }
+
+  const { data, error } = await client.storage.getBucket(normalizedBucket);
+
+  if (data && !error) {
+    checkedBuckets.add(normalizedBucket);
+    return normalizedBucket;
+  }
+
+  if (error && isSupabaseNotFoundError(error)) {
+    throw new Error(`Storage bucket is missing: ${normalizedBucket}`);
+  }
+
+  if (error) {
+    throw new Error(
+      `Failed to check storage bucket "${normalizedBucket}": ${error.message}`,
+    );
+  }
+
+  checkedBuckets.add(normalizedBucket);
+  return normalizedBucket;
+}
+
+export async function uploadFile(input: UploadFileInput) {
+  const bucket = normalizeBucketName(input.bucket);
+  const objectPath = normalizeObjectPath(input.path);
+
+  if (!shouldUseSupabaseStorage()) {
+    return uploadLocalFile({
+      ...input,
+      bucket,
+      path: objectPath,
     });
+  }
+
+  assertSupabaseStorageConfigured();
+
+  const client = getSupabaseAdminClient();
+  await ensureSupabaseBucket(client, bucket);
+
+  const { error } = await client.storage.from(bucket).upload(objectPath, input.buffer, {
+    contentType: input.contentType,
+    upsert: input.upsert ?? true,
+  });
 
   if (error) {
     throw new Error(`Failed to upload file: ${error.message}`);
   }
 
   return {
-    path: input.storagePath,
+    bucket,
+    path: objectPath,
   };
 }
 
-async function uploadStorageObject(input: {
-  storagePath: string;
-  pdfBuffer: Buffer;
-  contentType: string;
-  upsert?: boolean;
-  bucket?: string;
-}) {
-  if (!isStorageConfigured()) {
-    return uploadLocalStorageObject(input);
-  }
+export async function downloadFile(input: StorageObjectInput) {
+  const bucket = normalizeBucketName(input.bucket);
+  const objectPath = normalizeObjectPath(input.path);
 
-  return uploadSupabaseStorageObject({
-    ...input,
-    bucket: input.bucket ?? getSupabaseBucket(),
-  });
-}
-
-export async function uploadCertificatePdf(
-  certificateCode: string,
-  pdfBuffer: Buffer,
-) {
-  return uploadStorageObject({
-    storagePath: `certificates/${sanitizeStorageSegment(certificateCode)}.pdf`,
-    pdfBuffer,
-    contentType: "application/pdf",
-  });
-}
-
-export async function uploadVendorRegistrationAttachment(input: {
-  requestNumber: string;
-  attachmentId: string;
-  attachmentType: string;
-  originalFileName: string;
-  buffer: Buffer;
-  mimeType: string;
-}) {
-  if (isProductionStorageRuntime() && !isStorageConfigured()) {
-    throw new Error(
-      "Supabase Storage is required for live vendor registration attachments. Configure SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_STORAGE_BUCKET.",
-    );
-  }
-
-  const safeName = sanitizeStorageSegment(input.originalFileName) || "document";
-  const storagePath = `vendor-registration/${sanitizeStorageSegment(
-    input.requestNumber,
-  )}/${sanitizeStorageSegment(input.attachmentId)}-${safeName}`;
-
-  if (!isProductionStorageRuntime()) {
-    return uploadLocalStorageObject({
-      storagePath,
-      pdfBuffer: input.buffer,
+  if (!shouldUseSupabaseStorage()) {
+    return downloadLocalFile({
+      bucket,
+      path: objectPath,
     });
   }
 
-  return uploadSupabaseStorageObject({
-    bucket: getVendorRegistrationAttachmentsBucket(),
-    storagePath,
-    pdfBuffer: input.buffer,
-    contentType: input.mimeType,
-  });
-}
-
-export async function uploadVendorRegistrationCertificatePdf(
-  requestNumber: string,
-  pdfBuffer: Buffer,
-) {
-  return uploadStorageObject({
-    storagePath: `vendor-registration-certificates/${sanitizeStorageSegment(
-      requestNumber,
-    )}.pdf`,
-    pdfBuffer,
-    contentType: "application/pdf",
-  });
-}
-
-export async function uploadProjectVendorPaymentInvoice(input: {
-  projectVendorId: string;
-  installmentId: string;
-  originalFileName: string;
-  buffer: Buffer;
-  mimeType: string;
-}) {
-  const safeName = sanitizeStorageSegment(input.originalFileName) || "invoice";
-
-  return uploadStorageObject({
-    storagePath: `project-vendor-payments/${sanitizeStorageSegment(
-      input.projectVendorId,
-    )}/${sanitizeStorageSegment(input.installmentId)}/${Date.now()}-${safeName}`,
-    pdfBuffer: input.buffer,
-    contentType: input.mimeType,
-  });
-}
-
-export async function downloadStorageObject(storagePath: string) {
-  if (!isStorageConfigured()) {
-    try {
-      return await fs.readFile(resolveLocalStoragePath(storagePath));
-    } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "code" in error &&
-        error.code === "ENOENT"
-      ) {
-        return null;
-      }
-
-      throw error;
-    }
-  }
+  assertSupabaseStorageConfigured();
 
   const client = getSupabaseAdminClient();
-  const { data, error } = await client.storage
-    .from(getSupabaseBucket())
-    .download(storagePath);
+  await ensureSupabaseBucket(client, bucket);
 
-  if (error) {
-    throw new Error(`Failed to download certificate PDF: ${error.message}`);
-  }
-
-  const arrayBuffer = await data.arrayBuffer();
-  return Buffer.from(arrayBuffer);
-}
-
-async function downloadSupabaseStorageObject(input: {
-  bucket: string;
-  storagePath: string;
-}) {
-  const client = getSupabaseAdminClient();
-  const { data, error } = await client.storage
-    .from(input.bucket)
-    .download(input.storagePath);
+  const { data, error } = await client.storage.from(bucket).download(objectPath);
 
   if (error) {
     if (isSupabaseNotFoundError(error)) {
@@ -301,29 +341,211 @@ async function downloadSupabaseStorageObject(input: {
   return Buffer.from(arrayBuffer);
 }
 
-export async function downloadVendorRegistrationAttachment(storagePath: string) {
-  if (!isProductionStorageRuntime()) {
-    return downloadStorageObject(storagePath);
+export async function fileExists(input: StorageObjectInput) {
+  const buffer = await downloadFile(input);
+  return Boolean(buffer);
+}
+
+export async function deleteFile(input: StorageObjectInput) {
+  const bucket = normalizeBucketName(input.bucket);
+  const objectPath = normalizeObjectPath(input.path);
+
+  if (!shouldUseSupabaseStorage()) {
+    await deleteLocalFile({
+      bucket,
+      path: objectPath,
+    });
+    return;
   }
 
-  if (!isStorageConfigured()) {
+  assertSupabaseStorageConfigured();
+
+  const client = getSupabaseAdminClient();
+  await ensureSupabaseBucket(client, bucket);
+
+  const { error } = await client.storage.from(bucket).remove([objectPath]);
+
+  if (error && !isSupabaseNotFoundError(error)) {
+    throw new Error(`Failed to delete file: ${error.message}`);
+  }
+}
+
+export async function getSignedUrl(input: StorageObjectInput & { expiresIn: number }) {
+  const bucket = normalizeBucketName(input.bucket);
+  const objectPath = normalizeObjectPath(input.path);
+
+  if (!shouldUseSupabaseStorage()) {
     return null;
   }
 
-  return downloadSupabaseStorageObject({
-    bucket: getVendorRegistrationAttachmentsBucket(),
-    storagePath,
+  assertSupabaseStorageConfigured();
+
+  const client = getSupabaseAdminClient();
+  await ensureSupabaseBucket(client, bucket);
+
+  const { data, error } = await client.storage
+    .from(bucket)
+    .createSignedUrl(objectPath, input.expiresIn);
+
+  if (error) {
+    throw new Error(`Failed to create signed URL: ${error.message}`);
+  }
+
+  return data.signedUrl;
+}
+
+async function downloadWithLegacyFallback(input: {
+  bucket: string;
+  path: string;
+  legacyBuckets?: string[];
+}) {
+  const primary = await downloadFile({
+    bucket: input.bucket,
+    path: input.path,
+  });
+
+  if (primary) {
+    return primary;
+  }
+
+  for (const legacyBucket of input.legacyBuckets ?? []) {
+    if (!legacyBucket || legacyBucket === input.bucket) {
+      continue;
+    }
+
+    const fallback = await downloadFile({
+      bucket: legacyBucket,
+      path: input.path,
+    });
+
+    if (fallback) {
+      return fallback;
+    }
+  }
+
+  return null;
+}
+
+function legacyDefaultBucket() {
+  return process.env.SUPABASE_STORAGE_BUCKET;
+}
+
+export async function uploadCertificatePdf(
+  certificateId: string,
+  certificateCode: string,
+  pdfBuffer: Buffer,
+) {
+  return uploadFile({
+    bucket: STORAGE_BUCKETS.certificates,
+    path: `certificates/${sanitizeStorageSegment(certificateId)}/${sanitizeStorageFileName(
+      certificateCode,
+    )}.pdf`,
+    buffer: pdfBuffer,
+    contentType: "application/pdf",
+  });
+}
+
+export async function uploadVendorRegistrationAttachment(input: {
+  requestNumber: string;
+  attachmentId: string;
+  attachmentType: string;
+  originalFileName: string;
+  buffer: Buffer;
+  mimeType: string;
+}) {
+  const safeName = sanitizeStorageFileName(input.originalFileName) || "document";
+
+  return uploadFile({
+    bucket: STORAGE_BUCKETS.vendorRegistration,
+    path: `vendor-registration/${sanitizeStorageSegment(
+      input.requestNumber,
+    )}/${sanitizeStorageSegment(input.attachmentId)}-${safeName}`,
+    buffer: input.buffer,
+    contentType: input.mimeType,
+  });
+}
+
+export async function uploadVendorRegistrationCertificatePdf(
+  requestNumber: string,
+  pdfBuffer: Buffer,
+) {
+  return uploadFile({
+    bucket: STORAGE_BUCKETS.certificates,
+    path: `vendor-registration-certificates/${sanitizeStorageSegment(
+      requestNumber,
+    )}.pdf`,
+    buffer: pdfBuffer,
+    contentType: "application/pdf",
+  });
+}
+
+export async function uploadProjectVendorPaymentInvoice(input: {
+  projectVendorId: string;
+  installmentId: string;
+  originalFileName: string;
+  buffer: Buffer;
+  mimeType: string;
+}) {
+  const safeName = sanitizeStorageFileName(input.originalFileName) || "invoice";
+
+  return uploadFile({
+    bucket: STORAGE_BUCKETS.paymentInvoices,
+    path: `payments/${sanitizeStorageSegment(
+      input.projectVendorId,
+    )}/invoices/${sanitizeStorageSegment(input.installmentId)}-${safeName}`,
+    buffer: input.buffer,
+    contentType: input.mimeType,
+  });
+}
+
+export async function uploadReportExport(input: {
+  reportType: string;
+  exportId: string;
+  originalFileName: string;
+  buffer: Buffer;
+  mimeType: string;
+}) {
+  return uploadFile({
+    bucket: STORAGE_BUCKETS.reports,
+    path: `reports/${sanitizeStorageSegment(input.reportType)}/${sanitizeStorageSegment(
+      input.exportId,
+    )}-${sanitizeStorageFileName(input.originalFileName)}`,
+    buffer: input.buffer,
+    contentType: input.mimeType,
+  });
+}
+
+export async function downloadStorageObject(storagePath: string) {
+  return downloadWithLegacyFallback({
+    bucket: STORAGE_BUCKETS.certificates,
+    path: storagePath,
+    legacyBuckets: [legacyDefaultBucket()].filter(Boolean) as string[],
+  });
+}
+
+export async function downloadVendorRegistrationAttachment(storagePath: string) {
+  return downloadWithLegacyFallback({
+    bucket: STORAGE_BUCKETS.vendorRegistration,
+    path: storagePath,
+    legacyBuckets: [
+      process.env.SUPABASE_VENDOR_REGISTRATION_ATTACHMENTS_BUCKET,
+      legacyDefaultBucket(),
+    ].filter(Boolean) as string[],
+  });
+}
+
+export async function downloadProjectVendorPaymentInvoice(storagePath: string) {
+  return downloadWithLegacyFallback({
+    bucket: STORAGE_BUCKETS.paymentInvoices,
+    path: storagePath,
+    legacyBuckets: [legacyDefaultBucket()].filter(Boolean) as string[],
   });
 }
 
 export async function downloadCertificatePdf(storagePath: string) {
-  try {
-    return await downloadStorageObject(storagePath);
-  } catch (error) {
-    if (error instanceof Error) {
-      throw new Error(`Failed to download certificate PDF: ${error.message}`);
-    }
-
-    throw error;
-  }
+  return downloadWithLegacyFallback({
+    bucket: STORAGE_BUCKETS.certificates,
+    path: storagePath,
+    legacyBuckets: [legacyDefaultBucket()].filter(Boolean) as string[],
+  });
 }

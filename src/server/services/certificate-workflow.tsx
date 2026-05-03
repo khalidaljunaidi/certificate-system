@@ -899,6 +899,7 @@ export async function issueCertificate(input: {
 
   const pdfBuffer = await generateCertificatePdfBuffer(certificate);
   const uploadResult = await uploadCertificatePdf(
+    certificate.id,
     certificate.certificateCode,
     pdfBuffer,
   );
