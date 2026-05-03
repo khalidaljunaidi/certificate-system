@@ -5,6 +5,7 @@ import {
   archiveCertificateAction,
   duplicateCertificateAction,
   issueCertificateAction,
+  regenerateCertificatePdfAction,
   reopenCertificateAction,
   submitForPmApprovalAction,
   unarchiveCertificateAction,
@@ -100,6 +101,13 @@ export default async function CertificateDetailPage({
         />
       ) : null}
 
+      {feedback.notice === "certificate-pdf-regenerated" ? (
+        <PageNotice
+          title="PDF regenerated"
+          body="The stored certificate PDF was regenerated with the latest template. Certificate data and code were not changed."
+        />
+      ) : null}
+
       {certificate.isArchived ? (
         <PageNotice
           tone="warning"
@@ -140,6 +148,15 @@ export default async function CertificateDetailPage({
             <Button asChild variant="secondary">
               <a href={certificate.pdfUrl}>Download PDF</a>
             </Button>
+          ) : null}
+          {certificate.status === "ISSUED" && !certificate.isArchived ? (
+            <form action={regenerateCertificatePdfAction}>
+              <input type="hidden" name="projectId" value={projectId} />
+              <input type="hidden" name="certificateId" value={certificate.id} />
+              <Button type="submit" variant="secondary">
+                Regenerate PDF
+              </Button>
+            </form>
           ) : null}
         </div>
       </section>

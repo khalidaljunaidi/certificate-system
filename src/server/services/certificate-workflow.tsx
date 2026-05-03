@@ -982,6 +982,62 @@ export async function issueCertificate(input: {
   };
 }
 
+export async function regenerateCertificatePdf(input: {
+  userId: string;
+  values: z.infer<typeof issueCertificateSchema>;
+}) {
+  const certificate = await getCertificateForPdf(input.values.certificateId);
+
+  if (!certificate) {
+    throw new Error("Certificate not found.");
+  }
+
+  if (certificate.isArchived) {
+    throw new Error(
+      "Archived certificates must be restored before their PDF can be regenerated.",
+    );
+  }
+
+  if (certificate.status !== "ISSUED") {
+    throw new Error("Only issued certificates can have their PDF regenerated.");
+  }
+
+  const pdfBuffer = await generateCertificatePdfBuffer(certificate);
+  const uploadResult = await uploadCertificatePdf(
+    certificate.id,
+    certificate.certificateCode,
+    pdfBuffer,
+  );
+  const stablePdfUrl = `/api/certificates/${certificate.id}/pdf`;
+
+  if (
+    certificate.pdfStoragePath !== uploadResult.path ||
+    certificate.pdfUrl !== stablePdfUrl
+  ) {
+    await prisma.certificate.update({
+      where: {
+        id: certificate.id,
+      },
+      data: {
+        pdfUrl: stablePdfUrl,
+        pdfStoragePath: uploadResult.path,
+      },
+    });
+  }
+
+  console.info("[certificate-workflow] certificate PDF regenerated", {
+    certificateId: certificate.id,
+    certificateCode: certificate.certificateCode,
+    pdfStoragePath: uploadResult.path,
+    userId: input.userId,
+  });
+
+  return {
+    pdfUrl: stablePdfUrl,
+    pdfStoragePath: uploadResult.path,
+  };
+}
+
 export async function reopenCertificate(input: {
   userId: string;
   userName: string;

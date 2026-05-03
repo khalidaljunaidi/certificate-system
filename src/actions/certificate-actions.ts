@@ -20,6 +20,7 @@ import {
   archiveCertificate,
   duplicateCertificateDraft,
   issueCertificate,
+  regenerateCertificatePdf,
   reopenCertificate,
   revokeCertificate,
   saveCertificateDraft,
@@ -293,6 +294,43 @@ export async function issueCertificateAction(formData: FormData) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unable to issue certificate.";
+
+    redirectPath = buildCertificateDetailPath(projectId, certificateId, {
+      error: message,
+    });
+  }
+
+  redirect(redirectPath);
+}
+
+export async function regenerateCertificatePdfAction(formData: FormData) {
+  const session = await requireAdminSession();
+  const projectId = String(formData.get("projectId"));
+  const certificateId = String(formData.get("certificateId"));
+  let redirectPath: string;
+
+  try {
+    const values = issueCertificateSchema.parse({
+      certificateId,
+    });
+
+    await regenerateCertificatePdf({
+      userId: session.user.id,
+      values,
+    });
+
+    revalidatePath(`/admin/projects/${projectId}`);
+    revalidatePath(`/admin/projects/${projectId}/certificates`);
+    revalidatePath(`/admin/projects/${projectId}/certificates/${certificateId}`);
+    revalidatePath("/admin/certificates");
+    revalidatePath("/admin", "layout");
+
+    redirectPath = buildCertificateDetailPath(projectId, certificateId, {
+      notice: "certificate-pdf-regenerated",
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unable to regenerate PDF.";
 
     redirectPath = buildCertificateDetailPath(projectId, certificateId, {
       error: message,
