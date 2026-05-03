@@ -3,11 +3,10 @@ import { notFound } from "next/navigation";
 
 import { OdooSyncStatusCard } from "@/components/admin/odoo-sync-status-card";
 import { PageNotice } from "@/components/admin/page-notice";
-import { replaceVendorRegistrationAttachmentAction } from "@/actions/vendor-registration-actions";
+import { VendorRegistrationAttachmentReplaceForm } from "@/components/forms/vendor-registration-attachment-replace-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { requireAdminSession } from "@/lib/auth";
 import { canManageVendorGovernance } from "@/lib/permissions";
 import { formatDate, formatDateTime } from "@/lib/utils";
@@ -285,37 +284,9 @@ export default async function VendorRegistrationDetailPage({
                       <summary className="cursor-pointer text-xs font-medium text-[var(--color-muted)]">
                         Replace stored file
                       </summary>
-                      <form
-                        action={replaceVendorRegistrationAttachmentAction}
-                        className="mt-3 grid gap-3"
-                      >
-                        <input
-                          type="hidden"
-                          name="attachmentId"
-                          value={attachment.id}
-                        />
-                        <input
-                          type="hidden"
-                          name="redirectTo"
-                          value={`/admin/vendor-registrations/${request.id}`}
-                        />
-                        <Input
-                          name="attachmentFile"
-                          type="file"
-                          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                          required
-                          className="file:mr-4 file:rounded-full file:border-0 file:bg-[var(--color-panel-soft)] file:px-4 file:py-2 file:text-xs file:font-semibold file:text-[var(--color-ink)]"
-                        />
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs leading-5 text-[var(--color-muted)]">
-                            Use this when the old metadata exists but the stored
-                            file is missing. PDF, JPG, or PNG, max 10MB.
-                          </p>
-                          <Button type="submit" size="sm">
-                            Upload File
-                          </Button>
-                        </div>
-                      </form>
+                      <VendorRegistrationAttachmentReplaceForm
+                        attachmentId={attachment.id}
+                      />
                     </details>
                   </div>
                 ))

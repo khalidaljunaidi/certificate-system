@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import type { z } from "zod";
 
@@ -701,61 +700,81 @@ export async function reviewVendorRegistrationAction(
 }
 
 export async function replaceVendorRegistrationAttachmentAction(
+  prevState: ActionState = EMPTY_ACTION_STATE,
   formData: FormData,
-): Promise<void> {
-  const redirectTo = String(
-    formData.get("redirectTo") ?? "/admin/vendor-registrations",
-  );
-  let nextUrl = withNotice(redirectTo, "attachment-updated");
-
+): Promise<ActionState> {
   try {
+    void prevState;
     const session = await requireAdminSession();
 
     if (!canManageVendorGovernance(session.user)) {
-      nextUrl = withNotice(redirectTo, "attachment-update-denied");
-    } else {
-      const attachmentId = String(formData.get("attachmentId") ?? "");
-      const file = formData.get("attachmentFile");
-
-      if (!attachmentId) {
-        nextUrl = withNotice(redirectTo, "attachment-update-failed");
-      } else if (!(file instanceof File) || file.size === 0) {
-        nextUrl = withNotice(redirectTo, "attachment-update-failed");
-      } else {
-        const fileError = validateSupplierRegistrationFile(
-          file,
-          "replacementAttachment",
-        );
-
-        if (fileError) {
-          nextUrl = withNotice(redirectTo, "attachment-update-failed");
-        } else {
-          const result = await replaceVendorRegistrationAttachment({
-            attachmentId,
-            file,
-            userId: session.user.id,
-          });
-
-          revalidatePath("/admin/vendor-registrations");
-          revalidatePath(`/admin/vendor-registrations/${result.requestId}`);
-        }
-      }
+      return {
+        error: "You do not have permission to replace supplier registration attachments.",
+      };
     }
+
+    const attachmentId = String(formData.get("attachmentId") ?? "");
+    const file = formData.get("attachmentFile");
+
+    if (!attachmentId) {
+      return {
+        error: "Attachment update failed. Please try again.",
+        fieldErrors: {
+          attachmentId: ["Attachment record is missing."],
+        },
+      };
+    }
+
+    if (!(file instanceof File) || file.size === 0) {
+      return {
+        error: "Please choose a replacement file.",
+        fieldErrors: {
+          attachmentFile: ["Please choose a replacement file."],
+        },
+      };
+    }
+
+    const fileError = validateSupplierRegistrationFile(
+      file,
+      "replacementAttachment",
+    );
+
+    if (fileError) {
+      return {
+        error: fileError,
+        fieldErrors: {
+          attachmentFile: [fileError],
+        },
+      };
+    }
+
+    const result = await replaceVendorRegistrationAttachment({
+      attachmentId,
+      file,
+      userId: session.user.id,
+    });
+
+    revalidatePath("/admin/vendor-registrations");
+    revalidatePath(`/admin/vendor-registrations/${result.requestId}`);
+
+    return {
+      success: "Attachment updated successfully.",
+      noticeKey: "attachment-updated",
+    };
   } catch (error) {
     await logSystemError({
       action: "VendorRegistrationAttachmentReplace",
       error,
       severity: "ERROR",
       context: {
-        redirectTo,
         attachmentId: String(formData.get("attachmentId") ?? ""),
       },
     });
 
-    nextUrl = withNotice(redirectTo, "attachment-update-failed");
+    return {
+      error: "Attachment update failed. Please try again.",
+    };
   }
-
-  redirect(nextUrl);
 }
 
 export async function retryOdooVendorSyncAction(
