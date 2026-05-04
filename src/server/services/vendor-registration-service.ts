@@ -21,6 +21,10 @@ import { createAuditLog } from "@/server/services/audit-service";
 import { createWorkflowNotification } from "@/server/services/notification-service";
 import { sendDirectWorkflowEmail } from "@/server/services/email-service";
 import {
+  vendorApprovedTemplate,
+  vendorRejectedTemplate,
+} from "@/server/notifications/vendor-email-templates";
+import {
   uploadVendorRegistrationAttachment,
   uploadVendorRegistrationCertificatePdf,
 } from "@/server/services/storage-service";
@@ -1185,13 +1189,21 @@ export async function approveVendorRegistrationRequest(input: {
   const pdfVerificationUrl = buildVendorRegistrationVerificationUrl(
     request.requestNumber,
   );
+  const approvedEmail = vendorApprovedTemplate({
+    vendorName: request.companyName,
+    requestNumber: request.requestNumber,
+  });
 
   await sendDirectWorkflowEmail({
     label: "vendor-registration-approved",
     to: [normalizeEmail(request.companyEmail)],
     cc: Array.from(PROCUREMENT_TEAM_EMAILS),
-    subject: `Vendor Registration Approved - ${request.companyName}`,
-    react: createElement("div", null, "Your supplier registration has been approved."),
+    subject: approvedEmail.subject,
+    react: createElement("div", {
+      dangerouslySetInnerHTML: {
+        __html: approvedEmail.html,
+      },
+    }),
     attachments: [
       {
         filename: `vendor-registration-${request.requestNumber}.pdf`,
@@ -1312,12 +1324,22 @@ export async function rejectVendorRegistrationRequest(input: {
     return next;
   });
 
+  const rejectedEmail = vendorRejectedTemplate({
+    vendorName: request.companyName,
+    requestNumber: request.requestNumber,
+    reason: input.values.rejectionReason,
+  });
+
   await sendDirectWorkflowEmail({
     label: "vendor-registration-rejected",
     to: [normalizeEmail(request.companyEmail)],
     cc: Array.from(PROCUREMENT_TEAM_EMAILS),
-    subject: `Vendor Registration Update - ${request.companyName}`,
-    react: createElement("div", null, "Your supplier registration has been reviewed."),
+    subject: rejectedEmail.subject,
+    react: createElement("div", {
+      dangerouslySetInnerHTML: {
+        __html: rejectedEmail.html,
+      },
+    }),
     fallback: {
       heading: "Vendor Registration Rejected",
       intro: `Your supplier registration for ${request.companyName} was not approved.`,
