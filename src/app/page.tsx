@@ -19,11 +19,6 @@ export default function Home() {
           }
         }
 
-        @keyframes cinematic-video-zoom {
-          0%, 100% { transform: scale(1.03) translate3d(0, 0, 0); }
-          50% { transform: scale(1.11) translate3d(-1.2%, -0.8%, 0); }
-        }
-
         @keyframes fallback-aurora {
           0%, 100% { transform: translate3d(-3%, -2%, 0) rotate(-3deg) scale(1); opacity: 0.72; }
           50% { transform: translate3d(3%, 2%, 0) rotate(3deg) scale(1.08); opacity: 1; }
@@ -53,10 +48,6 @@ export default function Home() {
           animation: hero-reveal 1100ms cubic-bezier(0.16, 1, 0.3, 1) 160ms both;
         }
 
-        .hero-video {
-          animation: cinematic-video-zoom 26s ease-in-out infinite;
-        }
-
         .fallback-aurora {
           animation: fallback-aurora 16s ease-in-out infinite;
         }
@@ -77,7 +68,6 @@ export default function Home() {
 
         @media (prefers-reduced-motion: reduce) {
           .hero-content,
-          .hero-video,
           .fallback-aurora,
           .gold-sweep,
           .cinematic-noise,
@@ -93,18 +83,6 @@ export default function Home() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.05),transparent_18%),radial-gradient(circle_at_50%_110%,rgba(200,164,92,0.18),transparent_32%)]" />
         <ParticleField />
       </div>
-
-      <video
-        className="hero-video absolute inset-0 h-full w-full object-cover opacity-90"
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="metadata"
-        aria-hidden="true"
-      >
-        <source src="/hero.mp4" type="video/mp4" />
-      </video>
 
       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(6,5,13,0.66)_0%,rgba(8,7,17,0.34)_42%,rgba(8,7,17,0.78)_100%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,0,0,0.04)_0%,rgba(0,0,0,0.22)_42%,rgba(0,0,0,0.82)_100%)]" />
