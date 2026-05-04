@@ -23,6 +23,7 @@
     "cleanup:test-vendor-odoo": "tsx scripts/cleanup-test-vendor-odoo.ts",
     "cleanup:test-project-assignment-history": "tsx scripts/cleanup-test-project-assignment-history.ts",
     "cleanup:corrupted-vendor-registration": "tsx scripts/cleanup-corrupted-vendor-registration.ts",
+    "cleanup:latest-test-vendor-data": "tsx scripts/cleanup-latest-test-vendor-data.ts",
     "capture:ceo-presentation": "tsx scripts/capture-ceo-presentation.ts",
     "diagnose:storage": "tsx scripts/diagnose-storage.ts",
     "diagnose:vendor-registration-attachments": "tsx scripts/diagnose-vendor-registration-attachments.ts"

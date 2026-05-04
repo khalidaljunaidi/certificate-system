@@ -26,6 +26,7 @@ export function VendorRegistrationAttachmentReplaceForm({
     EMPTY_ACTION_STATE,
   );
   const attachmentFileError = state.fieldErrors?.attachmentFile?.[0] ?? null;
+  const showDebug = process.env.NODE_ENV !== "production";
 
   useEffect(() => {
     if (state.success) {
@@ -41,11 +42,13 @@ export function VendorRegistrationAttachmentReplaceForm({
         name="expectedAttachmentType"
         value={documentType}
       />
-      <div className="rounded-[12px] bg-[rgba(49,19,71,0.06)] px-3 py-2 text-[10px] font-medium leading-5 text-[var(--color-muted)]">
-        <p>Attachment ID: {attachmentId}</p>
-        <p>Document Type: {documentType}</p>
-        <p className="break-all">Storage Path: {storagePath}</p>
-      </div>
+      {showDebug ? (
+        <div className="rounded-[12px] bg-[rgba(49,19,71,0.06)] px-3 py-2 text-[10px] font-medium leading-5 text-[var(--color-muted)]">
+          <p>Attachment ID: {attachmentId}</p>
+          <p>Document Type: {documentType}</p>
+          <p className="break-all">Storage Path: {storagePath}</p>
+        </div>
+      ) : null}
       <Input
         name="attachmentFile"
         type="file"

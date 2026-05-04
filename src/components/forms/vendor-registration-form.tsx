@@ -139,6 +139,15 @@ const EMPTY_VENDOR_REGISTRATION_OPTIONS: VendorRegistrationFormOptions = {
   categories: [],
 };
 
+const FALLBACK_COUNTRIES: VendorRegistrationFormOptions["countries"] = [
+  {
+    code: "SA",
+    name: "Saudi Arabia",
+    regionGroup: "MENA",
+    cities: [],
+  },
+];
+
 async function fetchRegistrationOptions<T>(url: string): Promise<T> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 15000);
@@ -656,6 +665,14 @@ export function VendorRegistrationForm({
 }: VendorRegistrationFormProps) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement | null>(null);
+  const mountedRef = useRef(true);
+  const countriesRequestIdRef = useRef(0);
+  const citiesRequestIdRef = useRef(0);
+  const categoriesRequestIdRef = useRef(0);
+  const subcategoriesRequestIdRef = useRef(0);
+  const loadedCityRequestKeysRef = useRef<Set<string>>(new Set());
+  const loadedSubcategoryCategoryIdsRef = useRef<Set<string>>(new Set());
+  const submitLockedRef = useRef(false);
   const [state, formAction, isPending] = useActionState(
     submitVendorRegistrationAction,
     EMPTY_ACTION_STATE,
@@ -663,7 +680,7 @@ export function VendorRegistrationForm({
   const [options, setOptions] =
     useState<VendorRegistrationFormOptions>(initialOptions);
   const [currentStep, setCurrentStep] = useState(0);
-  const [countryCode, setCountryCode] = useState("");
+  const [countryCode, setCountryCode] = useState("SA");
   const [coverageScope, setCoverageScope] =
     useState<CoverageScope>("SPECIFIC_CITIES");
   const [categoryId, setCategoryId] = useState("");
@@ -691,18 +708,31 @@ export function VendorRegistrationForm({
   const [failedCityRequestKey, setFailedCityRequestKey] = useState("");
   const [failedSubcategoryCategoryId, setFailedSubcategoryCategoryId] =
     useState("");
-  const [loadedCityRequestKeys, setLoadedCityRequestKeys] = useState<string[]>(
-    [],
-  );
-  const [loadedSubcategoryCategoryIds, setLoadedSubcategoryCategoryIds] =
-    useState<string[]>([]);
+  const [clientSubmitting, setClientSubmitting] = useState(false);
   const [stepValidationError, setStepValidationError] = useState<string | null>(
     null,
   );
+  const isSubmitting = isPending || clientSubmitting;
+  const effectiveCountryCode = countryCode || "SA";
+
+  const effectiveCountries = useMemo(() => {
+    if (options.countries.length === 0) {
+      return FALLBACK_COUNTRIES;
+    }
+
+    if (options.countries.some((country) => country.code === "SA")) {
+      return options.countries;
+    }
+
+    return [...FALLBACK_COUNTRIES, ...options.countries];
+  }, [options.countries]);
 
   const selectedCountry = useMemo(
-    () => options.countries.find((country) => country.code === countryCode) ?? null,
-    [countryCode, options.countries],
+    () =>
+      effectiveCountries.find(
+        (country) => country.code === effectiveCountryCode,
+      ) ?? null,
+    [effectiveCountries, effectiveCountryCode],
   );
 
   const selectedCategory = useMemo(
@@ -715,9 +745,9 @@ export function VendorRegistrationForm({
     subcategoryOptions.length > 0 &&
     subcategoryIds.length === subcategoryOptions.length;
   const countryGroups = useMemo(() => {
-    const groups = new Map<string, typeof options.countries>();
+    const groups = new Map<string, typeof effectiveCountries>();
 
-    for (const country of options.countries) {
+    for (const country of effectiveCountries) {
       const key = country.regionGroup || "Other";
       const current = groups.get(key) ?? [];
       current.push(country);
@@ -725,19 +755,25 @@ export function VendorRegistrationForm({
     }
 
     return [...groups.entries()];
-  }, [options.countries]);
+  }, [effectiveCountries]);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (
       currentStep < 1 ||
       options.countries.length > 0 ||
-      loadingCountries ||
       countriesLoadFailed
     ) {
       return;
     }
 
-    let cancelled = false;
+    const requestId = countriesRequestIdRef.current + 1;
+    countriesRequestIdRef.current = requestId;
     setLoadingCountries(true);
     setCountriesError(null);
 
@@ -745,7 +781,7 @@ export function VendorRegistrationForm({
       countries: VendorRegistrationFormOptions["countries"];
     }>("/api/vendor-registration/options/countries")
       .then(({ countries }) => {
-        if (cancelled) {
+        if (!mountedRef.current || countriesRequestIdRef.current !== requestId) {
           return;
         }
 
@@ -756,7 +792,7 @@ export function VendorRegistrationForm({
         setCountriesLoadFailed(false);
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (mountedRef.current && countriesRequestIdRef.current === requestId) {
           setCountriesError(
             error instanceof Error
               ? error.message
@@ -766,14 +802,10 @@ export function VendorRegistrationForm({
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (mountedRef.current && countriesRequestIdRef.current === requestId) {
           setLoadingCountries(false);
         }
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [
     countriesLoadFailed,
     currentStep,
@@ -784,13 +816,13 @@ export function VendorRegistrationForm({
     if (
       currentStep < 3 ||
       options.categories.length > 0 ||
-      loadingCategories ||
       categoriesLoadFailed
     ) {
       return;
     }
 
-    let cancelled = false;
+    const requestId = categoriesRequestIdRef.current + 1;
+    categoriesRequestIdRef.current = requestId;
     setLoadingCategories(true);
     setCategoriesError(null);
 
@@ -798,7 +830,7 @@ export function VendorRegistrationForm({
       categories: VendorRegistrationFormOptions["categories"];
     }>("/api/vendor-registration/options/categories")
       .then(({ categories }) => {
-        if (cancelled) {
+        if (!mountedRef.current || categoriesRequestIdRef.current !== requestId) {
           return;
         }
 
@@ -809,7 +841,7 @@ export function VendorRegistrationForm({
         setCategoriesLoadFailed(false);
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (mountedRef.current && categoriesRequestIdRef.current === requestId) {
           setCategoriesError(
             error instanceof Error
               ? error.message
@@ -819,14 +851,10 @@ export function VendorRegistrationForm({
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (mountedRef.current && categoriesRequestIdRef.current === requestId) {
           setLoadingCategories(false);
         }
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [
     categoriesLoadFailed,
     currentStep,
@@ -834,36 +862,30 @@ export function VendorRegistrationForm({
   ]);
 
   useEffect(() => {
-    if (countryCode || options.countries.length === 0) {
+    if (countryCode) {
       return;
     }
 
-    const defaultCountry =
-      options.countries.find((country) => country.code === "SA") ??
-      options.countries[0];
-
-    if (defaultCountry) {
-      setCountryCode(defaultCountry.code);
-    }
-  }, [countryCode, options.countries]);
+    setCountryCode("SA");
+  }, [countryCode]);
 
   useEffect(() => {
-    const cityRequestKey = `${countryCode}:${coverageScope}`;
+    const cityRequestKey = `${effectiveCountryCode}:${coverageScope}`;
 
     if (
-      !countryCode ||
+      !effectiveCountryCode ||
       !selectedCountry ||
       currentStep !== 1 ||
-      loadingCities ||
-      loadedCityRequestKeys.includes(cityRequestKey) ||
+      loadedCityRequestKeysRef.current.has(cityRequestKey) ||
       failedCityRequestKey === cityRequestKey
     ) {
       return;
     }
 
-    let cancelled = false;
+    const requestId = citiesRequestIdRef.current + 1;
+    citiesRequestIdRef.current = requestId;
     const params = new URLSearchParams({
-      countryCode,
+      countryCode: effectiveCountryCode,
       coverageScope,
     });
 
@@ -874,23 +896,22 @@ export function VendorRegistrationForm({
       cities: LazyCityOption[];
     }>(`/api/vendor-registration/options/cities?${params.toString()}`)
       .then(({ cities }) => {
-        if (cancelled) {
+        if (!mountedRef.current || citiesRequestIdRef.current !== requestId) {
           return;
         }
 
         setOptions((current) => ({
           ...current,
-          countries: mergeCityOptions(current.countries, cities),
+          countries: mergeCityOptions(
+            current.countries.length > 0 ? current.countries : effectiveCountries,
+            cities,
+          ),
         }));
-        setLoadedCityRequestKeys((current) =>
-          current.includes(cityRequestKey)
-            ? current
-            : [...current, cityRequestKey],
-        );
+        loadedCityRequestKeysRef.current.add(cityRequestKey);
         setFailedCityRequestKey("");
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (mountedRef.current && citiesRequestIdRef.current === requestId) {
           setCitiesError(
             error instanceof Error
               ? error.message
@@ -900,21 +921,17 @@ export function VendorRegistrationForm({
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (mountedRef.current && citiesRequestIdRef.current === requestId) {
           setLoadingCities(false);
         }
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [
-    countryCode,
+    effectiveCountries,
+    effectiveCountryCode,
     coverageScope,
     currentStep,
     failedCityRequestKey,
-    loadedCityRequestKeys,
-    selectedCountry,
+    selectedCountry?.code,
   ]);
 
   useEffect(() => {
@@ -922,14 +939,14 @@ export function VendorRegistrationForm({
       !categoryId ||
       !selectedCategory ||
       selectedCategory.subcategories.length > 0 ||
-      loadedSubcategoryCategoryIds.includes(categoryId) ||
-      loadingSubcategories ||
+      loadedSubcategoryCategoryIdsRef.current.has(categoryId) ||
       failedSubcategoryCategoryId === categoryId
     ) {
       return;
     }
 
-    let cancelled = false;
+    const requestId = subcategoriesRequestIdRef.current + 1;
+    subcategoriesRequestIdRef.current = requestId;
     const params = new URLSearchParams({
       categoryId,
     });
@@ -941,7 +958,10 @@ export function VendorRegistrationForm({
       subcategories: VendorRegistrationFormOptions["categories"][number]["subcategories"];
     }>(`/api/vendor-registration/options/subcategories?${params.toString()}`)
       .then(({ subcategories }) => {
-        if (cancelled) {
+        if (
+          !mountedRef.current ||
+          subcategoriesRequestIdRef.current !== requestId
+        ) {
           return;
         }
 
@@ -956,13 +976,14 @@ export function VendorRegistrationForm({
               : category,
           ),
         }));
-        setLoadedSubcategoryCategoryIds((current) =>
-          current.includes(categoryId) ? current : [...current, categoryId],
-        );
+        loadedSubcategoryCategoryIdsRef.current.add(categoryId);
         setFailedSubcategoryCategoryId("");
       })
       .catch((error) => {
-        if (!cancelled) {
+        if (
+          mountedRef.current &&
+          subcategoriesRequestIdRef.current === requestId
+        ) {
           setSubcategoriesError(
             error instanceof Error
               ? error.message
@@ -972,19 +993,18 @@ export function VendorRegistrationForm({
         }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (
+          mountedRef.current &&
+          subcategoriesRequestIdRef.current === requestId
+        ) {
           setLoadingSubcategories(false);
         }
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [
     categoryId,
     failedSubcategoryCategoryId,
-    loadedSubcategoryCategoryIds,
-    selectedCategory,
+    selectedCategory?.id,
+    selectedCategory?.subcategories.length,
   ]);
 
   const cityGroups = useMemo(() => {
@@ -995,7 +1015,7 @@ export function VendorRegistrationForm({
     const sourceCities =
       coverageScope === "SPECIFIC_CITIES"
         ? selectedCountry.cities
-        : options.countries
+        : effectiveCountries
             .filter((country) =>
               coverageScope === "ALL_COUNTRY"
                 ? country.code === selectedCountry.code
@@ -1029,28 +1049,28 @@ export function VendorRegistrationForm({
       region,
       cities,
     }));
-  }, [citySearch, coverageScope, options.countries, selectedCountry]);
+  }, [citySearch, coverageScope, effectiveCountries, selectedCountry]);
 
   const selectedCitySummary = useMemo(() => {
     const cityMap = new Map(
-      options.countries.flatMap((country) => country.cities).map((city) => [city.id, city]),
+      effectiveCountries.flatMap((country) => country.cities).map((city) => [city.id, city]),
     );
 
     return selectedCityIds
       .map((cityId) => cityMap.get(cityId)?.name)
       .filter(Boolean) as string[];
-  }, [options.countries, selectedCityIds]);
+  }, [effectiveCountries, selectedCityIds]);
 
   const autoCoverageCityIds = useMemo(
     () =>
-      countryCode
+      effectiveCountryCode
         ? getCoverageCityIds({
-            countries: options.countries,
-            countryCode,
+            countries: effectiveCountries,
+            countryCode: effectiveCountryCode,
             coverageScope,
           })
         : [],
-    [countryCode, coverageScope, options.countries],
+    [effectiveCountryCode, coverageScope, effectiveCountries],
   );
 
   useEffect(() => {
@@ -1120,6 +1140,13 @@ export function VendorRegistrationForm({
       router.replace(state.redirectTo, { scroll: false });
     }
   }, [router, state.redirectTo]);
+
+  useEffect(() => {
+    if (state.error || state.fieldErrors || state.success) {
+      submitLockedRef.current = false;
+      setClientSubmitting(false);
+    }
+  }, [state]);
 
   useEffect(() => {
     const firstInvalidField = Object.keys(state.fieldErrors ?? {})[0];
@@ -1320,6 +1347,10 @@ export function VendorRegistrationForm({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (submitLockedRef.current || isSubmitting) {
+      return;
+    }
+
     if (!validateCurrentStep()) {
       return;
     }
@@ -1332,6 +1363,9 @@ export function VendorRegistrationForm({
       event.currentTarget,
       selectedUploadFiles,
     );
+
+    submitLockedRef.current = true;
+    setClientSubmitting(true);
 
     startTransition(() => {
       formAction(formData);
@@ -1502,7 +1536,7 @@ export function VendorRegistrationForm({
                 <Select
                   id="countryCode"
                   name="countryCode"
-                  value={countryCode}
+                  value={effectiveCountryCode}
                   onChange={(event) => {
                     setCountryCode(event.target.value);
                     setSelectedCityIds([]);
@@ -1510,12 +1544,17 @@ export function VendorRegistrationForm({
                     setCitiesError(null);
                     setFailedCityRequestKey("");
                   }}
-                  disabled={isPending || loadingCountries}
+                  disabled={
+                    isSubmitting ||
+                    (loadingCountries && effectiveCountries.length === 0)
+                  }
                   required
                 >
-                  <option value="">
-                    {loadingCountries ? "Loading countries..." : "Select country"}
-                  </option>
+                  {effectiveCountries.length === 0 ? (
+                    <option value="">
+                      {loadingCountries ? "Loading countries..." : "Select country"}
+                    </option>
+                  ) : null}
                     {countryGroups.map(([region, countries]) => (
                       <optgroup key={region} label={region}>
                         {countries.map((country) => (
@@ -1603,7 +1642,7 @@ export function VendorRegistrationForm({
                             setFailedCityRequestKey("");
                           }}
                           className="h-4 w-4 accent-[var(--color-primary)]"
-                          disabled={isPending || !countryCode}
+                          disabled={isSubmitting || !countryCode}
                         />
                         <span>{label}</span>
                       </label>
@@ -1641,7 +1680,7 @@ export function VendorRegistrationForm({
                         value={citySearch}
                         onChange={(event) => setCitySearch(event.target.value)}
                         placeholder="Search cities by name or region"
-                        disabled={isPending || !selectedCountry}
+                        disabled={isSubmitting || !selectedCountry}
                       />
                     </div>
                     {loadingCities && selectedCountry ? (
@@ -1696,7 +1735,7 @@ export function VendorRegistrationForm({
                                         );
                                       }}
                                       className="mt-1 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]"
-                                      disabled={isPending}
+                                      disabled={isSubmitting}
                                     />
                                     <span className="min-w-0">
                                       <span className="block font-semibold">{city.name}</span>
@@ -1847,7 +1886,10 @@ export function VendorRegistrationForm({
                       setSubcategoriesError(null);
                       setFailedSubcategoryCategoryId("");
                     }}
-                    disabled={isPending || loadingCategories}
+                    disabled={
+                      isSubmitting ||
+                      (loadingCategories && options.categories.length === 0)
+                    }
                     required
                   >
                     <option value="">
@@ -1894,7 +1936,11 @@ export function VendorRegistrationForm({
                           subcategoryOptions.map((subcategory) => subcategory.id),
                         )
                       }
-                      disabled={isPending || !selectedCategory || subcategoryOptions.length === 0}
+                      disabled={
+                        isSubmitting ||
+                        !selectedCategory ||
+                        subcategoryOptions.length === 0
+                      }
                     >
                       Select all
                     </Button>
@@ -1903,7 +1949,7 @@ export function VendorRegistrationForm({
                       variant="secondary"
                       size="sm"
                       onClick={() => setSubcategoryIds([])}
-                      disabled={isPending || subcategoryIds.length === 0}
+                      disabled={isSubmitting || subcategoryIds.length === 0}
                     >
                       Clear selection
                     </Button>
@@ -1960,7 +2006,7 @@ export function VendorRegistrationForm({
                               );
                             }}
                             className="mt-1 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]"
-                            disabled={isPending}
+                            disabled={isSubmitting}
                           />
                           <span className="min-w-0">
                             <span className="block font-semibold">
@@ -2062,7 +2108,7 @@ export function VendorRegistrationForm({
                     label={field.label}
                     helper={field.helper}
                     required={field.required}
-                    isPending={isPending}
+                    isPending={isSubmitting}
                     selectedFile={selectedUploadFiles[field.name] ?? null}
                     error={
                       uploadFieldErrors[field.name] ??
@@ -2169,7 +2215,7 @@ export function VendorRegistrationForm({
               type="button"
               variant="secondary"
               onClick={() => setCurrentStep((step) => Math.max(step - 1, 0))}
-              disabled={currentStep === 0 || isPending}
+              disabled={currentStep === 0 || isSubmitting}
             >
               Back
             </Button>
@@ -2178,13 +2224,13 @@ export function VendorRegistrationForm({
                 <Button
                   type="button"
                   onClick={handleContinue}
-                  disabled={isPending}
+                  disabled={isSubmitting}
                 >
                   Continue
                 </Button>
               ) : (
-                <Button type="submit" disabled={isPending}>
-                  {isPending ? "Submitting..." : "Submit Registration"}
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Submitting..." : "Submit Registration"}
                 </Button>
               )}
             </div>

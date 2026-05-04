@@ -495,7 +495,9 @@ export async function uploadVendorRegistrationAttachment(input: {
     bucket: STORAGE_BUCKETS.vendorRegistration,
     path: `vendor-registration/${sanitizeStorageSegment(
       input.requestNumber,
-    )}/${sanitizeStorageSegment(input.attachmentId)}-${safeName}`,
+    )}/${sanitizeStorageSegment(input.attachmentType)}/${sanitizeStorageSegment(
+      input.attachmentId,
+    )}-${safeName}`,
     buffer: input.buffer,
     contentType: input.mimeType,
   });

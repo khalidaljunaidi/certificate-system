@@ -5,6 +5,11 @@ type VendorApprovedTemplateInput = {
   requestNumber: string;
 };
 
+type VendorSubmittedTemplateInput = VendorApprovedTemplateInput & {
+  submittedAt: Date;
+  reviewUrl: string;
+};
+
 type VendorRejectedTemplateInput = VendorApprovedTemplateInput & {
   reason?: string | null;
 };
@@ -83,18 +88,89 @@ function referenceBlock(requestNumber: string) {
   </table>`;
 }
 
-function statusButton(requestNumber: string, background = "#1b1033") {
-  const statusUrl = buildVendorRegistrationVerificationUrl(requestNumber);
-
+function ctaButton({
+  href,
+  label,
+  background = "#1b1033",
+}: {
+  href: string;
+  label: string;
+  background?: string;
+}) {
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:30px auto 4px;border-collapse:collapse;">
     <tr>
       <td style="border-radius:999px;background:${background};box-shadow:0 12px 28px rgba(27,16,51,0.18);">
-        <a href="${escapeHtml(statusUrl)}" style="display:inline-block;padding:14px 28px;border-radius:999px;color:#ffffff;font-size:14px;line-height:18px;font-weight:700;text-decoration:none;">
-          View Status
+        <a href="${escapeHtml(href)}" style="display:inline-block;padding:14px 28px;border-radius:999px;color:#ffffff;font-size:14px;line-height:18px;font-weight:700;text-decoration:none;">
+          ${escapeHtml(label)}
         </a>
       </td>
     </tr>
   </table>`;
+}
+
+function statusButton(requestNumber: string, background = "#1b1033") {
+  return ctaButton({
+    href: buildVendorRegistrationVerificationUrl(requestNumber),
+    label: "View Status",
+    background,
+  });
+}
+
+function formatSubmittedDate(value: Date) {
+  return new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Riyadh",
+  }).format(value);
+}
+
+export function vendorSubmittedTemplate({
+  vendorName,
+  requestNumber,
+  submittedAt,
+  reviewUrl,
+}: VendorSubmittedTemplateInput) {
+  const safeVendorName = escapeHtml(vendorName);
+  const safeSubmittedAt = escapeHtml(formatSubmittedDate(submittedAt));
+  const body = `
+    <div style="display:inline-block;margin:0 0 16px;padding:7px 11px;border-radius:999px;background:#fff7e6;color:#8a5a12;font-size:11px;line-height:14px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+      New Request
+    </div>
+    <h2 style="margin:0;color:#151019;font-size:26px;line-height:34px;font-weight:700;">Vendor Registration Submitted</h2>
+    <p style="margin:18px 0 0;color:#4d4654;font-size:15px;line-height:26px;">A new supplier registration request has been submitted and is ready for procurement review.</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;border-collapse:collapse;background:#f7f5fa;border:1px solid #e8e0ec;border-radius:12px;">
+      <tr>
+        <td style="padding:16px 18px;border-bottom:1px solid #e8e0ec;">
+          <div style="font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#6b6270;">Vendor / Company</div>
+          <div style="margin-top:5px;font-size:17px;line-height:24px;font-weight:700;color:#1b1033;">${safeVendorName}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:16px 18px;border-bottom:1px solid #e8e0ec;">
+          <div style="font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#6b6270;">Request Number</div>
+          <div style="margin-top:5px;font-size:16px;line-height:24px;font-weight:700;color:#1b1033;">${escapeHtml(requestNumber)}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:16px 18px;">
+          <div style="font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#6b6270;">Submitted Date</div>
+          <div style="margin-top:5px;font-size:15px;line-height:23px;font-weight:700;color:#1b1033;">${safeSubmittedAt}</div>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:0;color:#4d4654;font-size:15px;line-height:26px;">Please review the company details, uploaded documents, category selections, and declaration before approving or rejecting the request.</p>
+    ${ctaButton({ href: reviewUrl, label: "Review Request", background: "#c8a45c" })}
+  `;
+
+  return {
+    subject: `Vendor Registration Submitted - ${vendorName}`,
+    html: buildShell({
+      title: "Vendor Registration Submitted",
+      preheader: `${vendorName} submitted supplier registration request ${requestNumber}.`,
+      accentColor: "#c8a45c",
+      body,
+    }),
+  };
 }
 
 export function vendorApprovedTemplate({

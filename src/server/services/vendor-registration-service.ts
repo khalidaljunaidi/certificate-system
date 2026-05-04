@@ -10,7 +10,11 @@ import { z } from "zod";
 import {
   PROCUREMENT_TEAM_EMAILS,
 } from "@/lib/constants";
-import { buildVendorRegistrationVerificationUrl, compactText } from "@/lib/utils";
+import {
+  absoluteUrl,
+  buildVendorRegistrationVerificationUrl,
+  compactText,
+} from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
 import { formatSupplierCertificateCode } from "@/lib/vendor-registration-certificate";
 import {
@@ -22,9 +26,13 @@ import { createWorkflowNotification } from "@/server/services/notification-servi
 import { sendDirectWorkflowEmail } from "@/server/services/email-service";
 import {
   vendorApprovedTemplate,
+  vendorSubmittedTemplate,
   vendorRejectedTemplate,
 } from "@/server/notifications/vendor-email-templates";
 import {
+  STORAGE_BUCKETS,
+  deleteFile,
+  fileExists,
   uploadVendorRegistrationAttachment,
   uploadVendorRegistrationCertificatePdf,
 } from "@/server/services/storage-service";
@@ -63,6 +71,23 @@ const vendorRegistrationAttachmentLabels: Record<
   FINANCIALS: "Financials",
   BANK_CERTIFICATE: "Bank Certificate",
 };
+
+type BuiltVendorRegistrationAttachment = Awaited<
+  ReturnType<typeof buildAttachmentRecord>
+>;
+type BuiltVendorRegistrationAttachmentEntry = {
+  type: VendorRegistrationAttachmentType;
+  attachment: BuiltVendorRegistrationAttachment;
+};
+
+function debugVendorRegistrationAttachment(
+  event: string,
+  payload: Record<string, unknown>,
+) {
+  if (process.env.NODE_ENV !== "production") {
+    console.info(event, payload);
+  }
+}
 
 export class VendorRegistrationAttachmentUploadError extends Error {
   fieldErrors: Record<string, string[]>;
@@ -505,11 +530,22 @@ async function buildAttachmentRecord(input: {
   const storagePath =
     uploadResult.path ??
     `vendor-registrations/${input.requestNumber}/${input.type}/${Date.now()}-${input.file.name}`;
+  const storageBucket = uploadResult.bucket ?? STORAGE_BUCKETS.vendorRegistration;
 
-  console.info("[vendor-registration-attachment-record]", {
+  const uploadedObjectExists = await fileExists({
+    bucket: storageBucket,
+    path: storagePath,
+  });
+
+  if (!uploadedObjectExists) {
+    throw new Error(`${input.type} upload verification failed.`);
+  }
+
+  debugVendorRegistrationAttachment("[vendor-registration-attachment-record]", {
     documentType: input.type,
     originalFileName: input.file.name || `${input.type}.pdf`,
     sizeBytes: input.file.size,
+    storageBucket,
     storagePath,
   });
 
@@ -517,6 +553,7 @@ async function buildAttachmentRecord(input: {
     id: attachmentId,
     fileName: input.file.name || `${input.type}.pdf`,
     mimeType: input.file.type,
+    storageBucket,
     storagePath,
     sizeBytes: input.file.size,
   };
@@ -526,14 +563,59 @@ function getFileSizeMb(file: File) {
   return Number((file.size / (1024 * 1024)).toFixed(2));
 }
 
+async function deleteUploadedVendorRegistrationAttachment(
+  attachment: BuiltVendorRegistrationAttachment,
+  reason: string,
+) {
+  try {
+    await deleteFile({
+      bucket: attachment.storageBucket ?? STORAGE_BUCKETS.vendorRegistration,
+      path: attachment.storagePath,
+    });
+
+    debugVendorRegistrationAttachment("[vendor-registration-attachment-cleanup]", {
+      reason,
+      attachmentId: attachment.id,
+      storageBucket: attachment.storageBucket ?? STORAGE_BUCKETS.vendorRegistration,
+      storagePath: attachment.storagePath,
+    });
+  } catch (error) {
+    console.warn("[vendor-registration-attachment-cleanup-failed]", {
+      reason,
+      attachmentId: attachment.id,
+      storagePath: attachment.storagePath,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+
+    await logSystemError({
+      action: "VendorRegistrationAttachmentCleanup",
+      error,
+      severity: "WARNING",
+      context: {
+        reason,
+        attachmentId: attachment.id,
+        storagePath: attachment.storagePath,
+      },
+    }).catch(() => undefined);
+  }
+}
+
+async function deleteUploadedVendorRegistrationAttachments(
+  attachmentEntries: BuiltVendorRegistrationAttachmentEntry[],
+  reason: string,
+) {
+  await Promise.all(
+    attachmentEntries.map(({ attachment }) =>
+      deleteUploadedVendorRegistrationAttachment(attachment, reason),
+    ),
+  );
+}
+
 async function buildVendorRegistrationAttachmentEntries(input: {
   requestNumber: string;
   files: Partial<Record<VendorRegistrationAttachmentType, File | undefined>>;
-}) {
-  const attachmentEntries: Array<{
-    type: VendorRegistrationAttachmentType;
-    attachment: Awaited<ReturnType<typeof buildAttachmentRecord>>;
-  }> = [];
+}): Promise<BuiltVendorRegistrationAttachmentEntry[]> {
+  const attachmentEntries: BuiltVendorRegistrationAttachmentEntry[] = [];
   const fieldErrors: Record<string, string[]> = {};
 
   for (const [type, file] of Object.entries(input.files) as Array<
@@ -550,10 +632,11 @@ async function buildVendorRegistrationAttachmentEntries(input: {
         file,
       });
 
-      console.info("[vendor-registration-attachment-entry]", {
+      debugVendorRegistrationAttachment("[vendor-registration-attachment-entry]", {
         documentType: type,
         originalFileName: attachment.fileName,
         sizeBytes: attachment.sizeBytes,
+        storageBucket: attachment.storageBucket,
         storagePath: attachment.storagePath,
       });
 
@@ -593,6 +676,10 @@ async function buildVendorRegistrationAttachmentEntries(input: {
   }
 
   if (Object.keys(fieldErrors).length > 0) {
+    await deleteUploadedVendorRegistrationAttachments(
+      attachmentEntries,
+      "partial-upload-failed",
+    );
     throw new VendorRegistrationAttachmentUploadError(fieldErrors);
   }
 
@@ -662,17 +749,22 @@ export async function submitVendorRegistrationRequest(input: {
     await validateRegistrationCatalog(input.values);
   await validateDuplicateRegistration(input.values);
 
+  const selectedSubcategoryIds = Array.from(
+    new Set(input.values.subcategoryIds),
+  );
   const expandedCityIds = expandCoverageCities({
     countries: lookup.countries,
     countryCode: input.values.countryCode,
     coverageScope: input.values.coverageScope,
-    cityIds: input.values.cityIds,
+    cityIds: Array.from(new Set(input.values.cityIds)),
   });
+  const selectedCityIds = Array.from(new Set(expandedCityIds));
   const requestNumber = await createUniqueRequestNumber();
   const formSnapshot = {
     ...input.values,
-    cityIds: expandedCityIds,
-    selectedSubcategoryCodes: input.values.subcategoryIds,
+    cityIds: selectedCityIds,
+    subcategoryIds: selectedSubcategoryIds,
+    selectedSubcategoryCodes: selectedSubcategoryIds,
     attachments: Object.fromEntries(
       Object.entries(input.files)
         .filter((entry): entry is [string, File] => Boolean(entry[1]))
@@ -735,11 +827,12 @@ export async function submitVendorRegistrationRequest(input: {
           select: {
             id: true,
             requestNumber: true,
+            submittedAt: true,
           },
         });
 
         await tx.vendorRegistrationRequestSubcategory.createMany({
-          data: input.values.subcategoryIds.map((subcategoryId) => ({
+          data: selectedSubcategoryIds.map((subcategoryId) => ({
             requestId: created.id,
             subcategoryId,
           })),
@@ -747,7 +840,7 @@ export async function submitVendorRegistrationRequest(input: {
         });
 
         await tx.vendorRegistrationRequestCity.createMany({
-          data: expandedCityIds.map((cityId) => ({
+          data: selectedCityIds.map((cityId) => ({
             requestId: created.id,
             cityId,
           })),
@@ -782,10 +875,11 @@ export async function submitVendorRegistrationRequest(input: {
         });
 
         for (const { type, attachment } of attachmentEntries) {
-          console.info("[vendor-registration-attachment-persisted]", {
+          debugVendorRegistrationAttachment("[vendor-registration-attachment-persisted]", {
             documentType: type,
             originalFileName: attachment.fileName,
             sizeBytes: attachment.sizeBytes,
+            storageBucket: attachment.storageBucket,
             storagePath: attachment.storagePath,
           });
         }
@@ -810,6 +904,11 @@ export async function submitVendorRegistrationRequest(input: {
       },
     )
     .catch(async (error) => {
+      await deleteUploadedVendorRegistrationAttachments(
+        attachmentEntries,
+        "request-transaction-failed",
+      );
+
       if (isUniqueConstraintError(error, "requestNumber")) {
         console.warn("[vendor-registration] request number collision detected", {
           requestNumber,
@@ -832,11 +931,22 @@ export async function submitVendorRegistrationRequest(input: {
     companyName: input.values.companyName,
   });
 
+  const submittedEmail = vendorSubmittedTemplate({
+    vendorName: input.values.companyName,
+    requestNumber: request.requestNumber,
+    submittedAt: request.submittedAt,
+    reviewUrl: absoluteUrl(`/admin/vendor-registrations/${request.id}`),
+  });
+
   await sendDirectWorkflowEmail({
     label: "vendor-registration-submitted",
     to: Array.from(PROCUREMENT_TEAM_EMAILS),
-    subject: `Vendor Registration Submitted - ${input.values.companyName}`,
-    react: createElement("div", null, "Vendor registration request submitted."),
+    subject: submittedEmail.subject,
+    react: createElement("div", {
+      dangerouslySetInnerHTML: {
+        __html: submittedEmail.html,
+      },
+    }),
     fallback: {
       heading: "Vendor Registration Submitted",
       intro: `${input.values.companyName} has submitted a new vendor registration request for review.`,
@@ -904,7 +1014,7 @@ export async function replaceVendorRegistrationAttachment(input: {
     throw new Error("Attachment record was not found.");
   }
 
-  console.info("[vendor-registration-attachment-replace-before]", {
+  debugVendorRegistrationAttachment("[vendor-registration-attachment-replace-before]", {
     receivedAttachmentId: input.attachmentId,
     existingAttachmentId: current.id,
     existingDocumentType: current.type,
@@ -914,7 +1024,7 @@ export async function replaceVendorRegistrationAttachment(input: {
     existingStoragePath: current.storagePath,
   });
 
-  console.info("[vendor-registration-attachment-replace-uploaded-file]", {
+  debugVendorRegistrationAttachment("[vendor-registration-attachment-replace-uploaded-file]", {
     attachmentId: input.attachmentId,
     expectedDocumentType: input.expectedType,
     fileName: input.file.name,
@@ -935,48 +1045,79 @@ export async function replaceVendorRegistrationAttachment(input: {
     file: input.file,
   });
 
-  await prisma.$transaction(
-    async (tx) => {
-      await tx.vendorRegistrationAttachment.update({
-        where: {
-          id: current.id,
-        },
-        data: {
-          fileName: nextAttachment.fileName,
-          mimeType: nextAttachment.mimeType,
-          storagePath: nextAttachment.storagePath,
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        await tx.vendorRegistrationAttachment.update({
+          where: {
+            id: current.id,
+          },
+          data: {
+            fileName: nextAttachment.fileName,
+            mimeType: nextAttachment.mimeType,
+            storagePath: nextAttachment.storagePath,
+            sizeBytes: nextAttachment.sizeBytes,
+          },
+        });
+
+        debugVendorRegistrationAttachment("[vendor-registration-attachment-replaced]", {
+          attachmentId: current.id,
+          documentType: current.type,
+          originalFileName: nextAttachment.fileName,
           sizeBytes: nextAttachment.sizeBytes,
-        },
-      });
+          storageBucket: nextAttachment.storageBucket,
+          storagePath: nextAttachment.storagePath,
+        });
 
-      console.info("[vendor-registration-attachment-replaced]", {
+        await createAuditLog(tx, {
+          action: "UPDATED",
+          entityType: "VendorRegistrationAttachment",
+          entityId: current.id,
+          userId: input.userId,
+          details: {
+            requestId: current.requestId,
+            requestNumber: current.request.requestNumber,
+            type: current.type,
+            previousFileName: current.fileName,
+            previousStoragePath: current.storagePath,
+            nextFileName: nextAttachment.fileName,
+            nextStoragePath: nextAttachment.storagePath,
+          },
+        });
+      },
+      {
+        timeout: 15000,
+      },
+    );
+  } catch (error) {
+    if (nextAttachment.storagePath !== current.storagePath) {
+      await deleteUploadedVendorRegistrationAttachment(
+        nextAttachment,
+        "replace-transaction-failed",
+      );
+    } else {
+      console.warn("[vendor-registration-attachment-replace-cleanup-skipped]", {
         attachmentId: current.id,
-        documentType: current.type,
-        originalFileName: nextAttachment.fileName,
-        sizeBytes: nextAttachment.sizeBytes,
-        storagePath: nextAttachment.storagePath,
+        reason: "replace-transaction-failed-same-storage-path",
+        storagePath: current.storagePath,
       });
+    }
+    throw error;
+  }
 
-      await createAuditLog(tx, {
-        action: "UPDATED",
-        entityType: "VendorRegistrationAttachment",
-        entityId: current.id,
-        userId: input.userId,
-        details: {
-          requestId: current.requestId,
-          requestNumber: current.request.requestNumber,
-          type: current.type,
-          previousFileName: current.fileName,
-          previousStoragePath: current.storagePath,
-          nextFileName: nextAttachment.fileName,
-          nextStoragePath: nextAttachment.storagePath,
-        },
-      });
-    },
-    {
-      timeout: 15000,
-    },
-  );
+  if (current.storagePath !== nextAttachment.storagePath) {
+    await deleteUploadedVendorRegistrationAttachment(
+      {
+        id: current.id,
+        fileName: current.fileName,
+        mimeType: current.mimeType,
+        storageBucket: STORAGE_BUCKETS.vendorRegistration,
+        storagePath: current.storagePath,
+        sizeBytes: current.sizeBytes,
+      },
+      "replace-superseded-file",
+    );
+  }
 
   const updated = await prisma.vendorRegistrationAttachment.findUnique({
     where: {
@@ -992,7 +1133,7 @@ export async function replaceVendorRegistrationAttachment(input: {
     },
   });
 
-  console.info("[vendor-registration-attachment-replace-after]", {
+  debugVendorRegistrationAttachment("[vendor-registration-attachment-replace-after]", {
     attachmentId: current.id,
     documentType: updated?.type ?? null,
     fileName: updated?.fileName ?? null,

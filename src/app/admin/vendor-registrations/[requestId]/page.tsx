@@ -57,14 +57,10 @@ export default async function VendorRegistrationDetailPage({
     "STAMP",
   ] as const;
   const attachmentDisplayOrderSet = new Set<string>(attachmentDisplayOrder);
-  const attachmentsByType = new Map(
-    request.attachments.map((attachment) => [attachment.type, attachment]),
-  );
+  const showAttachmentDebug = process.env.NODE_ENV !== "production";
   const orderedAttachments = [
-    ...attachmentDisplayOrder
-      .map((type) => attachmentsByType.get(type))
-      .filter((attachment): attachment is (typeof request.attachments)[number] =>
-        Boolean(attachment),
+    ...attachmentDisplayOrder.flatMap((type) =>
+      request.attachments.filter((attachment) => attachment.type === type),
     ),
     ...request.attachments.filter(
       (attachment) => !attachmentDisplayOrderSet.has(attachment.type),
@@ -283,13 +279,15 @@ export default async function VendorRegistrationDetailPage({
                           {attachment.fileName} |{" "}
                           {Math.round(attachment.sizeBytes / 1024)} KB
                         </p>
-                        <div className="mt-3 rounded-[12px] bg-white px-3 py-2 text-[10px] font-medium leading-5 text-[var(--color-muted)]">
-                          <p>Attachment ID: {attachment.id}</p>
-                          <p>Document Type: {attachment.type}</p>
-                          <p className="break-all">
-                            Storage Path: {attachment.storagePath}
-                          </p>
-                        </div>
+                        {showAttachmentDebug ? (
+                          <div className="mt-3 rounded-[12px] bg-white px-3 py-2 text-[10px] font-medium leading-5 text-[var(--color-muted)]">
+                            <p>Attachment ID: {attachment.id}</p>
+                            <p>Document Type: {attachment.type}</p>
+                            <p className="break-all">
+                              Storage Path: {attachment.storagePath}
+                            </p>
+                          </div>
+                        ) : null}
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-2">
                         <Button asChild size="sm" variant="secondary">
