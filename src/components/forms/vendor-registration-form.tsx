@@ -512,24 +512,16 @@ function buildCompleteRegistrationFormData(
   form: HTMLFormElement,
   uploadFiles: SelectedUploadFiles,
 ) {
-  const formData = new FormData();
-
-  for (const element of Array.from(form.elements)) {
-    if (
-      element instanceof HTMLInputElement ||
-      element instanceof HTMLSelectElement ||
-      element instanceof HTMLTextAreaElement
-    ) {
-      appendControlToFormData(formData, element);
-    }
-  }
+  const formData = new FormData(form);
 
   for (const field of ATTACHMENT_FIELDS) {
+    const nativeFile = formData.get(field.name);
     const file = uploadFiles[field.name];
+    const hasNativeFile = nativeFile instanceof File && nativeFile.size > 0;
 
-    formData.delete(field.name);
-
-    if (file) {
+    // Native file inputs are the source of truth. React state is only a
+    // fallback for browsers that drop file values during stepped navigation.
+    if (!hasNativeFile && file) {
       formData.set(field.name, file);
     }
   }
