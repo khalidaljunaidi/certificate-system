@@ -5,6 +5,7 @@ import {
   useActionState,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -139,17 +140,31 @@ const EMPTY_VENDOR_REGISTRATION_OPTIONS: VendorRegistrationFormOptions = {
 };
 
 async function fetchRegistrationOptions<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 15000);
 
-  if (!response.ok) {
-    throw new Error(`Could not load registration options (${response.status}).`);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Could not load registration options (${response.status}).`);
+    }
+
+    return response.json() as Promise<T>;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Loading timed out. Please retry.");
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
-
-  return response.json() as Promise<T>;
 }
 
 function mergeCityOptions(
@@ -258,13 +273,19 @@ function StepPill({
 
 function SectionPanel({
   active,
+  stepIndex,
   children,
 }: {
   active: boolean;
+  stepIndex: number;
   children: ReactNode;
 }) {
   return (
-    <div hidden={!active} className={cn(!active && "hidden")}>
+    <div
+      hidden={!active}
+      data-registration-step={stepIndex}
+      className={cn(!active && "hidden")}
+    >
       {children}
     </div>
   );
@@ -412,6 +433,27 @@ function InlineFieldError({ message }: { message: string | null }) {
     <p className="mt-2 rounded-[14px] bg-[rgba(185,28,28,0.08)] px-3 py-2 text-xs font-medium text-[#991b1b]">
       {message}
     </p>
+  );
+}
+
+function OptionLoadError({
+  message,
+  onRetry,
+}: {
+  message: string | null;
+  onRetry: () => void;
+}) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[rgba(185,28,28,0.18)] bg-[rgba(185,28,28,0.06)] px-4 py-3 text-xs text-[#991b1b]">
+      <span className="font-medium">{message}</span>
+      <Button type="button" size="sm" variant="secondary" onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
   );
 }
 
@@ -613,6 +655,7 @@ export function VendorRegistrationForm({
   options: initialOptions = EMPTY_VENDOR_REGISTRATION_OPTIONS,
 }: VendorRegistrationFormProps) {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement | null>(null);
   const [state, formAction, isPending] = useActionState(
     submitVendorRegistrationAction,
     EMPTY_ACTION_STATE,
@@ -633,14 +676,29 @@ export function VendorRegistrationForm({
   const [uploadFieldErrors, setUploadFieldErrors] = useState<UploadFieldErrors>(
     {},
   );
-  const [optionsError, setOptionsError] = useState<string | null>(null);
   const [loadingCountries, setLoadingCountries] = useState(false);
   const [loadingCities, setLoadingCities] = useState(false);
   const [loadingCategories, setLoadingCategories] = useState(false);
   const [loadingSubcategories, setLoadingSubcategories] = useState(false);
-  const [loadedCityRequestKey, setLoadedCityRequestKey] = useState("");
+  const [countriesError, setCountriesError] = useState<string | null>(null);
+  const [citiesError, setCitiesError] = useState<string | null>(null);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+  const [subcategoriesError, setSubcategoriesError] = useState<string | null>(
+    null,
+  );
+  const [countriesLoadFailed, setCountriesLoadFailed] = useState(false);
+  const [categoriesLoadFailed, setCategoriesLoadFailed] = useState(false);
+  const [failedCityRequestKey, setFailedCityRequestKey] = useState("");
+  const [failedSubcategoryCategoryId, setFailedSubcategoryCategoryId] =
+    useState("");
+  const [loadedCityRequestKeys, setLoadedCityRequestKeys] = useState<string[]>(
+    [],
+  );
   const [loadedSubcategoryCategoryIds, setLoadedSubcategoryCategoryIds] =
     useState<string[]>([]);
+  const [stepValidationError, setStepValidationError] = useState<string | null>(
+    null,
+  );
 
   const selectedCountry = useMemo(
     () => options.countries.find((country) => country.code === countryCode) ?? null,
@@ -670,13 +728,18 @@ export function VendorRegistrationForm({
   }, [options.countries]);
 
   useEffect(() => {
-    if (currentStep < 1 || options.countries.length > 0 || loadingCountries) {
+    if (
+      currentStep < 1 ||
+      options.countries.length > 0 ||
+      loadingCountries ||
+      countriesLoadFailed
+    ) {
       return;
     }
 
     let cancelled = false;
     setLoadingCountries(true);
-    setOptionsError(null);
+    setCountriesError(null);
 
     fetchRegistrationOptions<{
       countries: VendorRegistrationFormOptions["countries"];
@@ -690,14 +753,16 @@ export function VendorRegistrationForm({
           ...current,
           countries,
         }));
+        setCountriesLoadFailed(false);
       })
       .catch((error) => {
         if (!cancelled) {
-          setOptionsError(
+          setCountriesError(
             error instanceof Error
               ? error.message
               : "Could not load registration options.",
           );
+          setCountriesLoadFailed(true);
         }
       })
       .finally(() => {
@@ -709,16 +774,26 @@ export function VendorRegistrationForm({
     return () => {
       cancelled = true;
     };
-  }, [currentStep, loadingCountries, options.countries.length]);
+  }, [
+    countriesLoadFailed,
+    currentStep,
+    loadingCountries,
+    options.countries.length,
+  ]);
 
   useEffect(() => {
-    if (currentStep < 3 || options.categories.length > 0 || loadingCategories) {
+    if (
+      currentStep < 3 ||
+      options.categories.length > 0 ||
+      loadingCategories ||
+      categoriesLoadFailed
+    ) {
       return;
     }
 
     let cancelled = false;
     setLoadingCategories(true);
-    setOptionsError(null);
+    setCategoriesError(null);
 
     fetchRegistrationOptions<{
       categories: VendorRegistrationFormOptions["categories"];
@@ -732,14 +807,16 @@ export function VendorRegistrationForm({
           ...current,
           categories,
         }));
+        setCategoriesLoadFailed(false);
       })
       .catch((error) => {
         if (!cancelled) {
-          setOptionsError(
+          setCategoriesError(
             error instanceof Error
               ? error.message
               : "Could not load registration options.",
           );
+          setCategoriesLoadFailed(true);
         }
       })
       .finally(() => {
@@ -751,16 +828,37 @@ export function VendorRegistrationForm({
     return () => {
       cancelled = true;
     };
-  }, [currentStep, loadingCategories, options.categories.length]);
+  }, [
+    categoriesLoadFailed,
+    currentStep,
+    loadingCategories,
+    options.categories.length,
+  ]);
+
+  useEffect(() => {
+    if (countryCode || options.countries.length === 0) {
+      return;
+    }
+
+    const defaultCountry =
+      options.countries.find((country) => country.code === "SA") ??
+      options.countries[0];
+
+    if (defaultCountry) {
+      setCountryCode(defaultCountry.code);
+    }
+  }, [countryCode, options.countries]);
 
   useEffect(() => {
     const cityRequestKey = `${countryCode}:${coverageScope}`;
 
     if (
       !countryCode ||
+      !selectedCountry ||
       currentStep !== 1 ||
       loadingCities ||
-      loadedCityRequestKey === cityRequestKey
+      loadedCityRequestKeys.includes(cityRequestKey) ||
+      failedCityRequestKey === cityRequestKey
     ) {
       return;
     }
@@ -772,7 +870,7 @@ export function VendorRegistrationForm({
     });
 
     setLoadingCities(true);
-    setOptionsError(null);
+    setCitiesError(null);
 
     fetchRegistrationOptions<{
       cities: LazyCityOption[];
@@ -786,15 +884,21 @@ export function VendorRegistrationForm({
           ...current,
           countries: mergeCityOptions(current.countries, cities),
         }));
-        setLoadedCityRequestKey(cityRequestKey);
+        setLoadedCityRequestKeys((current) =>
+          current.includes(cityRequestKey)
+            ? current
+            : [...current, cityRequestKey],
+        );
+        setFailedCityRequestKey("");
       })
       .catch((error) => {
         if (!cancelled) {
-          setOptionsError(
+          setCitiesError(
             error instanceof Error
               ? error.message
               : "Could not load city options.",
           );
+          setFailedCityRequestKey(cityRequestKey);
         }
       })
       .finally(() => {
@@ -810,8 +914,10 @@ export function VendorRegistrationForm({
     countryCode,
     coverageScope,
     currentStep,
-    loadedCityRequestKey,
+    failedCityRequestKey,
+    loadedCityRequestKeys,
     loadingCities,
+    selectedCountry,
   ]);
 
   useEffect(() => {
@@ -820,7 +926,8 @@ export function VendorRegistrationForm({
       !selectedCategory ||
       selectedCategory.subcategories.length > 0 ||
       loadedSubcategoryCategoryIds.includes(categoryId) ||
-      loadingSubcategories
+      loadingSubcategories ||
+      failedSubcategoryCategoryId === categoryId
     ) {
       return;
     }
@@ -831,7 +938,7 @@ export function VendorRegistrationForm({
     });
 
     setLoadingSubcategories(true);
-    setOptionsError(null);
+    setSubcategoriesError(null);
 
     fetchRegistrationOptions<{
       subcategories: VendorRegistrationFormOptions["categories"][number]["subcategories"];
@@ -852,15 +959,19 @@ export function VendorRegistrationForm({
               : category,
           ),
         }));
-        setLoadedSubcategoryCategoryIds((current) => [...current, categoryId]);
+        setLoadedSubcategoryCategoryIds((current) =>
+          current.includes(categoryId) ? current : [...current, categoryId],
+        );
+        setFailedSubcategoryCategoryId("");
       })
       .catch((error) => {
         if (!cancelled) {
-          setOptionsError(
+          setSubcategoriesError(
             error instanceof Error
               ? error.message
               : "Could not load subcategory options.",
           );
+          setFailedSubcategoryCategoryId(categoryId);
         }
       })
       .finally(() => {
@@ -874,6 +985,7 @@ export function VendorRegistrationForm({
     };
   }, [
     categoryId,
+    failedSubcategoryCategoryId,
     loadedSubcategoryCategoryIds,
     loadingSubcategories,
     selectedCategory,
@@ -979,6 +1091,35 @@ export function VendorRegistrationForm({
   }, [selectedCategory]);
 
   useEffect(() => {
+    if (process.env.NODE_ENV !== "development" || currentStep !== 1) {
+      return;
+    }
+
+    console.info("[supplier-registration-step2]", {
+      countryCode,
+      selectedCountry: selectedCountry?.code ?? null,
+      coverageScope,
+      countries: options.countries.length,
+      selectedCities: selectedCityIds.length,
+      loadingCountries,
+      loadingCities,
+      countriesError,
+      citiesError,
+    });
+  }, [
+    citiesError,
+    countryCode,
+    countriesError,
+    coverageScope,
+    currentStep,
+    loadingCities,
+    loadingCountries,
+    options.countries.length,
+    selectedCityIds.length,
+    selectedCountry,
+  ]);
+
+  useEffect(() => {
     if (state.redirectTo) {
       router.replace(state.redirectTo, { scroll: false });
     }
@@ -998,14 +1139,18 @@ export function VendorRegistrationForm({
   );
   const fieldError = (fieldName: string) =>
     state.fieldErrors?.[fieldName]?.[0] ?? null;
+  const optionsError =
+    countriesError ?? citiesError ?? categoriesError ?? subcategoriesError;
 
   const displayState = optionsError
     ? { error: optionsError }
-    : clientUploadError
-      ? { error: clientUploadError }
-      : serverFieldError
-        ? { error: serverFieldError }
-        : state;
+    : stepValidationError
+      ? { error: stepValidationError }
+      : clientUploadError
+        ? { error: clientUploadError }
+        : serverFieldError
+          ? { error: serverFieldError }
+          : state;
 
   const hiddenCityInputs =
     coverageScope === "SPECIFIC_CITIES" ? (
@@ -1070,8 +1215,118 @@ export function VendorRegistrationForm({
     return true;
   }
 
+  function reportFirstInvalidStepControl() {
+    const stepPanel = formRef.current?.querySelector(
+      `[data-registration-step="${currentStep}"]`,
+    );
+
+    if (!stepPanel) {
+      return true;
+    }
+
+    const controls = Array.from(
+      stepPanel.querySelectorAll<
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+      >("input, select, textarea"),
+    );
+    const firstInvalid = controls.find(
+      (control) =>
+        !control.disabled &&
+        control.type !== "hidden" &&
+        !control.checkValidity(),
+    );
+
+    if (!firstInvalid) {
+      return true;
+    }
+
+    firstInvalid.reportValidity();
+    firstInvalid.focus({ preventScroll: true });
+    setStepValidationError("Please complete the required fields before continuing.");
+    return false;
+  }
+
+  function validateCurrentStep() {
+    setStepValidationError(null);
+
+    if (!reportFirstInvalidStepControl()) {
+      return false;
+    }
+
+    if (currentStep === 1) {
+      if (loadingCountries || loadingCities) {
+        setStepValidationError("Please wait for address options to finish loading.");
+        return false;
+      }
+
+      if (countriesError || citiesError) {
+        setStepValidationError(
+          "Address options could not be loaded. Please retry before continuing.",
+        );
+        return false;
+      }
+
+      if (!countryCode || !selectedCountry) {
+        setStepValidationError("Please select a registered country.");
+        return false;
+      }
+
+      if (
+        coverageScope === "SPECIFIC_CITIES" &&
+        selectedCityIds.length === 0
+      ) {
+        setStepValidationError("Please select at least one operating city.");
+        return false;
+      }
+
+      if (
+        coverageScope !== "SPECIFIC_CITIES" &&
+        autoCoverageCityIds.length === 0
+      ) {
+        setStepValidationError(
+          "Coverage cities could not be resolved. Please retry the city list.",
+        );
+        return false;
+      }
+    }
+
+    if (currentStep === 3) {
+      if (loadingCategories || loadingSubcategories) {
+        setStepValidationError("Please wait for category options to finish loading.");
+        return false;
+      }
+
+      if (categoriesError || subcategoriesError) {
+        setStepValidationError(
+          "Category options could not be loaded. Please retry before continuing.",
+        );
+        return false;
+      }
+
+      if (!categoryId || !selectedCategory) {
+        setStepValidationError("Please select a main category.");
+        return false;
+      }
+
+      if (subcategoryOptions.length > 0 && subcategoryIds.length === 0) {
+        setStepValidationError("Please select at least one subcategory.");
+        return false;
+      }
+    }
+
+    if (currentStep === 6 && !validateUploadsBeforeSubmit()) {
+      return false;
+    }
+
+    return true;
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!validateCurrentStep()) {
+      return;
+    }
 
     if (!validateUploadsBeforeSubmit()) {
       return;
@@ -1088,17 +1343,36 @@ export function VendorRegistrationForm({
   }
 
   function handleContinue() {
-    if (currentStep === 6 && !validateUploadsBeforeSubmit()) {
+    if (!validateCurrentStep()) {
       return;
     }
 
     setCurrentStep((step) => Math.min(step + 1, STEPS.length - 1));
   }
 
+  function handleStepPillClick(index: number) {
+    if (index <= currentStep) {
+      setStepValidationError(null);
+      setCurrentStep(index);
+      return;
+    }
+
+    if (!validateCurrentStep()) {
+      return;
+    }
+
+    setCurrentStep((step) => Math.min(index, step + 1));
+  }
+
   return (
     <form
+      ref={formRef}
       action={formAction}
       onChange={(event) => {
+        if (stepValidationError) {
+          setStepValidationError(null);
+        }
+
         if (
           clientUploadError &&
           event.target instanceof HTMLInputElement &&
@@ -1158,7 +1432,7 @@ export function VendorRegistrationForm({
                     index={index}
                     title={step.title}
                     active={index === currentStep}
-                    onClick={() => setCurrentStep(index)}
+                    onClick={() => handleStepPillClick(index)}
                   />
                 ))}
               </div>
@@ -1167,7 +1441,7 @@ export function VendorRegistrationForm({
 
           <FormStateMessage state={displayState} />
 
-          <SectionPanel active={currentStep === 0}>
+          <SectionPanel active={currentStep === 0} stepIndex={0}>
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <Label htmlFor="companyName">
@@ -1223,7 +1497,7 @@ export function VendorRegistrationForm({
             </div>
           </SectionPanel>
 
-          <SectionPanel active={currentStep === 1}>
+          <SectionPanel active={currentStep === 1} stepIndex={1}>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
                 <Label htmlFor="countryCode">
@@ -1233,8 +1507,15 @@ export function VendorRegistrationForm({
                   id="countryCode"
                   name="countryCode"
                   value={countryCode}
-                  onChange={(event) => setCountryCode(event.target.value)}
+                  onChange={(event) => {
+                    setCountryCode(event.target.value);
+                    setSelectedCityIds([]);
+                    setCitySearch("");
+                    setCitiesError(null);
+                    setFailedCityRequestKey("");
+                  }}
                   disabled={isPending || loadingCountries}
+                  required
                 >
                   <option value="">
                     {loadingCountries ? "Loading countries..." : "Select country"}
@@ -1249,6 +1530,13 @@ export function VendorRegistrationForm({
                       </optgroup>
                     ))}
                 </Select>
+                <OptionLoadError
+                  message={countriesError}
+                  onRetry={() => {
+                    setCountriesError(null);
+                    setCountriesLoadFailed(false);
+                  }}
+                />
               </div>
               <div className="md:col-span-2 rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1273,7 +1561,13 @@ export function VendorRegistrationForm({
                       type="button"
                       variant="secondary"
                       size="sm"
-                      onClick={() => setCoverageScope("ALL_COUNTRY")}
+                      onClick={() => {
+                        setCoverageScope("ALL_COUNTRY");
+                        setSelectedCityIds([]);
+                        setCitySearch("");
+                        setCitiesError(null);
+                        setFailedCityRequestKey("");
+                      }}
                     >
                       All Saudi Cities
                     </Button>
@@ -1305,9 +1599,13 @@ export function VendorRegistrationForm({
                           name="coverageScope"
                           value={option.value}
                           checked={coverageScope === option.value}
-                          onChange={(event) =>
-                            setCoverageScope(event.target.value as CoverageScope)
-                          }
+                          onChange={(event) => {
+                            setCoverageScope(event.target.value as CoverageScope);
+                            setSelectedCityIds([]);
+                            setCitySearch("");
+                            setCitiesError(null);
+                            setFailedCityRequestKey("");
+                          }}
                           className="h-4 w-4 accent-[var(--color-primary)]"
                           disabled={isPending || !countryCode}
                         />
@@ -1332,6 +1630,13 @@ export function VendorRegistrationForm({
                   </div>
                   <Badge variant="neutral">{selectedCityIds.length} selected</Badge>
                 </div>
+                <OptionLoadError
+                  message={citiesError}
+                  onRetry={() => {
+                    setCitiesError(null);
+                    setFailedCityRequestKey("");
+                  }}
+                />
 
                 {coverageScope === "SPECIFIC_CITIES" ? (
                   <div className="mt-4 space-y-4">
@@ -1388,7 +1693,9 @@ export function VendorRegistrationForm({
                                         const nextChecked = event.target.checked;
                                         setSelectedCityIds((current) =>
                                           nextChecked
-                                            ? [...current, city.id]
+                                            ? current.includes(city.id)
+                                              ? current
+                                              : [...current, city.id]
                                             : current.filter((id) => id !== city.id),
                                         );
                                       }}
@@ -1413,28 +1720,34 @@ export function VendorRegistrationForm({
                 ) : (
                   <>
                     {hiddenCityInputs}
-                    <div className="mt-4 rounded-[20px] border border-[rgba(49,19,71,0.14)] bg-[rgba(49,19,71,0.06)] p-4 text-sm leading-7 text-[var(--color-ink)]">
-                      <p className="font-semibold">
-                        {formatCoverageLabel(
-                          coverageScope,
-                          selectedCountry?.name,
-                          selectedCountry?.code,
-                        )}
-                      </p>
-                      <p className="mt-1 text-xs leading-6 text-[var(--color-muted)]">
-                        {selectedCountry
-                          ? `${selectedCityIds.length} cities are selected automatically for this coverage scope.`
-                          : "Select a country to resolve the structured coverage automatically."}
-                      </p>
-                      {selectedCitySummary.length > 0 ? (
-                        <p className="mt-3 text-xs leading-6 text-[var(--color-muted)]">
-                          {selectedCitySummary.slice(0, 4).join(", ")}
-                          {selectedCitySummary.length > 4
-                            ? ` +${selectedCitySummary.length - 4} more`
-                            : ""}
+                    {loadingCities && selectedCountry ? (
+                      <div className="mt-4 rounded-[20px] border border-dashed border-[var(--color-border)] p-5 text-sm leading-7 text-[var(--color-muted)]">
+                        Resolving coverage cities...
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-[20px] border border-[rgba(49,19,71,0.14)] bg-[rgba(49,19,71,0.06)] p-4 text-sm leading-7 text-[var(--color-ink)]">
+                        <p className="font-semibold">
+                          {formatCoverageLabel(
+                            coverageScope,
+                            selectedCountry?.name,
+                            selectedCountry?.code,
+                          )}
                         </p>
-                      ) : null}
-                    </div>
+                        <p className="mt-1 text-xs leading-6 text-[var(--color-muted)]">
+                          {selectedCountry
+                            ? `${selectedCityIds.length} cities are selected automatically for this coverage scope.`
+                            : "Select a country to resolve the structured coverage automatically."}
+                        </p>
+                        {selectedCitySummary.length > 0 ? (
+                          <p className="mt-3 text-xs leading-6 text-[var(--color-muted)]">
+                            {selectedCitySummary.slice(0, 4).join(", ")}
+                            {selectedCitySummary.length > 4
+                              ? ` +${selectedCitySummary.length - 4} more`
+                              : ""}
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -1478,7 +1791,7 @@ export function VendorRegistrationForm({
             </div>
           </SectionPanel>
 
-          <SectionPanel active={currentStep === 2}>
+          <SectionPanel active={currentStep === 2} stepIndex={2}>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
                 <Label htmlFor="businessDescription">
@@ -1521,7 +1834,7 @@ export function VendorRegistrationForm({
             </div>
           </SectionPanel>
 
-          <SectionPanel active={currentStep === 3}>
+          <SectionPanel active={currentStep === 3} stepIndex={3}>
             <div className="space-y-5">
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
@@ -1535,8 +1848,11 @@ export function VendorRegistrationForm({
                     onChange={(event) => {
                       setCategoryId(event.target.value);
                       setSubcategoryIds([]);
+                      setSubcategoriesError(null);
+                      setFailedSubcategoryCategoryId("");
                     }}
                     disabled={isPending || loadingCategories}
+                    required
                   >
                     <option value="">
                       {loadingCategories ? "Loading categories..." : "Select category"}
@@ -1548,6 +1864,13 @@ export function VendorRegistrationForm({
                       </option>
                     ))}
                   </Select>
+                  <OptionLoadError
+                    message={categoriesError}
+                    onRetry={() => {
+                      setCategoriesError(null);
+                      setCategoriesLoadFailed(false);
+                    }}
+                  />
                 </div>
               </div>
 
@@ -1590,6 +1913,13 @@ export function VendorRegistrationForm({
                     </Button>
                   </div>
                 </div>
+                <OptionLoadError
+                  message={subcategoriesError}
+                  onRetry={() => {
+                    setSubcategoriesError(null);
+                    setFailedSubcategoryCategoryId("");
+                  }}
+                />
 
                 {loadingSubcategories && selectedCategory ? (
                   <div className="mt-4 rounded-[20px] border border-dashed border-[var(--color-border)] p-5 text-sm leading-7 text-[var(--color-muted)]">
@@ -1627,7 +1957,9 @@ export function VendorRegistrationForm({
                               const nextChecked = event.target.checked;
                               setSubcategoryIds((current) =>
                                 nextChecked
-                                  ? [...current, subcategory.id]
+                                  ? current.includes(subcategory.id)
+                                    ? current
+                                    : [...current, subcategory.id]
                                   : current.filter((id) => id !== subcategory.id),
                               );
                             }}
@@ -1676,7 +2008,7 @@ export function VendorRegistrationForm({
             </div>
           </SectionPanel>
 
-          <SectionPanel active={currentStep === 4}>
+          <SectionPanel active={currentStep === 4} stepIndex={4}>
             <div className="space-y-4">
               <ReferenceGroup index={1} isPending={isPending} />
               <ReferenceGroup index={2} isPending={isPending} />
@@ -1684,7 +2016,7 @@ export function VendorRegistrationForm({
             </div>
           </SectionPanel>
 
-          <SectionPanel active={currentStep === 5}>
+          <SectionPanel active={currentStep === 5} stepIndex={5}>
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <Label htmlFor="bankName">
@@ -1724,7 +2056,7 @@ export function VendorRegistrationForm({
             </div>
           </SectionPanel>
 
-          <SectionPanel active={currentStep === 6}>
+          <SectionPanel active={currentStep === 6} stepIndex={6}>
             <div className="space-y-6">
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {ATTACHMENT_FIELDS.map((field) => (
@@ -1763,7 +2095,7 @@ export function VendorRegistrationForm({
             </div>
           </SectionPanel>
 
-          <SectionPanel active={currentStep === 7}>
+          <SectionPanel active={currentStep === 7} stepIndex={7}>
             <div className="space-y-6">
               <div className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-5">
                 <p className="text-sm font-semibold text-[var(--color-ink)]">
