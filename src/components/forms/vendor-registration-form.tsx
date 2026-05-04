@@ -777,7 +777,6 @@ export function VendorRegistrationForm({
   }, [
     countriesLoadFailed,
     currentStep,
-    loadingCountries,
     options.countries.length,
   ]);
 
@@ -831,7 +830,6 @@ export function VendorRegistrationForm({
   }, [
     categoriesLoadFailed,
     currentStep,
-    loadingCategories,
     options.categories.length,
   ]);
 
@@ -916,7 +914,6 @@ export function VendorRegistrationForm({
     currentStep,
     failedCityRequestKey,
     loadedCityRequestKeys,
-    loadingCities,
     selectedCountry,
   ]);
 
@@ -987,7 +984,6 @@ export function VendorRegistrationForm({
     categoryId,
     failedSubcategoryCategoryId,
     loadedSubcategoryCategoryIds,
-    loadingSubcategories,
     selectedCategory,
   ]);
 
