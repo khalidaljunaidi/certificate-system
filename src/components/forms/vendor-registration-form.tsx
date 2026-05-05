@@ -121,6 +121,16 @@ const ATTACHMENT_FIELDS = [
 type AttachmentFieldName = (typeof ATTACHMENT_FIELDS)[number]["name"];
 type SelectedUploadFiles = Partial<Record<AttachmentFieldName, File>>;
 type UploadFieldErrors = Partial<Record<AttachmentFieldName, string>>;
+type SubmitBlockingField = {
+  field: string;
+  label: string;
+  message: string;
+};
+type SubmitBlockingGroup = {
+  group: string;
+  stepIndex: number;
+  fields: SubmitBlockingField[];
+};
 
 type VendorRegistrationFormProps = {
   options?: VendorRegistrationFormOptions;
@@ -147,6 +157,127 @@ const FALLBACK_COUNTRIES: VendorRegistrationFormOptions["countries"] = [
     cities: [],
   },
 ];
+
+const SUBMIT_GROUP_ORDER = [
+  "Company Info",
+  "Contacts",
+  "Address",
+  "Business Info",
+  "Categories",
+  "References",
+  "Bank Information",
+  "Attachments",
+  "Declaration",
+] as const;
+
+const SUBMIT_FIELD_META: Record<
+  string,
+  { label: string; group: string; stepIndex: number }
+> = {
+  companyName: { label: "Company Name", group: "Company Info", stepIndex: 0 },
+  legalName: { label: "Legal Name", group: "Company Info", stepIndex: 0 },
+  crNumber: { label: "CR Number", group: "Company Info", stepIndex: 0 },
+  vatNumber: { label: "VAT Number", group: "Company Info", stepIndex: 0 },
+  companyEmail: { label: "Company Email", group: "Contacts", stepIndex: 0 },
+  companyPhone: { label: "Company Phone", group: "Contacts", stepIndex: 0 },
+  website: { label: "Website", group: "Contacts", stepIndex: 0 },
+  countryCode: { label: "Country", group: "Address", stepIndex: 1 },
+  coverageScope: { label: "Coverage Scope", group: "Address", stepIndex: 1 },
+  cityIds: { label: "City Coverage", group: "Address", stepIndex: 1 },
+  addressLine1: { label: "Address Line 1", group: "Address", stepIndex: 1 },
+  addressLine2: { label: "Address Line 2", group: "Address", stepIndex: 1 },
+  district: { label: "District", group: "Address", stepIndex: 1 },
+  region: { label: "Region", group: "Address", stepIndex: 1 },
+  postalCode: { label: "Postal Code", group: "Address", stepIndex: 1 },
+  poBox: { label: "P.O. Box", group: "Address", stepIndex: 1 },
+  businessDescription: {
+    label: "Business Description",
+    group: "Business Info",
+    stepIndex: 2,
+  },
+  yearsInBusiness: {
+    label: "Years in Business",
+    group: "Business Info",
+    stepIndex: 2,
+  },
+  employeeCount: {
+    label: "Employee Count",
+    group: "Business Info",
+    stepIndex: 2,
+  },
+  categoryId: { label: "Main Category", group: "Categories", stepIndex: 3 },
+  subcategoryIds: {
+    label: "Subcategories",
+    group: "Categories",
+    stepIndex: 3,
+  },
+  servicesOverview: {
+    label: "Products / Services Summary",
+    group: "Categories",
+    stepIndex: 3,
+  },
+  bankName: { label: "Bank Name", group: "Bank Information", stepIndex: 5 },
+  accountName: {
+    label: "Account Name",
+    group: "Bank Information",
+    stepIndex: 5,
+  },
+  iban: { label: "IBAN", group: "Bank Information", stepIndex: 5 },
+  swiftCode: { label: "SWIFT Code", group: "Bank Information", stepIndex: 5 },
+  bankAccountNumber: {
+    label: "Bank Account Number",
+    group: "Bank Information",
+    stepIndex: 5,
+  },
+  crAttachment: {
+    label: "Commercial Registration",
+    group: "Attachments",
+    stepIndex: 6,
+  },
+  vatAttachment: {
+    label: "VAT Certificate",
+    group: "Attachments",
+    stepIndex: 6,
+  },
+  companyProfileAttachment: {
+    label: "Company Profile",
+    group: "Attachments",
+    stepIndex: 6,
+  },
+  financialsAttachment: {
+    label: "Financials",
+    group: "Attachments",
+    stepIndex: 6,
+  },
+  bankCertificateAttachment: {
+    label: "Bank Certificate",
+    group: "Attachments",
+    stepIndex: 6,
+  },
+  declarationName: {
+    label: "Signatory Name",
+    group: "Declaration",
+    stepIndex: 7,
+  },
+  declarationTitle: {
+    label: "Signatory Title",
+    group: "Declaration",
+    stepIndex: 7,
+  },
+  declarationAccepted: {
+    label: "Final Declaration Confirmation",
+    group: "Declaration",
+    stepIndex: 7,
+  },
+};
+
+const REFERENCE_FIELD_LABELS: Record<string, string> = {
+  Name: "Contact Name",
+  CompanyName: "Company Name",
+  Email: "Email",
+  Phone: "Phone",
+  Title: "Title",
+};
 
 async function fetchRegistrationOptions<T>(url: string): Promise<T> {
   const controller = new AbortController();
@@ -660,11 +791,142 @@ function getStepForField(fieldName: string) {
   return 7;
 }
 
+function formatFallbackFieldLabel(fieldName: string) {
+  return fieldName
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (value) => value.toUpperCase())
+    .trim();
+}
+
+function getSubmitFieldMeta(fieldName: string) {
+  const staticMeta = SUBMIT_FIELD_META[fieldName];
+
+  if (staticMeta) {
+    return staticMeta;
+  }
+
+  const referenceMatch = fieldName.match(/^reference([1-3])(.+)$/);
+
+  if (referenceMatch) {
+    const [, referenceNumber, referenceField] = referenceMatch;
+    const label =
+      REFERENCE_FIELD_LABELS[referenceField] ??
+      formatFallbackFieldLabel(referenceField);
+
+    return {
+      label: `Reference ${referenceNumber} ${label}`,
+      group: "References",
+      stepIndex: 4,
+    };
+  }
+
+  const stepIndex = getStepForField(fieldName);
+
+  return {
+    label: formatFallbackFieldLabel(fieldName),
+    group: STEPS[stepIndex]?.title ?? "Registration",
+    stepIndex,
+  };
+}
+
+function getNativeControlError(
+  control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+  label: string,
+) {
+  if (control.validity.valid) {
+    return null;
+  }
+
+  if (control.validity.valueMissing) {
+    return `${label} is required.`;
+  }
+
+  if (control.validity.typeMismatch) {
+    return `Enter a valid ${label.toLowerCase()}.`;
+  }
+
+  if (
+    control.validity.rangeUnderflow &&
+    control instanceof HTMLInputElement &&
+    control.min
+  ) {
+    return `${label} must be at least ${control.min}.`;
+  }
+
+  if (
+    control.validity.rangeOverflow &&
+    control instanceof HTMLInputElement &&
+    control.max
+  ) {
+    return `${label} must be at most ${control.max}.`;
+  }
+
+  if (control.validity.badInput) {
+    return `${label} has an invalid value.`;
+  }
+
+  return control.validationMessage || `${label} is invalid.`;
+}
+
+function addSubmitBlockingField(
+  groups: Map<string, SubmitBlockingGroup>,
+  field: string,
+  message: string,
+) {
+  const meta = getSubmitFieldMeta(field);
+  const existingGroup = groups.get(meta.group);
+  const targetGroup =
+    existingGroup ??
+    ({
+      group: meta.group,
+      stepIndex: meta.stepIndex,
+      fields: [],
+    } satisfies SubmitBlockingGroup);
+
+  if (
+    !targetGroup.fields.some(
+      (item) => item.field === field && item.message === message,
+    )
+  ) {
+    targetGroup.fields.push({
+      field,
+      label: meta.label,
+      message,
+    });
+  }
+
+  groups.set(meta.group, targetGroup);
+}
+
+function sortSubmitBlockingGroups(
+  groups: Map<string, SubmitBlockingGroup>,
+) {
+  return [...groups.values()].sort((left, right) => {
+    const leftOrder = SUBMIT_GROUP_ORDER.indexOf(
+      left.group as (typeof SUBMIT_GROUP_ORDER)[number],
+    );
+    const rightOrder = SUBMIT_GROUP_ORDER.indexOf(
+      right.group as (typeof SUBMIT_GROUP_ORDER)[number],
+    );
+    const normalizedLeftOrder =
+      leftOrder === -1 ? SUBMIT_GROUP_ORDER.length : leftOrder;
+    const normalizedRightOrder =
+      rightOrder === -1 ? SUBMIT_GROUP_ORDER.length : rightOrder;
+
+    if (normalizedLeftOrder !== normalizedRightOrder) {
+      return normalizedLeftOrder - normalizedRightOrder;
+    }
+
+    return left.stepIndex - right.stepIndex;
+  });
+}
+
 export function VendorRegistrationForm({
   options: initialOptions = EMPTY_VENDOR_REGISTRATION_OPTIONS,
 }: VendorRegistrationFormProps) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement | null>(null);
+  const blockedSubmitSummaryRef = useRef<HTMLDivElement | null>(null);
   const mountedRef = useRef(true);
   const countriesRequestIdRef = useRef(0);
   const citiesRequestIdRef = useRef(0);
@@ -712,6 +974,9 @@ export function VendorRegistrationForm({
   const [stepValidationError, setStepValidationError] = useState<string | null>(
     null,
   );
+  const [blockedSubmitGroups, setBlockedSubmitGroups] = useState<
+    SubmitBlockingGroup[]
+  >([]);
   const isSubmitting = isPending || clientSubmitting;
   const effectiveCountryCode = countryCode || "SA";
 
@@ -1238,6 +1503,193 @@ export function VendorRegistrationForm({
     return true;
   }
 
+  function collectFinalSubmitBlockingGroups(form: HTMLFormElement) {
+    const groups = new Map<string, SubmitBlockingGroup>();
+    const controls = Array.from(
+      form.querySelectorAll<
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+      >("input, select, textarea"),
+    );
+    const checkedRadioGroups = new Set<string>();
+
+    for (const control of controls) {
+      if (!control.name || control.disabled) {
+        continue;
+      }
+
+      if (control instanceof HTMLInputElement) {
+        if (control.type === "hidden" || control.type === "file") {
+          continue;
+        }
+
+        if (control.type === "radio") {
+          if (checkedRadioGroups.has(control.name)) {
+            continue;
+          }
+
+          checkedRadioGroups.add(control.name);
+
+          const radios = controls.filter(
+            (item): item is HTMLInputElement =>
+              item instanceof HTMLInputElement &&
+              item.type === "radio" &&
+              item.name === control.name &&
+              !item.disabled,
+          );
+          const required = radios.some((radio) => radio.required);
+          const checked = radios.some((radio) => radio.checked);
+
+          if (required && !checked) {
+            const meta = getSubmitFieldMeta(control.name);
+            addSubmitBlockingField(
+              groups,
+              control.name,
+              `${meta.label} is required.`,
+            );
+          }
+
+          continue;
+        }
+      }
+
+      const meta = getSubmitFieldMeta(control.name);
+      const controlError = getNativeControlError(control, meta.label);
+
+      if (controlError) {
+        addSubmitBlockingField(groups, control.name, controlError);
+      }
+    }
+
+    const uploadValidation = validateUploadInputs(selectedUploadFiles);
+
+    for (const field of ATTACHMENT_FIELDS) {
+      const uploadError = uploadValidation.fieldErrors[field.name];
+
+      if (uploadError) {
+        const meta = getSubmitFieldMeta(field.name);
+        const message = !selectedUploadFiles[field.name] && field.required
+          ? `${meta.label} is required.`
+          : uploadError;
+
+        addSubmitBlockingField(groups, field.name, message);
+      }
+    }
+
+    if (!effectiveCountryCode || !selectedCountry) {
+      addSubmitBlockingField(groups, "countryCode", "Country is required.");
+    }
+
+    if (countriesError && effectiveCountries.length === 0) {
+      addSubmitBlockingField(
+        groups,
+        "countryCode",
+        "Country options could not be loaded. Please retry.",
+      );
+    }
+
+    if (citiesError && selectedCityIds.length === 0) {
+      addSubmitBlockingField(
+        groups,
+        "cityIds",
+        "City options could not be loaded. Please retry.",
+      );
+    }
+
+    if (coverageScope === "SPECIFIC_CITIES") {
+      if (selectedCityIds.length === 0) {
+        addSubmitBlockingField(
+          groups,
+          "cityIds",
+          "Select at least one operating city.",
+        );
+      }
+    } else if (autoCoverageCityIds.length === 0) {
+      addSubmitBlockingField(
+        groups,
+        "cityIds",
+        "City coverage could not be resolved for the selected scope.",
+      );
+    }
+
+    if (categoriesError && options.categories.length === 0) {
+      addSubmitBlockingField(
+        groups,
+        "categoryId",
+        "Category options could not be loaded. Please retry.",
+      );
+    }
+
+    if (!categoryId || !selectedCategory) {
+      addSubmitBlockingField(groups, "categoryId", "Main Category is required.");
+    }
+
+    if (subcategoriesError && subcategoryOptions.length === 0) {
+      addSubmitBlockingField(
+        groups,
+        "subcategoryIds",
+        "Subcategory options could not be loaded. Please retry.",
+      );
+    }
+
+    if (subcategoryIds.length === 0) {
+      addSubmitBlockingField(
+        groups,
+        "subcategoryIds",
+        "Select at least one subcategory.",
+      );
+    }
+
+    return sortSubmitBlockingGroups(groups);
+  }
+
+  function validateAllStepsBeforeSubmit(form: HTMLFormElement) {
+    const groups = collectFinalSubmitBlockingGroups(form);
+
+    if (groups.length === 0) {
+      setBlockedSubmitGroups([]);
+      setStepValidationError(null);
+      setClientUploadError(null);
+      setUploadFieldErrors({});
+      return true;
+    }
+
+    const uploadErrors: UploadFieldErrors = {};
+
+    for (const group of groups) {
+      for (const item of group.fields) {
+        if (item.field.endsWith("Attachment")) {
+          uploadErrors[item.field as AttachmentFieldName] = item.message;
+        }
+      }
+    }
+
+    setBlockedSubmitGroups(groups);
+    setUploadFieldErrors(uploadErrors);
+    setClientUploadError(
+      uploadErrors.crAttachment ??
+        uploadErrors.vatAttachment ??
+        uploadErrors.companyProfileAttachment ??
+        null,
+    );
+    setStepValidationError(
+      "Please review the submission checklist before submitting.",
+    );
+
+    console.info("[supplier-registration] blocked before submit", {
+      groups: groups.map((group) => group.group),
+      fields: groups.flatMap((group) => group.fields.map((item) => item.field)),
+    });
+
+    window.requestAnimationFrame(() => {
+      blockedSubmitSummaryRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+
+    return false;
+  }
+
   function reportFirstInvalidStepControl() {
     const stepPanel = formRef.current?.querySelector(
       `[data-registration-step="${currentStep}"]`,
@@ -1351,11 +1803,7 @@ export function VendorRegistrationForm({
       return;
     }
 
-    if (!validateCurrentStep()) {
-      return;
-    }
-
-    if (!validateUploadsBeforeSubmit()) {
+    if (!validateAllStepsBeforeSubmit(event.currentTarget)) {
       return;
     }
 
@@ -2139,6 +2587,67 @@ export function VendorRegistrationForm({
 
           <SectionPanel active={currentStep === 7} stepIndex={7}>
             <div className="space-y-6">
+              {blockedSubmitGroups.length > 0 ? (
+                <div
+                  ref={blockedSubmitSummaryRef}
+                  className="rounded-[24px] border border-[rgba(185,28,28,0.22)] bg-[rgba(185,28,28,0.07)] p-5 shadow-[0_18px_50px_rgba(127,29,29,0.08)]"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-[#7f1d1d]">
+                        Submission is blocked
+                      </p>
+                      <p className="mt-2 max-w-3xl text-xs leading-6 text-[#991b1b]">
+                        Please complete the missing or invalid items below. The
+                        registration was not submitted, so no duplicate request
+                        was created.
+                      </p>
+                    </div>
+                    <Badge variant="neutral">
+                      {blockedSubmitGroups.reduce(
+                        (total, group) => total + group.fields.length,
+                        0,
+                      )}{" "}
+                      items
+                    </Badge>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {blockedSubmitGroups.map((group) => (
+                      <div
+                        key={group.group}
+                        className="rounded-[18px] border border-[rgba(185,28,28,0.16)] bg-white p-4"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[#991b1b]">
+                            {group.group}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setCurrentStep(group.stepIndex)}
+                            className="text-[11px] font-semibold text-[var(--color-primary)] underline-offset-4 hover:underline"
+                          >
+                            Go to step
+                          </button>
+                        </div>
+                        <ul className="mt-3 space-y-2">
+                          {group.fields.map((field) => (
+                            <li
+                              key={`${field.field}-${field.message}`}
+                              className="text-xs leading-5 text-[#7f1d1d]"
+                            >
+                              <span className="font-semibold">
+                                {field.label}:
+                              </span>{" "}
+                              {field.message}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-5">
                 <p className="text-sm font-semibold text-[var(--color-ink)]">
                   Final Declaration
