@@ -61,9 +61,9 @@ const STEPS = [
       "Upload the core supporting documents and add any extra notes that may help the review team.",
   },
   {
-    title: "Declaration",
+    title: "Declaration / Final Review",
     subtitle:
-      "Confirm the application details and complete the final declaration before submission.",
+      "Confirm the application details, review the submission checklist, and complete the final declaration.",
   },
 ] as const;
 
@@ -388,22 +388,26 @@ function StepPill({
   index,
   title,
   active,
+  disabled,
   onClick,
 }: {
   index: number;
   title: string;
   active: boolean;
+  disabled: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
       className={cn(
         "rounded-full border px-4 py-2 text-xs font-semibold tracking-[0.12em] transition-colors",
         active
           ? "border-[var(--color-primary)] bg-[rgba(49,19,71,0.08)] text-[var(--color-primary)]"
           : "border-[var(--color-border)] bg-white text-[var(--color-muted)] hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]",
+        disabled && "cursor-not-allowed opacity-60 hover:border-[var(--color-border)] hover:text-[var(--color-muted)]",
       )}
     >
       {index + 1}. {title}
@@ -977,7 +981,9 @@ export function VendorRegistrationForm({
   const [blockedSubmitGroups, setBlockedSubmitGroups] = useState<
     SubmitBlockingGroup[]
   >([]);
+  const [submitTakingLong, setSubmitTakingLong] = useState(false);
   const isSubmitting = isPending || clientSubmitting;
+  const showSubmitProgress = isSubmitting && currentStep === STEPS.length - 1;
   const effectiveCountryCode = countryCode || "SA";
 
   const effectiveCountries = useMemo(() => {
@@ -1412,6 +1418,38 @@ export function VendorRegistrationForm({
       setClientSubmitting(false);
     }
   }, [state]);
+
+  useEffect(() => {
+    if (!showSubmitProgress) {
+      setSubmitTakingLong(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setSubmitTakingLong(true);
+    }, 8000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [showSubmitProgress]);
+
+  useEffect(() => {
+    if (!showSubmitProgress) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [showSubmitProgress]);
 
   useEffect(() => {
     const firstInvalidField = Object.keys(state.fieldErrors ?? {})[0];
@@ -1888,9 +1926,9 @@ export function VendorRegistrationForm({
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.18em] text-[var(--color-muted)]">
                 <span>
-                  Step {currentStep + 1} of {STEPS.length}
+                  Step {currentStep + 1} of {STEPS.length} -{" "}
+                  {STEPS[currentStep].title}
                 </span>
-                <span>{STEPS[currentStep].title}</span>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-[var(--color-panel-soft)]">
                 <div
@@ -1910,6 +1948,7 @@ export function VendorRegistrationForm({
                     index={index}
                     title={step.title}
                     active={index === currentStep}
+                    disabled={isSubmitting}
                     onClick={() => handleStepPillClick(index)}
                   />
                 ))}
@@ -1919,6 +1958,35 @@ export function VendorRegistrationForm({
 
           <FormStateMessage state={displayState} />
 
+          {showSubmitProgress ? (
+            <div className="rounded-[24px] border border-[rgba(200,164,92,0.35)] bg-[linear-gradient(135deg,rgba(27,16,51,0.96),rgba(42,27,77,0.9))] p-5 text-white shadow-[0_24px_70px_rgba(27,16,51,0.22)]">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="grid h-11 w-11 place-items-center rounded-full border border-[rgba(229,201,138,0.45)] bg-[rgba(255,255,255,0.08)]">
+                  <span className="h-5 w-5 animate-spin rounded-full border-2 border-[rgba(229,201,138,0.35)] border-t-[var(--tg-gold-soft)]" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-[var(--tg-gold-soft)]">
+                    Submitting your registration...
+                  </p>
+                  <p className="mt-1 text-xs leading-6 text-[rgba(248,247,251,0.78)]">
+                    Uploading documents, saving your request, and notifying
+                    procurement.
+                  </p>
+                  {submitTakingLong ? (
+                    <p className="mt-2 text-xs leading-6 text-[rgba(229,201,138,0.9)]">
+                      This may take a little longer when documents are being
+                      uploaded.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[rgba(248,247,251,0.16)]">
+                <div className="h-full w-2/3 animate-pulse rounded-full bg-[linear-gradient(90deg,var(--tg-gold),var(--tg-gold-soft))]" />
+              </div>
+            </div>
+          ) : null}
+
+          <fieldset disabled={isSubmitting} className="space-y-6">
           <SectionPanel active={currentStep === 0} stepIndex={0}>
             <div className="grid gap-4 md:grid-cols-2">
               <div>
@@ -2746,6 +2814,7 @@ export function VendorRegistrationForm({
           </div>
 
           <FormStateMessage state={displayState} />
+          </fieldset>
         </CardContent>
       </Card>
     </form>
