@@ -438,10 +438,16 @@ function SectionPanel({
 function ReferenceGroup({
   index,
   isPending,
+  isFieldInvalid,
+  invalidControlClass,
 }: {
   index: 1 | 2 | 3;
   isPending: boolean;
+  isFieldInvalid: (fieldName: string) => boolean;
+  invalidControlClass: (fieldName: string) => string | undefined;
 }) {
+  const fieldName = (suffix: string) => `reference${index}${suffix}`;
+
   return (
     <Card className="overflow-hidden border-[var(--color-border)] bg-[var(--color-panel-soft)]">
       <CardContent className="space-y-4 p-5">
@@ -457,10 +463,12 @@ function ReferenceGroup({
               Contact Name <span className="text-[#991b1b]">*</span>
             </Label>
             <Input
-              id={`reference${index}Name`}
-              name={`reference${index}Name`}
+              id={fieldName("Name")}
+              name={fieldName("Name")}
               required
               disabled={isPending}
+              aria-invalid={isFieldInvalid(fieldName("Name"))}
+              className={invalidControlClass(fieldName("Name"))}
             />
           </div>
           <div>
@@ -468,10 +476,12 @@ function ReferenceGroup({
               Company Name <span className="text-[#991b1b]">*</span>
             </Label>
             <Input
-              id={`reference${index}CompanyName`}
-              name={`reference${index}CompanyName`}
+              id={fieldName("CompanyName")}
+              name={fieldName("CompanyName")}
               required
               disabled={isPending}
+              aria-invalid={isFieldInvalid(fieldName("CompanyName"))}
+              className={invalidControlClass(fieldName("CompanyName"))}
             />
           </div>
           <div>
@@ -479,11 +489,13 @@ function ReferenceGroup({
               Email <span className="text-[#991b1b]">*</span>
             </Label>
             <Input
-              id={`reference${index}Email`}
-              name={`reference${index}Email`}
+              id={fieldName("Email")}
+              name={fieldName("Email")}
               type="email"
               required
               disabled={isPending}
+              aria-invalid={isFieldInvalid(fieldName("Email"))}
+              className={invalidControlClass(fieldName("Email"))}
             />
           </div>
           <div>
@@ -491,10 +503,12 @@ function ReferenceGroup({
               Phone <span className="text-[#991b1b]">*</span>
             </Label>
             <Input
-              id={`reference${index}Phone`}
-              name={`reference${index}Phone`}
+              id={fieldName("Phone")}
+              name={fieldName("Phone")}
               required
               disabled={isPending}
+              aria-invalid={isFieldInvalid(fieldName("Phone"))}
+              className={invalidControlClass(fieldName("Phone"))}
             />
           </div>
           <div className="md:col-span-2">
@@ -502,10 +516,12 @@ function ReferenceGroup({
               Title <span className="text-[#991b1b]">*</span>
             </Label>
             <Input
-              id={`reference${index}Title`}
-              name={`reference${index}Title`}
+              id={fieldName("Title")}
+              name={fieldName("Title")}
               required
               disabled={isPending}
+              aria-invalid={isFieldInvalid(fieldName("Title"))}
+              className={invalidControlClass(fieldName("Title"))}
             />
           </div>
         </div>
@@ -534,7 +550,12 @@ function AttachmentField({
   onFileChange: (name: AttachmentFieldName, file: File | null) => void;
 }) {
   return (
-    <div className="rounded-[24px] border border-[var(--color-border)] bg-white p-4">
+    <div
+      className={cn(
+        "rounded-[24px] border border-[var(--color-border)] bg-white p-4 transition-colors",
+        error && "border-[rgba(185,28,28,0.42)] bg-[rgba(185,28,28,0.035)]",
+      )}
+    >
       <Label htmlFor={name}>
         {label}
         {required ? <span className="text-[#991b1b]"> *</span> : null}
@@ -549,7 +570,11 @@ function AttachmentField({
         onChange={(event) =>
           onFileChange(name, event.currentTarget.files?.[0] ?? null)
         }
-        className="mt-2 file:mr-4 file:rounded-full file:border-0 file:bg-[var(--color-panel-soft)] file:px-4 file:py-2 file:text-xs file:font-semibold file:text-[var(--color-ink)]"
+        aria-invalid={Boolean(error)}
+        className={cn(
+          "mt-2 file:mr-4 file:rounded-full file:border-0 file:bg-[var(--color-panel-soft)] file:px-4 file:py-2 file:text-xs file:font-semibold file:text-[var(--color-ink)]",
+          error && "border-[rgba(185,28,28,0.58)] bg-[rgba(185,28,28,0.04)] shadow-[0_0_0_4px_rgba(185,28,28,0.08)]",
+        )}
       />
       {selectedFile ? (
         <p className="mt-2 rounded-[14px] bg-[rgba(21,128,61,0.08)] px-3 py-2 text-xs font-medium text-[#166534]">
@@ -982,6 +1007,7 @@ export function VendorRegistrationForm({
     SubmitBlockingGroup[]
   >([]);
   const [submitTakingLong, setSubmitTakingLong] = useState(false);
+  const [declarationComplete, setDeclarationComplete] = useState(false);
   const isSubmitting = isPending || clientSubmitting;
   const showSubmitProgress = isSubmitting && currentStep === STEPS.length - 1;
   const effectiveCountryCode = countryCode || "SA";
@@ -1452,6 +1478,16 @@ export function VendorRegistrationForm({
   }, [showSubmitProgress]);
 
   useEffect(() => {
+    if (currentStep !== STEPS.length - 1) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      refreshDeclarationComplete();
+    });
+  }, [currentStep]);
+
+  useEffect(() => {
     const firstInvalidField = Object.keys(state.fieldErrors ?? {})[0];
 
     if (firstInvalidField) {
@@ -1465,6 +1501,23 @@ export function VendorRegistrationForm({
   );
   const fieldError = (fieldName: string) =>
     state.fieldErrors?.[fieldName]?.[0] ?? null;
+  const invalidFieldNames = useMemo(
+    () =>
+      new Set([
+        ...blockedSubmitGroups.flatMap((group) =>
+          group.fields.map((field) => field.field),
+        ),
+        ...Object.keys(state.fieldErrors ?? {}),
+        ...Object.keys(uploadFieldErrors),
+      ]),
+    [blockedSubmitGroups, state.fieldErrors, uploadFieldErrors],
+  );
+  const isFieldInvalid = (fieldName: string) =>
+    invalidFieldNames.has(fieldName);
+  const invalidControlClass = (fieldName: string) =>
+    isFieldInvalid(fieldName)
+      ? "border-[rgba(185,28,28,0.58)] bg-[rgba(185,28,28,0.04)] shadow-[0_0_0_4px_rgba(185,28,28,0.08)]"
+      : undefined;
   const optionsError =
     countriesError ?? citiesError ?? categoriesError ?? subcategoriesError;
 
@@ -1524,6 +1577,61 @@ export function VendorRegistrationForm({
 
       return next;
     });
+  }
+
+  function refreshDeclarationComplete() {
+    const form = formRef.current;
+
+    if (!form) {
+      setDeclarationComplete(false);
+      return;
+    }
+
+    const declarationName = form.elements.namedItem("declarationName");
+    const declarationTitle = form.elements.namedItem("declarationTitle");
+    const declarationAccepted = form.elements.namedItem("declarationAccepted");
+
+    const hasName =
+      declarationName instanceof HTMLInputElement &&
+      declarationName.value.trim().length > 0;
+    const hasTitle =
+      declarationTitle instanceof HTMLInputElement &&
+      declarationTitle.value.trim().length > 0;
+    const hasAccepted =
+      declarationAccepted instanceof HTMLInputElement &&
+      declarationAccepted.checked;
+
+    setDeclarationComplete(hasName && hasTitle && hasAccepted);
+  }
+
+  function focusRegistrationField(fieldName: string, stepIndex: number) {
+    setCurrentStep(stepIndex);
+
+    if (!fieldName) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      const form = formRef.current;
+
+      if (!form) {
+        return;
+      }
+
+      const target =
+        form.querySelector<HTMLElement>(`[name="${fieldName}"]`) ??
+        form.querySelector<HTMLElement>(`#${fieldName}`);
+
+      if (!target) {
+        return;
+      }
+
+      target.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      target.focus({ preventScroll: true });
+    }, 80);
   }
 
   function validateUploadsBeforeSubmit() {
@@ -1890,12 +1998,34 @@ export function VendorRegistrationForm({
         }
 
         if (
+          blockedSubmitGroups.length > 0 &&
+          event.target instanceof HTMLElement
+        ) {
+          const targetName = event.target.getAttribute("name");
+
+          if (targetName) {
+            setBlockedSubmitGroups((current) =>
+              current
+                .map((group) => ({
+                  ...group,
+                  fields: group.fields.filter(
+                    (field) => field.field !== targetName,
+                  ),
+                }))
+                .filter((group) => group.fields.length > 0),
+            );
+          }
+        }
+
+        if (
           clientUploadError &&
           event.target instanceof HTMLInputElement &&
           event.target.type === "file"
         ) {
           setClientUploadError(null);
         }
+
+        refreshDeclarationComplete();
       }}
       onSubmit={handleSubmit}
       noValidate
@@ -1993,13 +2123,27 @@ export function VendorRegistrationForm({
                 <Label htmlFor="companyName">
                   Company Name <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="companyName" name="companyName" required disabled={isPending} />
+                <Input
+                  id="companyName"
+                  name="companyName"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("companyName")}
+                  className={invalidControlClass("companyName")}
+                />
               </div>
               <div>
                 <Label htmlFor="legalName">
                   Legal Name <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="legalName" name="legalName" required disabled={isPending} />
+                <Input
+                  id="legalName"
+                  name="legalName"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("legalName")}
+                  className={invalidControlClass("legalName")}
+                />
               </div>
               <div>
                 <Label htmlFor="companyEmail">
@@ -2011,6 +2155,8 @@ export function VendorRegistrationForm({
                   type="email"
                   required
                   disabled={isPending}
+                  aria-invalid={isFieldInvalid("companyEmail")}
+                  className={invalidControlClass("companyEmail")}
                 />
                 <InlineFieldError message={fieldError("companyEmail")} />
               </div>
@@ -2018,26 +2164,54 @@ export function VendorRegistrationForm({
                 <Label htmlFor="companyPhone">
                   Company Phone <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="companyPhone" name="companyPhone" required disabled={isPending} />
+                <Input
+                  id="companyPhone"
+                  name="companyPhone"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("companyPhone")}
+                  className={invalidControlClass("companyPhone")}
+                />
               </div>
               <div>
                 <Label htmlFor="website">
                   Website <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="website" name="website" required disabled={isPending} />
+                <Input
+                  id="website"
+                  name="website"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("website")}
+                  className={invalidControlClass("website")}
+                />
               </div>
               <div>
                 <Label htmlFor="crNumber">
                   CR Number <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="crNumber" name="crNumber" required disabled={isPending} />
+                <Input
+                  id="crNumber"
+                  name="crNumber"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("crNumber")}
+                  className={invalidControlClass("crNumber")}
+                />
                 <InlineFieldError message={fieldError("crNumber")} />
               </div>
               <div>
                 <Label htmlFor="vatNumber">
                   VAT Number <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="vatNumber" name="vatNumber" required disabled={isPending} />
+                <Input
+                  id="vatNumber"
+                  name="vatNumber"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("vatNumber")}
+                  className={invalidControlClass("vatNumber")}
+                />
                 <InlineFieldError message={fieldError("vatNumber")} />
               </div>
             </div>
@@ -2065,6 +2239,8 @@ export function VendorRegistrationForm({
                     (loadingCountries && effectiveCountries.length === 0)
                   }
                   required
+                  aria-invalid={isFieldInvalid("countryCode")}
+                  className={invalidControlClass("countryCode")}
                 >
                   {effectiveCountries.length === 0 ? (
                     <option value="">
@@ -2167,7 +2343,13 @@ export function VendorRegistrationForm({
                 </div>
               </div>
 
-              <div className="md:col-span-2 rounded-[24px] border border-[var(--color-border)] bg-white p-4">
+              <div
+                className={cn(
+                  "md:col-span-2 rounded-[24px] border border-[var(--color-border)] bg-white p-4 transition-colors",
+                  isFieldInvalid("cityIds") &&
+                    "border-[rgba(185,28,28,0.42)] bg-[rgba(185,28,28,0.035)]",
+                )}
+              >
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-[var(--color-ink)]">
@@ -2307,37 +2489,79 @@ export function VendorRegistrationForm({
                 <Label htmlFor="addressLine1">
                   Address Line 1 <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="addressLine1" name="addressLine1" required disabled={isPending} />
+                <Input
+                  id="addressLine1"
+                  name="addressLine1"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("addressLine1")}
+                  className={invalidControlClass("addressLine1")}
+                />
               </div>
               <div>
                 <Label htmlFor="addressLine2">
                   Address Line 2 <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="addressLine2" name="addressLine2" required disabled={isPending} />
+                <Input
+                  id="addressLine2"
+                  name="addressLine2"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("addressLine2")}
+                  className={invalidControlClass("addressLine2")}
+                />
               </div>
               <div>
                 <Label htmlFor="district">
                   District <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="district" name="district" required disabled={isPending} />
+                <Input
+                  id="district"
+                  name="district"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("district")}
+                  className={invalidControlClass("district")}
+                />
               </div>
               <div>
                 <Label htmlFor="region">
                   Region <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="region" name="region" required disabled={isPending} />
+                <Input
+                  id="region"
+                  name="region"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("region")}
+                  className={invalidControlClass("region")}
+                />
               </div>
               <div>
                 <Label htmlFor="postalCode">
                   Postal Code <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="postalCode" name="postalCode" required disabled={isPending} />
+                <Input
+                  id="postalCode"
+                  name="postalCode"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("postalCode")}
+                  className={invalidControlClass("postalCode")}
+                />
               </div>
               <div>
                 <Label htmlFor="poBox">
                   P.O. Box <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="poBox" name="poBox" required disabled={isPending} />
+                <Input
+                  id="poBox"
+                  name="poBox"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("poBox")}
+                  className={invalidControlClass("poBox")}
+                />
               </div>
             </div>
           </SectionPanel>
@@ -2354,6 +2578,8 @@ export function VendorRegistrationForm({
                   rows={5}
                   required
                   disabled={isPending}
+                  aria-invalid={isFieldInvalid("businessDescription")}
+                  className={invalidControlClass("businessDescription")}
                 />
               </div>
               <div>
@@ -2367,6 +2593,8 @@ export function VendorRegistrationForm({
                   min="0"
                   required
                   disabled={isPending}
+                  aria-invalid={isFieldInvalid("yearsInBusiness")}
+                  className={invalidControlClass("yearsInBusiness")}
                 />
               </div>
               <div>
@@ -2380,6 +2608,8 @@ export function VendorRegistrationForm({
                   min="1"
                   required
                   disabled={isPending}
+                  aria-invalid={isFieldInvalid("employeeCount")}
+                  className={invalidControlClass("employeeCount")}
                 />
               </div>
             </div>
@@ -2407,6 +2637,8 @@ export function VendorRegistrationForm({
                       (loadingCategories && options.categories.length === 0)
                     }
                     required
+                    aria-invalid={isFieldInvalid("categoryId")}
+                    className={invalidControlClass("categoryId")}
                   >
                     <option value="">
                       {loadingCategories ? "Loading categories..." : "Select category"}
@@ -2428,7 +2660,13 @@ export function VendorRegistrationForm({
                 </div>
               </div>
 
-              <div className="rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-4">
+              <div
+                className={cn(
+                  "rounded-[24px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-4 transition-colors",
+                  isFieldInvalid("subcategoryIds") &&
+                    "border-[rgba(185,28,28,0.42)] bg-[rgba(185,28,28,0.035)]",
+                )}
+              >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-[var(--color-ink)]">
@@ -2561,6 +2799,8 @@ export function VendorRegistrationForm({
                   required
                   disabled={isPending}
                   placeholder="Describe the products, services, capabilities, and delivery scope."
+                  aria-invalid={isFieldInvalid("servicesOverview")}
+                  className={invalidControlClass("servicesOverview")}
                 />
               </div>
             </div>
@@ -2568,9 +2808,24 @@ export function VendorRegistrationForm({
 
           <SectionPanel active={currentStep === 4} stepIndex={4}>
             <div className="space-y-4">
-              <ReferenceGroup index={1} isPending={isPending} />
-              <ReferenceGroup index={2} isPending={isPending} />
-              <ReferenceGroup index={3} isPending={isPending} />
+              <ReferenceGroup
+                index={1}
+                isPending={isPending}
+                isFieldInvalid={isFieldInvalid}
+                invalidControlClass={invalidControlClass}
+              />
+              <ReferenceGroup
+                index={2}
+                isPending={isPending}
+                isFieldInvalid={isFieldInvalid}
+                invalidControlClass={invalidControlClass}
+              />
+              <ReferenceGroup
+                index={3}
+                isPending={isPending}
+                isFieldInvalid={isFieldInvalid}
+                invalidControlClass={invalidControlClass}
+              />
             </div>
           </SectionPanel>
 
@@ -2580,25 +2835,53 @@ export function VendorRegistrationForm({
                 <Label htmlFor="bankName">
                   Bank Name <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="bankName" name="bankName" required disabled={isPending} />
+                <Input
+                  id="bankName"
+                  name="bankName"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("bankName")}
+                  className={invalidControlClass("bankName")}
+                />
               </div>
               <div>
                 <Label htmlFor="accountName">
                   Account Name <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="accountName" name="accountName" required disabled={isPending} />
+                <Input
+                  id="accountName"
+                  name="accountName"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("accountName")}
+                  className={invalidControlClass("accountName")}
+                />
               </div>
               <div>
                 <Label htmlFor="iban">
                   IBAN <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="iban" name="iban" required disabled={isPending} />
+                <Input
+                  id="iban"
+                  name="iban"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("iban")}
+                  className={invalidControlClass("iban")}
+                />
               </div>
               <div>
                 <Label htmlFor="swiftCode">
                   SWIFT Code <span className="text-[#991b1b]">*</span>
                 </Label>
-                <Input id="swiftCode" name="swiftCode" required disabled={isPending} />
+                <Input
+                  id="swiftCode"
+                  name="swiftCode"
+                  required
+                  disabled={isPending}
+                  aria-invalid={isFieldInvalid("swiftCode")}
+                  className={invalidControlClass("swiftCode")}
+                />
               </div>
               <div className="md:col-span-2">
                 <Label htmlFor="bankAccountNumber">
@@ -2609,6 +2892,8 @@ export function VendorRegistrationForm({
                   name="bankAccountNumber"
                   required
                   disabled={isPending}
+                  aria-invalid={isFieldInvalid("bankAccountNumber")}
+                  className={invalidControlClass("bankAccountNumber")}
                 />
               </div>
             </div>
@@ -2691,10 +2976,15 @@ export function VendorRegistrationForm({
                           </p>
                           <button
                             type="button"
-                            onClick={() => setCurrentStep(group.stepIndex)}
+                            onClick={() =>
+                              focusRegistrationField(
+                                group.fields[0]?.field ?? "",
+                                group.stepIndex,
+                              )
+                            }
                             className="text-[11px] font-semibold text-[var(--color-primary)] underline-offset-4 hover:underline"
                           >
-                            Go to step
+                            Fix now
                           </button>
                         </div>
                         <ul className="mt-3 space-y-2">
@@ -2703,10 +2993,21 @@ export function VendorRegistrationForm({
                               key={`${field.field}-${field.message}`}
                               className="text-xs leading-5 text-[#7f1d1d]"
                             >
-                              <span className="font-semibold">
-                                {field.label}:
-                              </span>{" "}
-                              {field.message}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  focusRegistrationField(
+                                    field.field,
+                                    group.stepIndex,
+                                  )
+                                }
+                                className="w-full rounded-[12px] px-2 py-1 text-left transition-colors hover:bg-[rgba(185,28,28,0.08)] focus:outline-none focus:ring-2 focus:ring-[rgba(185,28,28,0.22)]"
+                              >
+                                <span className="font-semibold">
+                                  {field.label}:
+                                </span>{" "}
+                                {field.message}
+                              </button>
                             </li>
                           ))}
                         </ul>
@@ -2735,6 +3036,8 @@ export function VendorRegistrationForm({
                       name="declarationName"
                       required
                       disabled={isPending}
+                      aria-invalid={isFieldInvalid("declarationName")}
+                      className={invalidControlClass("declarationName")}
                     />
                     <InlineFieldError message={fieldError("declarationName")} />
                   </div>
@@ -2747,17 +3050,26 @@ export function VendorRegistrationForm({
                       name="declarationTitle"
                       required
                       disabled={isPending}
+                      aria-invalid={isFieldInvalid("declarationTitle")}
+                      className={invalidControlClass("declarationTitle")}
                     />
                     <InlineFieldError message={fieldError("declarationTitle")} />
                   </div>
                 </div>
-                <label className="mt-5 flex items-start gap-3 rounded-[20px] border border-[var(--color-border)] bg-white p-4 text-sm leading-7 text-[var(--color-ink)]">
+                <label
+                  className={cn(
+                    "mt-5 flex items-start gap-3 rounded-[20px] border border-[var(--color-border)] bg-white p-4 text-sm leading-7 text-[var(--color-ink)] transition-colors",
+                    isFieldInvalid("declarationAccepted") &&
+                      "border-[rgba(185,28,28,0.42)] bg-[rgba(185,28,28,0.035)]",
+                  )}
+                >
                   <input
                     type="checkbox"
                     name="declarationAccepted"
                     value="on"
                     required
                     disabled={isPending}
+                    aria-invalid={isFieldInvalid("declarationAccepted")}
                     className="mt-1 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]"
                   />
                   <span>
@@ -2767,6 +3079,11 @@ export function VendorRegistrationForm({
                   </span>
                 </label>
                 <InlineFieldError message={fieldError("declarationAccepted")} />
+                {declarationComplete ? (
+                  <p className="mt-4 rounded-[16px] border border-[rgba(21,128,61,0.18)] bg-[rgba(21,128,61,0.07)] px-4 py-3 text-xs font-semibold text-[#166534]">
+                    Declaration completed
+                  </p>
+                ) : null}
               </div>
 
               <div className="rounded-[24px] border border-[var(--color-border)] bg-white p-5">
