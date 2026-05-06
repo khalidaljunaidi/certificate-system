@@ -109,6 +109,7 @@ export default function Home() {
           <div className="mt-12 flex w-full max-w-3xl flex-col gap-4 sm:flex-row sm:justify-center sm:gap-5">
             <Link
               href="/vendor-registration"
+              prefetch={false}
               className="group relative inline-flex min-h-[68px] min-w-[270px] items-center justify-center gap-3 overflow-hidden rounded-[1.45rem] bg-[linear-gradient(135deg,#F8E7B5_0%,#D8B86B_44%,#A9792D_100%)] px-10 text-[13px] font-bold uppercase tracking-[0.12em] text-[#1B1033] shadow-[0_28px_90px_rgba(200,164,92,0.36),inset_0_1px_0_rgba(255,255,255,0.52)] transition duration-300 hover:scale-[1.035] hover:shadow-[0_34px_118px_rgba(229,201,138,0.52),inset_0_1px_0_rgba(255,255,255,0.62)] focus:outline-none focus:ring-2 focus:ring-[#F4DFA5] focus:ring-offset-2 focus:ring-offset-[#080711]"
             >
               <span className="absolute inset-x-4 top-0 h-px bg-white/65" />
@@ -117,6 +118,7 @@ export default function Home() {
             </Link>
             <Link
               href="/login"
+              prefetch={false}
               className="group relative inline-flex min-h-[68px] min-w-[270px] items-center justify-center gap-3 overflow-hidden rounded-[1.45rem] border border-[#E5C98A]/48 bg-[linear-gradient(135deg,rgba(27,16,51,0.74),rgba(11,11,20,0.42))] px-10 text-[13px] font-bold uppercase tracking-[0.12em] text-white shadow-[0_24px_88px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl transition duration-300 hover:scale-[1.035] hover:border-[#E5C98A]/80 hover:bg-white/[0.11] hover:shadow-[0_30px_110px_rgba(229,201,138,0.2),inset_0_1px_0_rgba(255,255,255,0.18)] focus:outline-none focus:ring-2 focus:ring-[#E5C98A] focus:ring-offset-2 focus:ring-offset-[#080711]"
             >
               <span className="absolute inset-x-4 top-0 h-px bg-[#E5C98A]/38" />
