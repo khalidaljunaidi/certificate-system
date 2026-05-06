@@ -77,6 +77,7 @@ const COVERAGE_SCOPE_OPTIONS = [
 ] as const;
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_SUBMIT_CITY_IDS = 200;
 const FILE_TOO_LARGE_MESSAGE = "File is too large. Maximum allowed size is 10MB.";
 const ALLOWED_UPLOAD_TYPES = new Set([
   "application/pdf",
@@ -148,6 +149,66 @@ const EMPTY_VENDOR_REGISTRATION_OPTIONS: VendorRegistrationFormOptions = {
   countries: [],
   categories: [],
 };
+
+const PRIMITIVE_SUBMIT_FIELD_NAMES = new Set([
+  "companyName",
+  "legalName",
+  "companyEmail",
+  "companyPhone",
+  "website",
+  "crNumber",
+  "vatNumber",
+  "countryCode",
+  "coverageScope",
+  "categoryId",
+  "addressLine1",
+  "addressLine2",
+  "district",
+  "region",
+  "postalCode",
+  "poBox",
+  "businessDescription",
+  "servicesOverview",
+  "yearsInBusiness",
+  "employeeCount",
+  "reference1Name",
+  "reference1CompanyName",
+  "reference1Email",
+  "reference1Phone",
+  "reference1Title",
+  "reference2Name",
+  "reference2CompanyName",
+  "reference2Email",
+  "reference2Phone",
+  "reference2Title",
+  "reference3Name",
+  "reference3CompanyName",
+  "reference3Email",
+  "reference3Phone",
+  "reference3Title",
+  "bankName",
+  "accountName",
+  "iban",
+  "swiftCode",
+  "bankAccountNumber",
+  "additionalInformation",
+  "declarationName",
+  "declarationTitle",
+  "declarationAccepted",
+]);
+
+const BLOCKED_PAYLOAD_FIELD_NAMES = new Set([
+  "countries",
+  "countryOptions",
+  "cities",
+  "cityOptions",
+  "categories",
+  "categoryOptions",
+  "subcategories",
+  "subcategoryOptions",
+  "coverageOptions",
+  "coverageOptionLabels",
+]);
 
 const FALLBACK_COUNTRIES: VendorRegistrationFormOptions["countries"] = [
   {
@@ -689,7 +750,12 @@ function appendControlToFormData(
   formData: FormData,
   element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
 ) {
-  if (!element.name || element.disabled) {
+  if (
+    !element.name ||
+    element.disabled ||
+    !PRIMITIVE_SUBMIT_FIELD_NAMES.has(element.name) ||
+    BLOCKED_PAYLOAD_FIELD_NAMES.has(element.name)
+  ) {
     return;
   }
 
@@ -722,17 +788,48 @@ function appendControlToFormData(
 function buildCompleteRegistrationFormData(
   form: HTMLFormElement,
   uploadFiles: SelectedUploadFiles,
+  input: {
+    coverageScope: CoverageScope;
+    selectedCityIds: string[];
+    selectedSubcategoryIds: string[];
+  },
 ) {
-  const formData = new FormData(form);
+  const formData = new FormData();
+  const controls = Array.from(
+    form.querySelectorAll<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >("input, select, textarea"),
+  );
+
+  for (const control of controls) {
+    appendControlToFormData(formData, control);
+  }
+
+  if (input.coverageScope === "SPECIFIC_CITIES") {
+    for (const cityId of Array.from(new Set(input.selectedCityIds))) {
+      formData.append("cityIds", cityId);
+    }
+  }
+
+  for (const subcategoryId of Array.from(
+    new Set(input.selectedSubcategoryIds),
+  )) {
+    formData.append("subcategoryIds", subcategoryId);
+  }
 
   for (const field of ATTACHMENT_FIELDS) {
-    const nativeFile = formData.get(field.name);
+    const inputElement = form.elements.namedItem(field.name);
+    const nativeFile =
+      inputElement instanceof HTMLInputElement
+        ? (inputElement.files?.[0] ?? null)
+        : null;
     const file = uploadFiles[field.name];
-    const hasNativeFile = nativeFile instanceof File && nativeFile.size > 0;
 
     // Native file inputs are the source of truth. React state is only a
     // fallback for browsers that drop file values during stepped navigation.
-    if (!hasNativeFile && file) {
+    if (nativeFile instanceof File && nativeFile.size > 0) {
+      formData.set(field.name, nativeFile);
+    } else if (file instanceof File) {
       formData.set(field.name, file);
     }
   }
@@ -765,6 +862,10 @@ function logFinalSubmitPayloadDebug(input: {
     nonFileFieldCount += 1;
   }
 
+  console.log("payload keys:", keys);
+  console.log("cities count", input.submittedCityCount);
+  console.log("subcategories count", input.selectedSubcategoryCount);
+  console.log("files count", files.length);
   console.info("[supplier-registration] final submit payload", {
     keys,
     coverageScope: input.coverageScope,
@@ -1984,9 +2085,42 @@ export function VendorRegistrationForm({
       return;
     }
 
+    if (
+      coverageScope === "SPECIFIC_CITIES" &&
+      selectedCityIds.length > MAX_SUBMIT_CITY_IDS
+    ) {
+      const message = `Select ${MAX_SUBMIT_CITY_IDS} cities or fewer for specific city coverage.`;
+
+      setStepValidationError(message);
+      setBlockedSubmitGroups([
+        {
+          group: "Address",
+          stepIndex: 1,
+          fields: [
+            {
+              field: "cityIds",
+              label: "City Coverage",
+              message,
+            },
+          ],
+        },
+      ]);
+      console.info("[supplier-registration] blocked before submit", {
+        fields: ["cityIds"],
+        cityIds: selectedCityIds.length,
+      });
+      focusRegistrationField("cityIds", 1);
+      return;
+    }
+
     const formData = buildCompleteRegistrationFormData(
       event.currentTarget,
       selectedUploadFiles,
+      {
+        coverageScope,
+        selectedCityIds,
+        selectedSubcategoryIds: subcategoryIds,
+      },
     );
 
     logFinalSubmitPayloadDebug({
