@@ -740,6 +740,41 @@ function buildCompleteRegistrationFormData(
   return formData;
 }
 
+function logFinalSubmitPayloadDebug(input: {
+  formData: FormData;
+  coverageScope: CoverageScope;
+  submittedCityCount: number;
+  selectedSubcategoryCount: number;
+}) {
+  const keys = Array.from(new Set(Array.from(input.formData.keys()))).sort();
+  const files: Array<{ field: string; type: string; sizeMB: number }> = [];
+  let nonFileFieldCount = 0;
+
+  for (const [key, value] of input.formData.entries()) {
+    if (value instanceof File) {
+      if (value.size > 0) {
+        files.push({
+          field: key,
+          type: value.type || "unknown",
+          sizeMB: Number((value.size / (1024 * 1024)).toFixed(2)),
+        });
+      }
+      continue;
+    }
+
+    nonFileFieldCount += 1;
+  }
+
+  console.info("[supplier-registration] final submit payload", {
+    keys,
+    coverageScope: input.coverageScope,
+    selectedCities: input.submittedCityCount,
+    selectedSubcategories: input.selectedSubcategoryCount,
+    nonFileFields: nonFileFieldCount,
+    files,
+  });
+}
+
 function firstFieldError(
   fieldErrors: Record<string, string[]> | undefined,
 ): string | null {
@@ -1536,11 +1571,7 @@ export function VendorRegistrationForm({
       selectedCityIds.map((cityId) => (
         <input key={cityId} type="hidden" name="cityIds" value={cityId} />
       ))
-    ) : (
-      autoCoverageCityIds.map((cityId) => (
-        <input key={cityId} type="hidden" name="cityIds" value={cityId} />
-      ))
-    );
+    ) : null;
 
   function handleUploadFileChange(name: AttachmentFieldName, file: File | null) {
     const field = ATTACHMENT_FIELDS.find((item) => item.name === name);
@@ -1957,6 +1988,14 @@ export function VendorRegistrationForm({
       event.currentTarget,
       selectedUploadFiles,
     );
+
+    logFinalSubmitPayloadDebug({
+      formData,
+      coverageScope,
+      submittedCityCount:
+        coverageScope === "SPECIFIC_CITIES" ? selectedCityIds.length : 0,
+      selectedSubcategoryCount: subcategoryIds.length,
+    });
 
     submitLockedRef.current = true;
     setClientSubmitting(true);

@@ -49,6 +49,20 @@ const SUPPLIER_REGISTRATION_UPLOAD_ERROR =
   "Document upload failed. Please try again or contact procurement.";
 const SUPPLIER_REGISTRATION_GENERIC_ERROR =
   "We could not submit the registration. Please try again or contact procurement.";
+const MAX_SPECIFIC_CITY_SELECTIONS = 250;
+const MAX_REASONABLE_TEXT_FIELD_BYTES = 5000;
+const OPTION_PAYLOAD_FIELD_NAMES = new Set([
+  "countries",
+  "countryoptions",
+  "cities",
+  "cityoptions",
+  "categories",
+  "categoryoptions",
+  "subcategories",
+  "subcategoryoptions",
+  "coverageoptions",
+  "coverageoptionlabels",
+]);
 const VENDOR_REGISTRATION_ATTACHMENT_TYPES = new Set<string>([
   "CR",
   "VAT",
@@ -289,6 +303,70 @@ function toDuplicateRegistrationState(): ActionState {
   };
 }
 
+function normalizePayloadFieldName(fieldName: string) {
+  return fieldName.replace(/[\s_\-[\].]/g, "").toLowerCase();
+}
+
+function looksLikeSerializedOptionList(fieldName: string, value: string) {
+  const normalizedFieldName = normalizePayloadFieldName(fieldName);
+  const trimmed = value.trim();
+
+  if (
+    OPTION_PAYLOAD_FIELD_NAMES.has(normalizedFieldName) &&
+    (trimmed.startsWith("[") ||
+      trimmed.startsWith("{") ||
+      trimmed.length > MAX_REASONABLE_TEXT_FIELD_BYTES)
+  ) {
+    return true;
+  }
+
+  return (
+    trimmed.length > MAX_REASONABLE_TEXT_FIELD_BYTES &&
+    (trimmed.startsWith("[") || trimmed.startsWith("{"))
+  );
+}
+
+function validateRegistrationPayloadShape(formData: FormData): ActionState | null {
+  const fieldErrors: Record<string, string[]> = {};
+  const coverageScope = String(formData.get("coverageScope") ?? "");
+  const cityIds = formData
+    .getAll("cityIds")
+    .map(String)
+    .filter(Boolean);
+
+  if (
+    coverageScope === "SPECIFIC_CITIES" &&
+    cityIds.length > MAX_SPECIFIC_CITY_SELECTIONS
+  ) {
+    fieldErrors.cityIds = [
+      `Select ${MAX_SPECIFIC_CITY_SELECTIONS} cities or fewer for specific city coverage.`,
+    ];
+  }
+
+  for (const [fieldName, value] of formData.entries()) {
+    if (value instanceof File) {
+      continue;
+    }
+
+    if (looksLikeSerializedOptionList(fieldName, String(value))) {
+      fieldErrors[fieldName] = [
+        "This field contains option list data that is not allowed in the final submission. Please refresh and submit again.",
+      ];
+    }
+  }
+
+  if (Object.keys(fieldErrors).length === 0) {
+    return null;
+  }
+
+  logValidationWarning("submitVendorRegistrationAction", fieldErrors);
+
+  return {
+    error: "The registration payload is too large. Please refresh and submit again.",
+    fieldErrors,
+  };
+}
+
 function toRegistrationFileValidationState(error: unknown): ActionState | null {
   if (!(error instanceof Error)) {
     return null;
@@ -524,6 +602,20 @@ export async function submitVendorRegistrationAction(
 ): Promise<ActionState> {
   try {
     void prevState;
+    const payloadShapeState = validateRegistrationPayloadShape(formData);
+
+    if (payloadShapeState) {
+      await logSupplierRegistrationSubmitError(
+        new Error(payloadShapeState.error ?? "Payload validation failed."),
+        {
+          fieldErrors: payloadShapeState.fieldErrors,
+          persist: false,
+          reason: "payload-shape",
+        },
+      );
+      return payloadShapeState;
+    }
+
     const parsedRegistration = parseRegistrationFormData(formData);
 
     if (!parsedRegistration.success) {

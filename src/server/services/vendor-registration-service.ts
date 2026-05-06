@@ -43,6 +43,7 @@ import { syncVendorToOdoo } from "@/server/services/vendor-odoo-sync-service";
 
 type ParsedRegistrationSubmission = z.infer<typeof vendorRegistrationSubmissionSchema>;
 type ParsedRegistrationReview = z.infer<typeof vendorRegistrationReviewSchema>;
+const MAX_SPECIFIC_CITY_SELECTIONS = 250;
 type VendorRegistrationAttachmentType =
   | "CR"
   | "VAT"
@@ -752,11 +753,22 @@ export async function submitVendorRegistrationRequest(input: {
   const selectedSubcategoryIds = Array.from(
     new Set(input.values.subcategoryIds),
   );
+  const explicitCityIds = Array.from(new Set(input.values.cityIds));
+
+  if (
+    input.values.coverageScope === "SPECIFIC_CITIES" &&
+    explicitCityIds.length > MAX_SPECIFIC_CITY_SELECTIONS
+  ) {
+    throw new Error(
+      `Specific city coverage cannot exceed ${MAX_SPECIFIC_CITY_SELECTIONS} selected cities.`,
+    );
+  }
+
   const expandedCityIds = expandCoverageCities({
     countries: lookup.countries,
     countryCode: input.values.countryCode,
     coverageScope: input.values.coverageScope,
-    cityIds: Array.from(new Set(input.values.cityIds)),
+    cityIds: explicitCityIds,
   });
   const selectedCityIds = Array.from(new Set(expandedCityIds));
   const requestNumber = await createUniqueRequestNumber();

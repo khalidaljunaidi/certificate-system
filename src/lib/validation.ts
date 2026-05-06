@@ -165,7 +165,7 @@ export const vendorRegistrationSubmissionSchema = z
     vatNumber: requiredString("VAT number").max(120),
     countryCode: requiredString("Country"),
     coverageScope: vendorRegistrationCoverageScopeSchema,
-    cityIds: z.array(z.string().trim()).min(1, "Select at least one city"),
+    cityIds: z.array(z.string().trim()).default([]),
     categoryId: requiredString("Main category"),
     subcategoryIds: z.array(z.string().trim()).min(1, "Select at least one subcategory"),
     addressLine1: requiredString("Address line 1").max(240),
