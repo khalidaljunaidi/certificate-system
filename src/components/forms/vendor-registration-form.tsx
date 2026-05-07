@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 import type { FormEvent, ReactNode } from "react";
 
 import { EMPTY_ACTION_STATE } from "@/actions/utils";
@@ -77,6 +78,7 @@ const COVERAGE_SCOPE_OPTIONS = [
 ] as const;
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_TOTAL_UPLOAD_BYTES = 20 * 1024 * 1024;
 const MAX_SUBMIT_CITY_IDS = 200;
 const FILE_TOO_LARGE_MESSAGE = "File is too large. Maximum allowed size is 10MB.";
 const ALLOWED_UPLOAD_TYPES = new Set([
@@ -89,30 +91,35 @@ const ALLOWED_UPLOAD_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png"];
 const ATTACHMENT_FIELDS = [
   {
     name: "crAttachment",
+    documentType: "CR",
     label: "CR",
     helper: "Commercial registration document.",
     required: true,
   },
   {
     name: "vatAttachment",
+    documentType: "VAT",
     label: "VAT",
     helper: "VAT certificate or tax registration document.",
     required: true,
   },
   {
     name: "companyProfileAttachment",
+    documentType: "COMPANY_PROFILE",
     label: "Company Profile",
     helper: "Profile, brochure, or capability deck.",
     required: true,
   },
   {
     name: "financialsAttachment",
+    documentType: "FINANCIALS",
     label: "Financials",
     helper: "Financial statements or bank-ready financial documents.",
     required: false,
   },
   {
     name: "bankCertificateAttachment",
+    documentType: "BANK_CERTIFICATE",
     label: "Bank Certificate",
     helper: "Bank certificate or account confirmation letter.",
     required: false,
@@ -120,8 +127,21 @@ const ATTACHMENT_FIELDS = [
 ] as const;
 
 type AttachmentFieldName = (typeof ATTACHMENT_FIELDS)[number]["name"];
+type AttachmentDocumentType = (typeof ATTACHMENT_FIELDS)[number]["documentType"];
 type SelectedUploadFiles = Partial<Record<AttachmentFieldName, File>>;
 type UploadFieldErrors = Partial<Record<AttachmentFieldName, string>>;
+type UploadedAttachmentMetadata = {
+  fieldName: AttachmentFieldName;
+  documentType: AttachmentDocumentType;
+  attachmentId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  storagePath: string;
+};
+type UploadedAttachmentMetadataMap = Partial<
+  Record<AttachmentFieldName, UploadedAttachmentMetadata>
+>;
 type SubmitBlockingField = {
   field: string;
   label: string;
@@ -209,6 +229,13 @@ const BLOCKED_PAYLOAD_FIELD_NAMES = new Set([
   "coverageOptions",
   "coverageOptionLabels",
 ]);
+
+const SUPABASE_PUBLIC_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const SUPABASE_PUBLIC_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const SUPABASE_VENDOR_REGISTRATION_BUCKET =
+  process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET_VENDOR_REGISTRATION ??
+  "vendor-registration-attachments";
 
 const FALLBACK_COUNTRIES: VendorRegistrationFormOptions["countries"] = [
   {
@@ -710,6 +737,10 @@ function isAllowedUploadFile(file: File) {
 
 function validateUploadInputs(uploadFiles: SelectedUploadFiles) {
   const fieldErrors: UploadFieldErrors = {};
+  const totalUploadSize = Object.values(uploadFiles).reduce(
+    (total, file) => total + (file?.size ?? 0),
+    0,
+  );
 
   for (const field of ATTACHMENT_FIELDS) {
     const file = uploadFiles[field.name] ?? null;
@@ -729,6 +760,15 @@ function validateUploadInputs(uploadFiles: SelectedUploadFiles) {
     }
   }
 
+  if (totalUploadSize > MAX_TOTAL_UPLOAD_BYTES) {
+    for (const field of ATTACHMENT_FIELDS) {
+      if (uploadFiles[field.name]) {
+        fieldErrors[field.name] =
+          "Total upload size is too large. Maximum allowed total size is 20MB.";
+      }
+    }
+  }
+
   const firstFieldError = ATTACHMENT_FIELDS.map(
     (field) => fieldErrors[field.name],
   ).find(Boolean);
@@ -744,6 +784,157 @@ function validateUploadInputs(uploadFiles: SelectedUploadFiles) {
     message: null,
     fieldErrors,
   };
+}
+
+let browserSupabaseClient: ReturnType<typeof createClient> | null = null;
+
+function getBrowserSupabaseClient() {
+  if (!SUPABASE_PUBLIC_URL || !SUPABASE_PUBLIC_ANON_KEY) {
+    throw new Error(
+      "Supabase upload configuration is missing. Please contact procurement.",
+    );
+  }
+
+  browserSupabaseClient ??= createClient(
+    SUPABASE_PUBLIC_URL,
+    SUPABASE_PUBLIC_ANON_KEY,
+    {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    },
+  );
+
+  return browserSupabaseClient;
+}
+
+function createClientAttachmentId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `attachment-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
+
+function fileMatchesUploadedMetadata(
+  file: File,
+  metadata: UploadedAttachmentMetadata | undefined,
+) {
+  return (
+    Boolean(metadata) &&
+    metadata?.fileName === file.name &&
+    metadata?.mimeType === file.type &&
+    metadata?.sizeBytes === file.size
+  );
+}
+
+async function requestSignedVendorRegistrationUpload(input: {
+  requestNumber: string;
+  documentType: AttachmentDocumentType;
+  file: File;
+}) {
+  const response = await fetch("/api/vendor-registration/upload-url", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+    body: JSON.stringify({
+      requestNumber: input.requestNumber,
+      documentType: input.documentType,
+      fileName: input.file.name || `${input.documentType}.pdf`,
+      mimeType: input.file.type || "application/octet-stream",
+      sizeBytes: input.file.size,
+    }),
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        storagePath?: string;
+        token?: string;
+        error?: string;
+      }
+    | null;
+
+  if (!response.ok || !payload?.storagePath || !payload.token) {
+    throw new Error(
+      payload?.error ??
+        "Document upload could not be prepared. Please try again.",
+    );
+  }
+
+  return {
+    storagePath: payload.storagePath,
+    token: payload.token,
+  };
+}
+
+async function uploadVendorRegistrationFiles(input: {
+  uploadFiles: SelectedUploadFiles;
+  existingMetadata: UploadedAttachmentMetadataMap;
+}) {
+  const supabase = getBrowserSupabaseClient();
+  const nextMetadata: UploadedAttachmentMetadataMap = {};
+  const uploadSessionId = `pending-${createClientAttachmentId()}`;
+
+  for (const field of ATTACHMENT_FIELDS) {
+    const file = input.uploadFiles[field.name];
+
+    if (!file) {
+      continue;
+    }
+
+    const existing = input.existingMetadata[field.name];
+
+    if (fileMatchesUploadedMetadata(file, existing)) {
+      nextMetadata[field.name] = existing;
+      continue;
+    }
+
+    const attachmentId = createClientAttachmentId();
+
+    console.info("[supplier-registration] uploading document", {
+      documentType: field.documentType,
+      mimeType: file.type || "unknown",
+      fileSizeMB: Number((file.size / (1024 * 1024)).toFixed(2)),
+    });
+
+    const signedUpload = await requestSignedVendorRegistrationUpload({
+      requestNumber: uploadSessionId,
+      documentType: field.documentType,
+      file,
+    });
+    const { error } = await supabase.storage
+      .from(SUPABASE_VENDOR_REGISTRATION_BUCKET)
+      .uploadToSignedUrl(signedUpload.storagePath, signedUpload.token, file, {
+        contentType: file.type || "application/octet-stream",
+      });
+
+    if (error) {
+      throw new Error(`${field.label} upload failed. Please try again.`);
+    }
+
+    console.info("[supplier-registration] file uploaded", {
+      documentType: field.documentType,
+      mimeType: file.type || "unknown",
+      fileSizeMB: Number((file.size / (1024 * 1024)).toFixed(2)),
+      storagePath: signedUpload.storagePath,
+    });
+
+    nextMetadata[field.name] = {
+      fieldName: field.name,
+      documentType: field.documentType,
+      attachmentId,
+      fileName: file.name || `${field.documentType}.pdf`,
+      mimeType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+      storagePath: signedUpload.storagePath,
+    };
+  }
+
+  return nextMetadata;
 }
 
 function appendControlToFormData(
@@ -787,11 +978,11 @@ function appendControlToFormData(
 
 function buildCompleteRegistrationFormData(
   form: HTMLFormElement,
-  uploadFiles: SelectedUploadFiles,
   input: {
     coverageScope: CoverageScope;
     selectedCityIds: string[];
     selectedSubcategoryIds: string[];
+    uploadedAttachments: UploadedAttachmentMetadataMap;
   },
 ) {
   const formData = new FormData();
@@ -818,19 +1009,15 @@ function buildCompleteRegistrationFormData(
   }
 
   for (const field of ATTACHMENT_FIELDS) {
-    const inputElement = form.elements.namedItem(field.name);
-    const nativeFile =
-      inputElement instanceof HTMLInputElement
-        ? (inputElement.files?.[0] ?? null)
-        : null;
-    const file = uploadFiles[field.name];
+    const metadata = input.uploadedAttachments[field.name];
 
-    // Native file inputs are the source of truth. React state is only a
-    // fallback for browsers that drop file values during stepped navigation.
-    if (nativeFile instanceof File && nativeFile.size > 0) {
-      formData.set(field.name, nativeFile);
-    } else if (file instanceof File) {
-      formData.set(field.name, file);
+    if (metadata) {
+      formData.set(`${field.name}DocumentType`, metadata.documentType);
+      formData.set(`${field.name}AttachmentId`, metadata.attachmentId);
+      formData.set(`${field.name}FileName`, metadata.fileName);
+      formData.set(`${field.name}MimeType`, metadata.mimeType);
+      formData.set(`${field.name}SizeBytes`, String(metadata.sizeBytes));
+      formData.set(`${field.name}StoragePath`, metadata.storagePath);
     }
   }
 
@@ -842,20 +1029,17 @@ function logFinalSubmitPayloadDebug(input: {
   coverageScope: CoverageScope;
   submittedCityCount: number;
   selectedSubcategoryCount: number;
+  uploadedFilesCount: number;
 }) {
   const keys = Array.from(new Set(Array.from(input.formData.keys()))).sort();
-  const files: Array<{ field: string; type: string; sizeMB: number }> = [];
   let nonFileFieldCount = 0;
 
   for (const [key, value] of input.formData.entries()) {
     if (value instanceof File) {
-      if (value.size > 0) {
-        files.push({
-          field: key,
-          type: value.type || "unknown",
-          sizeMB: Number((value.size / (1024 * 1024)).toFixed(2)),
-        });
-      }
+      console.warn("[supplier-registration] unexpected file payload", {
+        field: key,
+        sizeMB: Number((value.size / (1024 * 1024)).toFixed(2)),
+      });
       continue;
     }
 
@@ -865,14 +1049,14 @@ function logFinalSubmitPayloadDebug(input: {
   console.log("payload keys:", keys);
   console.log("cities count", input.submittedCityCount);
   console.log("subcategories count", input.selectedSubcategoryCount);
-  console.log("files count", files.length);
+  console.log("files count", input.uploadedFilesCount);
   console.info("[supplier-registration] final submit payload", {
     keys,
     coverageScope: input.coverageScope,
     selectedCities: input.submittedCityCount,
     selectedSubcategories: input.selectedSubcategoryCount,
     nonFileFields: nonFileFieldCount,
-    files,
+    files: input.uploadedFilesCount,
   });
 }
 
@@ -1117,6 +1301,8 @@ export function VendorRegistrationForm({
   const [clientUploadError, setClientUploadError] = useState<string | null>(null);
   const [selectedUploadFiles, setSelectedUploadFiles] =
     useState<SelectedUploadFiles>({});
+  const [uploadedAttachments, setUploadedAttachments] =
+    useState<UploadedAttachmentMetadataMap>({});
   const [uploadFieldErrors, setUploadFieldErrors] = useState<UploadFieldErrors>(
     {},
   );
@@ -1576,6 +1762,17 @@ export function VendorRegistrationForm({
 
   useEffect(() => {
     if (state.error || state.fieldErrors || state.success) {
+      if (state.success) {
+        console.info("[supplier-registration] final submit success", {
+          redirectTo: state.redirectTo ?? null,
+        });
+      } else {
+        console.warn("[supplier-registration] final submit failed", {
+          error: state.error ?? "Validation failed.",
+          fields: state.fieldErrors ? Object.keys(state.fieldErrors) : [],
+        });
+      }
+
       submitLockedRef.current = false;
       setClientSubmitting(false);
     }
@@ -1679,6 +1876,11 @@ export function VendorRegistrationForm({
     const fileError = file && field ? validateUploadFile(file, field.label) : null;
 
     setClientUploadError(null);
+    setUploadedAttachments((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
 
     if (fileError) {
       setSelectedUploadFiles((current) => {
@@ -2074,7 +2276,7 @@ export function VendorRegistrationForm({
     return true;
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (submitLockedRef.current || isSubmitting) {
@@ -2113,13 +2315,51 @@ export function VendorRegistrationForm({
       return;
     }
 
+    submitLockedRef.current = true;
+    setClientSubmitting(true);
+    setClientUploadError(null);
+    console.info("[supplier-registration] final submit started", {
+      coverageScope,
+      selectedCities:
+        coverageScope === "SPECIFIC_CITIES" ? selectedCityIds.length : 0,
+      selectedSubcategories: subcategoryIds.length,
+      selectedFiles: Object.keys(selectedUploadFiles).length,
+    });
+
+    let nextUploadedAttachments: UploadedAttachmentMetadataMap;
+
+    try {
+      nextUploadedAttachments = await uploadVendorRegistrationFiles({
+        uploadFiles: selectedUploadFiles,
+        existingMetadata: uploadedAttachments,
+      });
+      setUploadedAttachments(nextUploadedAttachments);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Document upload failed. Please try again.";
+
+      submitLockedRef.current = false;
+      setClientSubmitting(false);
+      setClientUploadError(message);
+      setStepValidationError(message);
+      setCurrentStep(6);
+      window.requestAnimationFrame(() => {
+        formRef.current
+          ?.querySelector<HTMLElement>("[data-registration-step='6']")
+          ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      return;
+    }
+
     const formData = buildCompleteRegistrationFormData(
       event.currentTarget,
-      selectedUploadFiles,
       {
         coverageScope,
         selectedCityIds,
         selectedSubcategoryIds: subcategoryIds,
+        uploadedAttachments: nextUploadedAttachments,
       },
     );
 
@@ -2129,10 +2369,8 @@ export function VendorRegistrationForm({
       submittedCityCount:
         coverageScope === "SPECIFIC_CITIES" ? selectedCityIds.length : 0,
       selectedSubcategoryCount: subcategoryIds.length,
+      uploadedFilesCount: Object.keys(nextUploadedAttachments).length,
     });
-
-    submitLockedRef.current = true;
-    setClientSubmitting(true);
 
     startTransition(() => {
       formAction(formData);

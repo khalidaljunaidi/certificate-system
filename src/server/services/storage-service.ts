@@ -434,6 +434,35 @@ export async function getSignedUrl(
   return data.signedUrl;
 }
 
+export async function createSignedUploadUrl(input: StorageObjectInput) {
+  const bucket = normalizeBucketName(input.bucket);
+  const objectPath = normalizeObjectPath(input.path);
+
+  assertSupabaseStorageConfigured();
+
+  const client = getSupabaseAdminClient();
+  logStorageOperation({
+    provider: "supabase",
+    bucketName: bucket,
+    objectPath,
+  });
+
+  const { data, error } = await client.storage
+    .from(bucket)
+    .createSignedUploadUrl(objectPath, {
+      upsert: true,
+    });
+
+  if (error) {
+    throw new Error(`Failed to create signed upload URL: ${error.message}`);
+  }
+
+  return {
+    storagePath: data.path,
+    token: data.token,
+  };
+}
+
 async function downloadWithLegacyFallback(input: {
   bucket: string;
   path: string;
