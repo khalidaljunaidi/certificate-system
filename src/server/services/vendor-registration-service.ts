@@ -50,6 +50,7 @@ type VendorRegistrationAttachmentType =
   | "COMPANY_PROFILE"
   | "FINANCIALS"
   | "BANK_CERTIFICATE";
+const MAX_VENDOR_REGISTRATION_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 const vendorRegistrationAttachmentFieldNames: Record<
   VendorRegistrationAttachmentType,
@@ -73,9 +74,31 @@ const vendorRegistrationAttachmentLabels: Record<
   BANK_CERTIFICATE: "Bank Certificate",
 };
 
-type BuiltVendorRegistrationAttachment = Awaited<
-  ReturnType<typeof buildAttachmentRecord>
->;
+type BuiltVendorRegistrationAttachment = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  storageBucket: string;
+  storagePath: string;
+  sizeBytes: number;
+};
+type UploadedVendorRegistrationAttachmentMetadata = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  storagePath: string;
+  sizeBytes: number;
+};
+type EmailOnlyVendorRegistrationAttachmentMetadata = {
+  documentType: VendorRegistrationAttachmentType;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+type VendorRegistrationEmailAttachment = {
+  filename: string;
+  content: Buffer;
+};
 type BuiltVendorRegistrationAttachmentEntry = {
   type: VendorRegistrationAttachmentType;
   attachment: BuiltVendorRegistrationAttachment;
@@ -613,67 +636,67 @@ async function deleteUploadedVendorRegistrationAttachments(
 }
 
 async function buildVendorRegistrationAttachmentEntries(input: {
-  requestNumber: string;
-  files: Partial<Record<VendorRegistrationAttachmentType, File | undefined>>;
+  attachments: Partial<
+    Record<
+      VendorRegistrationAttachmentType,
+      UploadedVendorRegistrationAttachmentMetadata | undefined
+    >
+  >;
 }): Promise<BuiltVendorRegistrationAttachmentEntry[]> {
   const attachmentEntries: BuiltVendorRegistrationAttachmentEntry[] = [];
   const fieldErrors: Record<string, string[]> = {};
 
-  for (const [type, file] of Object.entries(input.files) as Array<
-    [VendorRegistrationAttachmentType, File | undefined]
+  for (const [type, metadata] of Object.entries(input.attachments) as Array<
+    [
+      VendorRegistrationAttachmentType,
+      UploadedVendorRegistrationAttachmentMetadata | undefined,
+    ]
   >) {
-    if (!file) {
+    if (!metadata) {
       continue;
     }
 
-    try {
-      const attachment = await buildAttachmentRecord({
-        requestNumber: input.requestNumber,
-        type,
-        file,
-      });
+    const label = vendorRegistrationAttachmentLabels[type] ?? type;
+    const fieldName = vendorRegistrationAttachmentFieldNames[type] ?? type;
+    const normalizedPath = metadata.storagePath.trim().replace(/^\/+/, "");
+    const invalidMetadata =
+      !metadata.id ||
+      !metadata.fileName ||
+      !metadata.mimeType ||
+      !normalizedPath ||
+      normalizedPath.includes("..") ||
+      !Number.isFinite(metadata.sizeBytes) ||
+      metadata.sizeBytes <= 0 ||
+      metadata.sizeBytes > MAX_VENDOR_REGISTRATION_ATTACHMENT_BYTES;
 
-      debugVendorRegistrationAttachment("[vendor-registration-attachment-entry]", {
-        documentType: type,
-        originalFileName: attachment.fileName,
-        sizeBytes: attachment.sizeBytes,
-        storageBucket: attachment.storageBucket,
-        storagePath: attachment.storagePath,
-      });
-
-      attachmentEntries.push({
-        type,
-        attachment,
-      });
-    } catch (error) {
-      const label = vendorRegistrationAttachmentLabels[type] ?? type;
-      const fieldName = vendorRegistrationAttachmentFieldNames[type] ?? type;
-      const message = `${label} failed to upload. Please try again.`;
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown upload error";
-
-      fieldErrors[fieldName] = [message];
-
-      console.warn("[vendor-registration-attachment-upload]", {
-        documentType: label,
-        fileName: file.name,
-        mimeType: file.type || "unknown",
-        fileSizeMB: getFileSizeMb(file),
-        errorMessage,
-      });
-
-      await logSystemError({
-        action: "VendorRegistrationAttachmentUpload",
-        error,
-        severity: "ERROR",
-        context: {
-          documentType: label,
-          fileName: file.name,
-          mimeType: file.type || "unknown",
-          fileSizeMB: getFileSizeMb(file),
-        },
-      }).catch(() => undefined);
+    if (invalidMetadata) {
+      fieldErrors[fieldName] = [
+        `${label} upload metadata is invalid. Please upload the file again.`,
+      ];
+      continue;
     }
+
+    const attachment: BuiltVendorRegistrationAttachment = {
+      id: metadata.id,
+      fileName: metadata.fileName,
+      mimeType: metadata.mimeType,
+      storageBucket: STORAGE_BUCKETS.vendorRegistration,
+      storagePath: normalizedPath,
+      sizeBytes: metadata.sizeBytes,
+    };
+
+    debugVendorRegistrationAttachment("[vendor-registration-attachment-entry]", {
+      documentType: type,
+      originalFileName: attachment.fileName,
+      sizeBytes: attachment.sizeBytes,
+      storageBucket: attachment.storageBucket,
+      storagePath: attachment.storagePath,
+    });
+
+    attachmentEntries.push({
+      type,
+      attachment,
+    });
   }
 
   if (Object.keys(fieldErrors).length > 0) {
@@ -735,16 +758,18 @@ async function notifyVendorRegistrationSubmitted(input: {
 
 export async function submitVendorRegistrationRequest(input: {
   values: ParsedRegistrationSubmission;
-  files: Partial<
+  attachments?: Partial<
     Record<
       | "CR"
       | "VAT"
       | "COMPANY_PROFILE"
       | "FINANCIALS"
       | "BANK_CERTIFICATE",
-      File | undefined
+      UploadedVendorRegistrationAttachmentMetadata | undefined
     >
   >;
+  emailOnlyAttachments?: EmailOnlyVendorRegistrationAttachmentMetadata[];
+  emailAttachments?: VendorRegistrationEmailAttachment[];
 }) {
   const { lookup, selectedCategory, primarySubcategory, selectedCountry } =
     await validateRegistrationCatalog(input.values);
@@ -777,23 +802,44 @@ export async function submitVendorRegistrationRequest(input: {
     cityIds: selectedCityIds,
     subcategoryIds: selectedSubcategoryIds,
     selectedSubcategoryCodes: selectedSubcategoryIds,
-    attachments: Object.fromEntries(
-      Object.entries(input.files)
-        .filter((entry): entry is [string, File] => Boolean(entry[1]))
-        .map(([type, file]) => [
-          type,
-          {
-            name: file.name,
-            type: file.type,
-            size: file.size,
-          },
-        ]),
-    ),
+    attachments: input.emailOnlyAttachments?.length
+      ? Object.fromEntries(
+          input.emailOnlyAttachments.map((attachment) => [
+            attachment.documentType,
+            {
+              name: attachment.fileName,
+              type: attachment.mimeType,
+              size: attachment.sizeBytes,
+              deliveryMode: "EMAIL_ONLY",
+            },
+          ]),
+        )
+      : Object.fromEntries(
+          Object.entries(input.attachments ?? {})
+            .filter(
+              (
+                entry,
+              ): entry is [
+                string,
+                UploadedVendorRegistrationAttachmentMetadata,
+              ] => Boolean(entry[1]),
+            )
+            .map(([type, attachment]) => [
+              type,
+              {
+                name: attachment.fileName,
+                type: attachment.mimeType,
+                size: attachment.sizeBytes,
+                storagePath: attachment.storagePath,
+              },
+            ]),
+        ),
   };
-  const attachmentEntries = await buildVendorRegistrationAttachmentEntries({
-    requestNumber,
-    files: input.files,
-  });
+  const attachmentEntries = input.attachments
+    ? await buildVendorRegistrationAttachmentEntries({
+        attachments: input.attachments,
+      })
+    : [];
 
   const request = await prisma
     .$transaction(
@@ -874,17 +920,19 @@ export async function submitVendorRegistrationRequest(input: {
           })),
         });
 
-        await tx.vendorRegistrationAttachment.createMany({
-          data: attachmentEntries.map(({ type, attachment }) => ({
-            id: attachment.id,
-            requestId: created.id,
-            type,
-            fileName: attachment.fileName,
-            mimeType: attachment.mimeType,
-            storagePath: attachment.storagePath,
-            sizeBytes: attachment.sizeBytes,
-          })),
-        });
+        if (attachmentEntries.length > 0) {
+          await tx.vendorRegistrationAttachment.createMany({
+            data: attachmentEntries.map(({ type, attachment }) => ({
+              id: attachment.id,
+              requestId: created.id,
+              type,
+              fileName: attachment.fileName,
+              mimeType: attachment.mimeType,
+              storagePath: attachment.storagePath,
+              sizeBytes: attachment.sizeBytes,
+            })),
+          });
+        }
 
         for (const { type, attachment } of attachmentEntries) {
           debugVendorRegistrationAttachment("[vendor-registration-attachment-persisted]", {
@@ -950,6 +998,8 @@ export async function submitVendorRegistrationRequest(input: {
     reviewUrl: absoluteUrl(`/admin/vendor-registrations/${request.id}`),
   });
 
+  let emailWarning: string | null = null;
+
   await sendDirectWorkflowEmail({
     label: "vendor-registration-submitted",
     to: Array.from(PROCUREMENT_TEAM_EMAILS),
@@ -974,7 +1024,10 @@ export async function submitVendorRegistrationRequest(input: {
       requestNumber: request.requestNumber,
       companyName: input.values.companyName,
     },
+    attachments: input.emailAttachments,
   }).catch(async (error) => {
+    emailWarning =
+      "Registration was saved, but the attachment email could not be delivered.";
     console.warn("[vendor-registration] submitted email failed", {
       requestNumber: request.requestNumber,
       companyName: input.values.companyName,
@@ -993,7 +1046,10 @@ export async function submitVendorRegistrationRequest(input: {
     }).catch(() => undefined);
   });
 
-  return request;
+  return {
+    ...request,
+    emailWarning,
+  };
 }
 
 export async function replaceVendorRegistrationAttachment(input: {

@@ -1,19 +1,15 @@
 "use client";
 
 import {
-  startTransition,
-  useActionState,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
 import type { FormEvent, ReactNode } from "react";
 
 import { EMPTY_ACTION_STATE } from "@/actions/utils";
-import { submitVendorRegistrationAction } from "@/actions/vendor-registration-actions";
 import { FormStateMessage } from "@/components/forms/form-state-message";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { VendorRegistrationFormOptions } from "@/lib/types";
+import type { ActionState, VendorRegistrationFormOptions } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
@@ -127,21 +123,8 @@ const ATTACHMENT_FIELDS = [
 ] as const;
 
 type AttachmentFieldName = (typeof ATTACHMENT_FIELDS)[number]["name"];
-type AttachmentDocumentType = (typeof ATTACHMENT_FIELDS)[number]["documentType"];
 type SelectedUploadFiles = Partial<Record<AttachmentFieldName, File>>;
 type UploadFieldErrors = Partial<Record<AttachmentFieldName, string>>;
-type UploadedAttachmentMetadata = {
-  fieldName: AttachmentFieldName;
-  documentType: AttachmentDocumentType;
-  attachmentId: string;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  storagePath: string;
-};
-type UploadedAttachmentMetadataMap = Partial<
-  Record<AttachmentFieldName, UploadedAttachmentMetadata>
->;
 type SubmitBlockingField = {
   field: string;
   label: string;
@@ -229,13 +212,6 @@ const BLOCKED_PAYLOAD_FIELD_NAMES = new Set([
   "coverageOptions",
   "coverageOptionLabels",
 ]);
-
-const SUPABASE_PUBLIC_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SUPABASE_PUBLIC_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-const SUPABASE_VENDOR_REGISTRATION_BUCKET =
-  process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET_VENDOR_REGISTRATION ??
-  "vendor-registration-attachments";
 
 const FALLBACK_COUNTRIES: VendorRegistrationFormOptions["countries"] = [
   {
@@ -786,157 +762,6 @@ function validateUploadInputs(uploadFiles: SelectedUploadFiles) {
   };
 }
 
-let browserSupabaseClient: ReturnType<typeof createClient> | null = null;
-
-function getBrowserSupabaseClient() {
-  if (!SUPABASE_PUBLIC_URL || !SUPABASE_PUBLIC_ANON_KEY) {
-    throw new Error(
-      "Supabase upload configuration is missing. Please contact procurement.",
-    );
-  }
-
-  browserSupabaseClient ??= createClient(
-    SUPABASE_PUBLIC_URL,
-    SUPABASE_PUBLIC_ANON_KEY,
-    {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    },
-  );
-
-  return browserSupabaseClient;
-}
-
-function createClientAttachmentId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-
-  return `attachment-${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2, 10)}`;
-}
-
-function fileMatchesUploadedMetadata(
-  file: File,
-  metadata: UploadedAttachmentMetadata | undefined,
-) {
-  return (
-    Boolean(metadata) &&
-    metadata?.fileName === file.name &&
-    metadata?.mimeType === file.type &&
-    metadata?.sizeBytes === file.size
-  );
-}
-
-async function requestSignedVendorRegistrationUpload(input: {
-  requestNumber: string;
-  documentType: AttachmentDocumentType;
-  file: File;
-}) {
-  const response = await fetch("/api/vendor-registration/upload-url", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    cache: "no-store",
-    body: JSON.stringify({
-      requestNumber: input.requestNumber,
-      documentType: input.documentType,
-      fileName: input.file.name || `${input.documentType}.pdf`,
-      mimeType: input.file.type || "application/octet-stream",
-      sizeBytes: input.file.size,
-    }),
-  });
-  const payload = (await response.json().catch(() => null)) as
-    | {
-        storagePath?: string;
-        token?: string;
-        error?: string;
-      }
-    | null;
-
-  if (!response.ok || !payload?.storagePath || !payload.token) {
-    throw new Error(
-      payload?.error ??
-        "Document upload could not be prepared. Please try again.",
-    );
-  }
-
-  return {
-    storagePath: payload.storagePath,
-    token: payload.token,
-  };
-}
-
-async function uploadVendorRegistrationFiles(input: {
-  uploadFiles: SelectedUploadFiles;
-  existingMetadata: UploadedAttachmentMetadataMap;
-}) {
-  const supabase = getBrowserSupabaseClient();
-  const nextMetadata: UploadedAttachmentMetadataMap = {};
-  const uploadSessionId = `pending-${createClientAttachmentId()}`;
-
-  for (const field of ATTACHMENT_FIELDS) {
-    const file = input.uploadFiles[field.name];
-
-    if (!file) {
-      continue;
-    }
-
-    const existing = input.existingMetadata[field.name];
-
-    if (fileMatchesUploadedMetadata(file, existing)) {
-      nextMetadata[field.name] = existing;
-      continue;
-    }
-
-    const attachmentId = createClientAttachmentId();
-
-    console.info("[supplier-registration] uploading document", {
-      documentType: field.documentType,
-      mimeType: file.type || "unknown",
-      fileSizeMB: Number((file.size / (1024 * 1024)).toFixed(2)),
-    });
-
-    const signedUpload = await requestSignedVendorRegistrationUpload({
-      requestNumber: uploadSessionId,
-      documentType: field.documentType,
-      file,
-    });
-    const { error } = await supabase.storage
-      .from(SUPABASE_VENDOR_REGISTRATION_BUCKET)
-      .uploadToSignedUrl(signedUpload.storagePath, signedUpload.token, file, {
-        contentType: file.type || "application/octet-stream",
-      });
-
-    if (error) {
-      throw new Error(`${field.label} upload failed. Please try again.`);
-    }
-
-    console.info("[supplier-registration] file uploaded", {
-      documentType: field.documentType,
-      mimeType: file.type || "unknown",
-      fileSizeMB: Number((file.size / (1024 * 1024)).toFixed(2)),
-      storagePath: signedUpload.storagePath,
-    });
-
-    nextMetadata[field.name] = {
-      fieldName: field.name,
-      documentType: field.documentType,
-      attachmentId,
-      fileName: file.name || `${field.documentType}.pdf`,
-      mimeType: file.type || "application/octet-stream",
-      sizeBytes: file.size,
-      storagePath: signedUpload.storagePath,
-    };
-  }
-
-  return nextMetadata;
-}
-
 function appendControlToFormData(
   formData: FormData,
   element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
@@ -982,7 +807,7 @@ function buildCompleteRegistrationFormData(
     coverageScope: CoverageScope;
     selectedCityIds: string[];
     selectedSubcategoryIds: string[];
-    uploadedAttachments: UploadedAttachmentMetadataMap;
+    selectedUploadFiles: SelectedUploadFiles;
   },
 ) {
   const formData = new FormData();
@@ -1009,15 +834,10 @@ function buildCompleteRegistrationFormData(
   }
 
   for (const field of ATTACHMENT_FIELDS) {
-    const metadata = input.uploadedAttachments[field.name];
+    const file = input.selectedUploadFiles[field.name];
 
-    if (metadata) {
-      formData.set(`${field.name}DocumentType`, metadata.documentType);
-      formData.set(`${field.name}AttachmentId`, metadata.attachmentId);
-      formData.set(`${field.name}FileName`, metadata.fileName);
-      formData.set(`${field.name}MimeType`, metadata.mimeType);
-      formData.set(`${field.name}SizeBytes`, String(metadata.sizeBytes));
-      formData.set(`${field.name}StoragePath`, metadata.storagePath);
+    if (file) {
+      formData.set(field.name, file, file.name);
     }
   }
 
@@ -1033,10 +853,12 @@ function logFinalSubmitPayloadDebug(input: {
 }) {
   const keys = Array.from(new Set(Array.from(input.formData.keys()))).sort();
   let nonFileFieldCount = 0;
+  let fileFieldCount = 0;
 
   for (const [key, value] of input.formData.entries()) {
     if (value instanceof File) {
-      console.warn("[supplier-registration] unexpected file payload", {
+      fileFieldCount += 1;
+      console.info("[supplier-registration] file payload", {
         field: key,
         sizeMB: Number((value.size / (1024 * 1024)).toFixed(2)),
       });
@@ -1056,7 +878,7 @@ function logFinalSubmitPayloadDebug(input: {
     selectedCities: input.submittedCityCount,
     selectedSubcategories: input.selectedSubcategoryCount,
     nonFileFields: nonFileFieldCount,
-    files: input.uploadedFilesCount,
+    files: fileFieldCount,
   });
 }
 
@@ -1284,10 +1106,7 @@ export function VendorRegistrationForm({
   const loadedCityRequestKeysRef = useRef<Set<string>>(new Set());
   const loadedSubcategoryCategoryIdsRef = useRef<Set<string>>(new Set());
   const submitLockedRef = useRef(false);
-  const [state, formAction, isPending] = useActionState(
-    submitVendorRegistrationAction,
-    EMPTY_ACTION_STATE,
-  );
+  const [state, setState] = useState<ActionState>(EMPTY_ACTION_STATE);
   const [options, setOptions] =
     useState<VendorRegistrationFormOptions>(initialOptions);
   const [currentStep, setCurrentStep] = useState(0);
@@ -1301,8 +1120,6 @@ export function VendorRegistrationForm({
   const [clientUploadError, setClientUploadError] = useState<string | null>(null);
   const [selectedUploadFiles, setSelectedUploadFiles] =
     useState<SelectedUploadFiles>({});
-  const [uploadedAttachments, setUploadedAttachments] =
-    useState<UploadedAttachmentMetadataMap>({});
   const [uploadFieldErrors, setUploadFieldErrors] = useState<UploadFieldErrors>(
     {},
   );
@@ -1330,7 +1147,8 @@ export function VendorRegistrationForm({
   >([]);
   const [submitTakingLong, setSubmitTakingLong] = useState(false);
   const [declarationComplete, setDeclarationComplete] = useState(false);
-  const isSubmitting = isPending || clientSubmitting;
+  const isSubmitting = clientSubmitting;
+  const isPending = isSubmitting;
   const showSubmitProgress = isSubmitting && currentStep === STEPS.length - 1;
   const effectiveCountryCode = countryCode || "SA";
 
@@ -1876,11 +1694,6 @@ export function VendorRegistrationForm({
     const fileError = file && field ? validateUploadFile(file, field.label) : null;
 
     setClientUploadError(null);
-    setUploadedAttachments((current) => {
-      const next = { ...current };
-      delete next[name];
-      return next;
-    });
 
     if (fileError) {
       setSelectedUploadFiles((current) => {
@@ -2326,40 +2139,13 @@ export function VendorRegistrationForm({
       selectedFiles: Object.keys(selectedUploadFiles).length,
     });
 
-    let nextUploadedAttachments: UploadedAttachmentMetadataMap;
-
-    try {
-      nextUploadedAttachments = await uploadVendorRegistrationFiles({
-        uploadFiles: selectedUploadFiles,
-        existingMetadata: uploadedAttachments,
-      });
-      setUploadedAttachments(nextUploadedAttachments);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Document upload failed. Please try again.";
-
-      submitLockedRef.current = false;
-      setClientSubmitting(false);
-      setClientUploadError(message);
-      setStepValidationError(message);
-      setCurrentStep(6);
-      window.requestAnimationFrame(() => {
-        formRef.current
-          ?.querySelector<HTMLElement>("[data-registration-step='6']")
-          ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-      return;
-    }
-
     const formData = buildCompleteRegistrationFormData(
       event.currentTarget,
       {
         coverageScope,
         selectedCityIds,
         selectedSubcategoryIds: subcategoryIds,
-        uploadedAttachments: nextUploadedAttachments,
+        selectedUploadFiles,
       },
     );
 
@@ -2369,12 +2155,44 @@ export function VendorRegistrationForm({
       submittedCityCount:
         coverageScope === "SPECIFIC_CITIES" ? selectedCityIds.length : 0,
       selectedSubcategoryCount: subcategoryIds.length,
-      uploadedFilesCount: Object.keys(nextUploadedAttachments).length,
+      uploadedFilesCount: Object.keys(selectedUploadFiles).length,
     });
 
-    startTransition(() => {
-      formAction(formData);
-    });
+    try {
+      const response = await fetch("/api/vendor-registration/submit", {
+        method: "POST",
+        body: formData,
+      });
+      const result = (await response.json().catch(() => null)) as
+        | ActionState
+        | null;
+
+      if (!response.ok || !result || result.error) {
+        const nextState: ActionState = result ?? {
+          error: "We could not submit the registration. Please try again.",
+        };
+
+        setState(nextState);
+        submitLockedRef.current = false;
+        setClientSubmitting(false);
+        return;
+      }
+
+      setState(result);
+    } catch (error) {
+      console.warn("[supplier-registration] final submit failed", {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Network or submission error",
+      });
+      setState({
+        error:
+          "We could not submit the registration. Please check your connection and try again.",
+      });
+      submitLockedRef.current = false;
+      setClientSubmitting(false);
+    }
   }
 
   function handleContinue() {
@@ -2402,7 +2220,6 @@ export function VendorRegistrationForm({
   return (
     <form
       ref={formRef}
-      action={formAction}
       onChange={(event) => {
         if (stepValidationError) {
           setStepValidationError(null);
