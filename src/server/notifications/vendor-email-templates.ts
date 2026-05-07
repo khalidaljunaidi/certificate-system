@@ -137,7 +137,7 @@ export function vendorSubmittedTemplate({
       New Request
     </div>
     <h2 style="margin:0;color:#151019;font-size:26px;line-height:34px;font-weight:700;">Vendor Registration Submitted</h2>
-    <p style="margin:18px 0 0;color:#4d4654;font-size:15px;line-height:26px;">A new supplier registration request has been submitted and is ready for procurement review.</p>
+    <p style="margin:18px 0 0;color:#4d4654;font-size:15px;line-height:26px;">A new supplier registration request has been submitted and is ready for procurement review. Documents pending by email.</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;border-collapse:collapse;background:#f7f5fa;border:1px solid #e8e0ec;border-radius:12px;">
       <tr>
         <td style="padding:16px 18px;border-bottom:1px solid #e8e0ec;">
@@ -152,13 +152,19 @@ export function vendorSubmittedTemplate({
         </td>
       </tr>
       <tr>
-        <td style="padding:16px 18px;">
+        <td style="padding:16px 18px;border-bottom:1px solid #e8e0ec;">
           <div style="font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#6b6270;">Submitted Date</div>
           <div style="margin-top:5px;font-size:15px;line-height:23px;font-weight:700;color:#1b1033;">${safeSubmittedAt}</div>
         </td>
       </tr>
+      <tr>
+        <td style="padding:16px 18px;">
+          <div style="font-size:11px;line-height:16px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#6b6270;">Documents</div>
+          <div style="margin-top:5px;font-size:15px;line-height:23px;font-weight:700;color:#1b1033;">Documents pending by email.</div>
+        </td>
+      </tr>
     </table>
-    <p style="margin:0;color:#4d4654;font-size:15px;line-height:26px;">Please review the company details, uploaded documents, category selections, and declaration before approving or rejecting the request.</p>
+    <p style="margin:0;color:#4d4654;font-size:15px;line-height:26px;">Please review the company details, category selections, and declaration before approving or rejecting the request. Supporting documents should arrive separately by email.</p>
     ${ctaButton({ href: reviewUrl, label: "Review Request", background: "#c8a45c" })}
   `;
 
@@ -166,7 +172,7 @@ export function vendorSubmittedTemplate({
     subject: `Vendor Registration Submitted - ${vendorName}`,
     html: buildShell({
       title: "Vendor Registration Submitted",
-      preheader: `${vendorName} submitted supplier registration request ${requestNumber}.`,
+      preheader: `${vendorName} submitted supplier registration request ${requestNumber}. Documents pending by email.`,
       accentColor: "#c8a45c",
       body,
     }),

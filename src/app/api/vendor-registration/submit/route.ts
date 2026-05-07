@@ -9,12 +9,8 @@ import { submitVendorRegistrationRequest } from "@/server/services/vendor-regist
 
 export const runtime = "nodejs";
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_TOTAL_FILE_BYTES = 20 * 1024 * 1024;
 const MAX_SPECIFIC_CITY_SELECTIONS = 250;
 const MAX_REASONABLE_TEXT_FIELD_BYTES = 5000;
-const FILE_TOO_LARGE_MESSAGE =
-  "File is too large. Maximum allowed size is 10MB.";
 const GENERIC_SUBMIT_ERROR =
   "We could not submit the registration. Please try again or contact procurement.";
 const DUPLICATE_VENDOR_REGISTRATION_MESSAGE =
@@ -33,50 +29,18 @@ const OPTION_PAYLOAD_FIELD_NAMES = new Set([
   "coverageoptionlabels",
 ]);
 
-const ALLOWED_FILE_TYPES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
+const FILE_PAYLOAD_FIELD_NAMES = new Set([
+  "crattachment",
+  "vatattachment",
+  "companyprofileattachment",
+  "financialsattachment",
+  "bankcertificateattachment",
 ]);
-const ALLOWED_FILE_EXTENSIONS = [".pdf", ".jpg", ".jpeg", ".png"];
-
-const ATTACHMENT_FIELDS = [
-  {
-    fieldName: "crAttachment",
-    documentType: "CR",
-    label: "CR",
-    required: true,
-  },
-  {
-    fieldName: "vatAttachment",
-    documentType: "VAT",
-    label: "VAT",
-    required: true,
-  },
-  {
-    fieldName: "companyProfileAttachment",
-    documentType: "COMPANY_PROFILE",
-    label: "Company Profile",
-    required: true,
-  },
-  {
-    fieldName: "financialsAttachment",
-    documentType: "FINANCIALS",
-    label: "Financials",
-    required: false,
-  },
-  {
-    fieldName: "bankCertificateAttachment",
-    documentType: "BANK_CERTIFICATE",
-    label: "Bank Certificate",
-    required: false,
-  },
-] as const;
 
 type ParsedRegistrationSubmission = z.infer<
   typeof vendorRegistrationSubmissionSchema
 >;
-type AttachmentDocumentType = (typeof ATTACHMENT_FIELDS)[number]["documentType"];
+type SubmitPayload = Record<string, unknown>;
 
 function jsonActionState(state: ActionState, status = 200) {
   return Response.json(state, {
@@ -103,6 +67,48 @@ function normalizePayloadFieldName(fieldName: string) {
   return fieldName.replace(/[\s_\-[\].]/g, "").toLowerCase();
 }
 
+function readString(payload: SubmitPayload, fieldName: string) {
+  const value = payload[fieldName];
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  return undefined;
+}
+
+function readOptionalString(payload: SubmitPayload, fieldName: string) {
+  const value = readString(payload, fieldName);
+
+  return value?.trim() ? value : undefined;
+}
+
+function readStringArray(payload: SubmitPayload, fieldName: string) {
+  const value = payload[fieldName];
+
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (typeof item === "string") {
+        return item.trim();
+      }
+
+      if (typeof item === "number" || typeof item === "boolean") {
+        return String(item);
+      }
+
+      return "";
+    })
+    .filter(Boolean);
+}
+
 function looksLikeSerializedOptionList(fieldName: string, value: string) {
   const normalizedFieldName = normalizePayloadFieldName(fieldName);
   const trimmed = value.trim();
@@ -122,13 +128,10 @@ function looksLikeSerializedOptionList(fieldName: string, value: string) {
   );
 }
 
-function validatePayloadShape(formData: FormData): ActionState | null {
+function validatePayloadShape(payload: SubmitPayload): ActionState | null {
   const fieldErrors: Record<string, string[]> = {};
-  const coverageScope = String(formData.get("coverageScope") ?? "");
-  const cityIds = formData
-    .getAll("cityIds")
-    .map(String)
-    .filter(Boolean);
+  const coverageScope = readString(payload, "coverageScope") ?? "";
+  const cityIds = readStringArray(payload, "cityIds");
 
   if (
     coverageScope === "SPECIFIC_CITIES" &&
@@ -139,12 +142,50 @@ function validatePayloadShape(formData: FormData): ActionState | null {
     ];
   }
 
-  for (const [fieldName, value] of formData.entries()) {
-    if (value instanceof File) {
+  for (const [fieldName, value] of Object.entries(payload)) {
+    const normalizedFieldName = normalizePayloadFieldName(fieldName);
+
+    if (FILE_PAYLOAD_FIELD_NAMES.has(normalizedFieldName)) {
+      fieldErrors[fieldName] = [
+        "Files are not submitted through this form. Please email documents after submission.",
+      ];
       continue;
     }
 
-    if (looksLikeSerializedOptionList(fieldName, String(value))) {
+    if (Array.isArray(value)) {
+      if (OPTION_PAYLOAD_FIELD_NAMES.has(normalizedFieldName)) {
+        fieldErrors[fieldName] = [
+          "Option list data is not allowed in the final submission. Please refresh and submit again.",
+        ];
+        continue;
+      }
+
+      if (
+        value.some(
+          (item) =>
+            item !== null &&
+            typeof item === "object",
+        )
+      ) {
+        fieldErrors[fieldName] = [
+          "Only selected IDs are allowed in the final submission.",
+        ];
+      }
+
+      continue;
+    }
+
+    if (value !== null && typeof value === "object") {
+      fieldErrors[fieldName] = [
+        "Object data is not allowed in the final submission.",
+      ];
+      continue;
+    }
+
+    if (
+      typeof value === "string" &&
+      looksLikeSerializedOptionList(fieldName, value)
+    ) {
       fieldErrors[fieldName] = [
         "This field contains option list data that is not allowed in the final submission. Please refresh and submit again.",
       ];
@@ -165,7 +206,7 @@ function validatePayloadShape(formData: FormData): ActionState | null {
   };
 }
 
-function parseRegistrationFormData(formData: FormData):
+function parseRegistrationPayload(payload: SubmitPayload):
   | {
       success: true;
       values: ParsedRegistrationSubmission;
@@ -175,58 +216,58 @@ function parseRegistrationFormData(formData: FormData):
       state: ActionState;
     } {
   const result = vendorRegistrationSubmissionSchema.safeParse({
-    companyName: formData.get("companyName"),
-    legalName: formData.get("legalName"),
-    companyEmail: formData.get("companyEmail"),
-    companyPhone: formData.get("companyPhone"),
-    website: formData.get("website") || undefined,
-    crNumber: formData.get("crNumber"),
-    vatNumber: formData.get("vatNumber"),
-    countryCode: formData.get("countryCode"),
-    coverageScope: formData.get("coverageScope"),
-    cityIds: formData.getAll("cityIds").map(String),
-    categoryId: formData.get("categoryId"),
-    subcategoryIds: formData.getAll("subcategoryIds").map(String),
-    addressLine1: formData.get("addressLine1"),
-    addressLine2: formData.get("addressLine2") || undefined,
-    district: formData.get("district"),
-    region: formData.get("region") || undefined,
-    postalCode: formData.get("postalCode"),
-    poBox: formData.get("poBox") || undefined,
-    businessDescription: formData.get("businessDescription"),
-    servicesOverview: formData.get("servicesOverview"),
-    yearsInBusiness: formData.get("yearsInBusiness"),
-    employeeCount: formData.get("employeeCount"),
+    companyName: readString(payload, "companyName"),
+    legalName: readString(payload, "legalName"),
+    companyEmail: readString(payload, "companyEmail"),
+    companyPhone: readString(payload, "companyPhone"),
+    website: readOptionalString(payload, "website"),
+    crNumber: readString(payload, "crNumber"),
+    vatNumber: readString(payload, "vatNumber"),
+    countryCode: readString(payload, "countryCode"),
+    coverageScope: readString(payload, "coverageScope"),
+    cityIds: readStringArray(payload, "cityIds"),
+    categoryId: readString(payload, "categoryId"),
+    subcategoryIds: readStringArray(payload, "subcategoryIds"),
+    addressLine1: readString(payload, "addressLine1"),
+    addressLine2: readOptionalString(payload, "addressLine2"),
+    district: readString(payload, "district"),
+    region: readOptionalString(payload, "region"),
+    postalCode: readString(payload, "postalCode"),
+    poBox: readOptionalString(payload, "poBox"),
+    businessDescription: readString(payload, "businessDescription"),
+    servicesOverview: readString(payload, "servicesOverview"),
+    yearsInBusiness: readString(payload, "yearsInBusiness"),
+    employeeCount: readString(payload, "employeeCount"),
     reference1: {
-      name: formData.get("reference1Name"),
-      companyName: formData.get("reference1CompanyName"),
-      email: formData.get("reference1Email"),
-      phone: formData.get("reference1Phone"),
-      title: formData.get("reference1Title"),
+      name: readString(payload, "reference1Name"),
+      companyName: readString(payload, "reference1CompanyName"),
+      email: readString(payload, "reference1Email"),
+      phone: readString(payload, "reference1Phone"),
+      title: readString(payload, "reference1Title"),
     },
     reference2: {
-      name: formData.get("reference2Name"),
-      companyName: formData.get("reference2CompanyName"),
-      email: formData.get("reference2Email"),
-      phone: formData.get("reference2Phone"),
-      title: formData.get("reference2Title"),
+      name: readString(payload, "reference2Name"),
+      companyName: readString(payload, "reference2CompanyName"),
+      email: readString(payload, "reference2Email"),
+      phone: readString(payload, "reference2Phone"),
+      title: readString(payload, "reference2Title"),
     },
     reference3: {
-      name: formData.get("reference3Name"),
-      companyName: formData.get("reference3CompanyName"),
-      email: formData.get("reference3Email"),
-      phone: formData.get("reference3Phone"),
-      title: formData.get("reference3Title"),
+      name: readString(payload, "reference3Name"),
+      companyName: readString(payload, "reference3CompanyName"),
+      email: readString(payload, "reference3Email"),
+      phone: readString(payload, "reference3Phone"),
+      title: readString(payload, "reference3Title"),
     },
-    bankName: formData.get("bankName"),
-    accountName: formData.get("accountName"),
-    iban: formData.get("iban"),
-    swiftCode: formData.get("swiftCode"),
-    bankAccountNumber: formData.get("bankAccountNumber") || undefined,
-    additionalInformation: formData.get("additionalInformation") || undefined,
-    declarationName: formData.get("declarationName"),
-    declarationTitle: formData.get("declarationTitle"),
-    declarationAccepted: formData.get("declarationAccepted"),
+    bankName: readString(payload, "bankName"),
+    accountName: readString(payload, "accountName"),
+    iban: readString(payload, "iban"),
+    swiftCode: readString(payload, "swiftCode"),
+    bankAccountNumber: readOptionalString(payload, "bankAccountNumber"),
+    additionalInformation: readOptionalString(payload, "additionalInformation"),
+    declarationName: readString(payload, "declarationName"),
+    declarationTitle: readString(payload, "declarationTitle"),
+    declarationAccepted: readString(payload, "declarationAccepted"),
   });
 
   if (!result.success) {
@@ -250,135 +291,6 @@ function parseRegistrationFormData(formData: FormData):
   return {
     success: true,
     values: result.data,
-  };
-}
-
-function isAllowedFile(file: File) {
-  const fileName = file.name.trim().toLowerCase();
-
-  return (
-    ALLOWED_FILE_TYPES.has(file.type) ||
-    ALLOWED_FILE_EXTENSIONS.some((extension) => fileName.endsWith(extension))
-  );
-}
-
-function sanitizeAttachmentFileName(fileName: string, fallback: string) {
-  const safeName = fileName
-    .trim()
-    .replace(/[^\w .()\-]+/g, "_")
-    .replace(/\s+/g, " ")
-    .slice(0, 160);
-
-  return safeName || fallback;
-}
-
-function getFileSizeMb(file: File) {
-  return Number((file.size / (1024 * 1024)).toFixed(2));
-}
-
-async function collectEmailOnlyAttachments(formData: FormData): Promise<
-  | {
-      success: true;
-      emailAttachments: Array<{ filename: string; content: Buffer }>;
-      emailOnlyAttachments: Array<{
-        documentType: AttachmentDocumentType;
-        fileName: string;
-        mimeType: string;
-        sizeBytes: number;
-      }>;
-    }
-  | {
-      success: false;
-      state: ActionState;
-    }
-> {
-  const fieldErrors: Record<string, string[]> = {};
-  const emailAttachments: Array<{ filename: string; content: Buffer }> = [];
-  const emailOnlyAttachments: Array<{
-    documentType: AttachmentDocumentType;
-    fileName: string;
-    mimeType: string;
-    sizeBytes: number;
-  }> = [];
-  let totalSizeBytes = 0;
-
-  for (const field of ATTACHMENT_FIELDS) {
-    const value = formData.get(field.fieldName);
-
-    if (!(value instanceof File) || value.size === 0) {
-      if (field.required) {
-        fieldErrors[field.fieldName] = [`${field.label} is required.`];
-      }
-      continue;
-    }
-
-    console.info("[supplier-registration-submit-api] file received", {
-      documentType: field.documentType,
-      fileName: value.name,
-      mimeType: value.type || "unknown",
-      fileSizeMB: getFileSizeMb(value),
-    });
-
-    if (value.size > MAX_FILE_BYTES) {
-      fieldErrors[field.fieldName] = [FILE_TOO_LARGE_MESSAGE];
-      continue;
-    }
-
-    if (!isAllowedFile(value)) {
-      fieldErrors[field.fieldName] = [
-        `${field.label} must be a PDF, JPG, or PNG file.`,
-      ];
-      continue;
-    }
-
-    totalSizeBytes += value.size;
-
-    if (totalSizeBytes > MAX_TOTAL_FILE_BYTES) {
-      fieldErrors[field.fieldName] = [
-        "Total upload size is too large. Maximum allowed total size is 20MB.",
-      ];
-      continue;
-    }
-
-    const fileName = sanitizeAttachmentFileName(
-      value.name,
-      `${field.documentType}.pdf`,
-    );
-    const mimeType = value.type || "application/octet-stream";
-    const content = Buffer.from(await value.arrayBuffer());
-
-    emailAttachments.push({
-      filename: fileName,
-      content,
-    });
-    emailOnlyAttachments.push({
-      documentType: field.documentType,
-      fileName,
-      mimeType,
-      sizeBytes: value.size,
-    });
-  }
-
-  if (Object.keys(fieldErrors).length > 0) {
-    console.warn("[supplier-registration-submit-api] file validation failed", {
-      fields: Object.keys(fieldErrors),
-    });
-
-    return {
-      success: false,
-      state: {
-        error:
-          Object.values(fieldErrors).flatMap((messages) => messages)[0] ??
-          "Please review the highlighted document uploads.",
-        fieldErrors,
-      },
-    };
-  }
-
-  return {
-    success: true,
-    emailAttachments,
-    emailOnlyAttachments,
   };
 }
 
@@ -434,44 +346,42 @@ export async function POST(request: Request) {
   try {
     console.info("[supplier-registration] final submit started");
 
-    const formData = await request.formData();
-    const keys = Array.from(new Set(Array.from(formData.keys()))).sort();
-    const fileFields = [...formData.entries()]
-      .filter(([, value]) => value instanceof File && value.size > 0)
-      .map(([key, value]) => ({
-        key,
-        sizeMB: getFileSizeMb(value as File),
-      }));
+    const payload = (await request.json().catch(() => null)) as
+      | SubmitPayload
+      | null;
 
-    console.info("[supplier-registration-submit-api] payload received", {
+    if (!payload || Array.isArray(payload) || typeof payload !== "object") {
+      return jsonActionState(
+        {
+          error: "Invalid registration payload. Please refresh and submit again.",
+        },
+        400,
+      );
+    }
+
+    const keys = Object.keys(payload).sort();
+
+    console.info("[supplier-registration-submit-api] JSON payload received", {
       keys,
-      fileFields,
-      selectedCities: formData.getAll("cityIds").length,
-      selectedSubcategories: formData.getAll("subcategoryIds").length,
+      selectedCities: readStringArray(payload, "cityIds").length,
+      selectedSubcategories: readStringArray(payload, "subcategoryIds").length,
+      files: 0,
     });
 
-    const payloadShapeState = validatePayloadShape(formData);
+    const payloadShapeState = validatePayloadShape(payload);
 
     if (payloadShapeState) {
       return jsonActionState(payloadShapeState, 400);
     }
 
-    const parsedRegistration = parseRegistrationFormData(formData);
+    const parsedRegistration = parseRegistrationPayload(payload);
 
     if (!parsedRegistration.success) {
       return jsonActionState(parsedRegistration.state, 400);
     }
 
-    const collectedAttachments = await collectEmailOnlyAttachments(formData);
-
-    if (!collectedAttachments.success) {
-      return jsonActionState(collectedAttachments.state, 400);
-    }
-
     const createdRequest = await submitVendorRegistrationRequest({
       values: parsedRegistration.values,
-      emailOnlyAttachments: collectedAttachments.emailOnlyAttachments,
-      emailAttachments: collectedAttachments.emailAttachments,
     });
 
     revalidatePath("/admin/vendor-registrations");
@@ -479,6 +389,7 @@ export async function POST(request: Request) {
     console.info("[supplier-registration] final submit success", {
       requestNumber: createdRequest.requestNumber,
       emailWarning: createdRequest.emailWarning ?? null,
+      documents: "pending-by-email",
     });
 
     return jsonActionState({

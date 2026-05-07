@@ -720,7 +720,7 @@ async function notifyVendorRegistrationSubmitted(input: {
         await createWorkflowNotification(tx, {
           type: "SYSTEM_ALERT",
           title: "Vendor registration submitted",
-          message: `${input.companyName} submitted a new supplier registration request.`,
+          message: `${input.companyName} submitted a new supplier registration request. Documents pending by email.`,
           vendorId: null,
           href: `/admin/vendor-registrations/${input.requestId}`,
           routingStrategies: ["procurement_chain"],
@@ -1011,11 +1011,12 @@ export async function submitVendorRegistrationRequest(input: {
     }),
     fallback: {
       heading: "Vendor Registration Submitted",
-      intro: `${input.values.companyName} has submitted a new vendor registration request for review.`,
+      intro: `${input.values.companyName} has submitted a new vendor registration request for review. Documents pending by email.`,
       rows: [
         { label: "Request Number", value: request.requestNumber },
         { label: "Company", value: input.values.companyName },
         { label: "Country", value: selectedCountry.name },
+        { label: "Documents", value: "Documents pending by email." },
       ],
       actionLabel: "Review Request",
       actionUrl: verificationUrl,

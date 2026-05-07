@@ -711,23 +711,8 @@ export async function submitVendorRegistrationAction(
       return parsedRegistration.state;
     }
 
-    const collectedAttachments = collectRegistrationAttachments(formData);
-
-    if (!collectedAttachments.success) {
-      await logSupplierRegistrationSubmitError(
-        new Error(collectedAttachments.state.error ?? "File validation failed."),
-        {
-          fieldErrors: collectedAttachments.state.fieldErrors,
-          persist: false,
-          reason: "file-validation",
-        },
-      );
-      return collectedAttachments.state;
-    }
-
     const request = await submitVendorRegistrationRequest({
       values: parsedRegistration.values,
-      attachments: collectedAttachments.attachments,
     });
 
     revalidatePath("/admin/vendor-registrations");

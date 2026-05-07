@@ -55,7 +55,7 @@ const STEPS = [
   {
     title: "Additional Information",
     subtitle:
-      "Upload the core supporting documents and add any extra notes that may help the review team.",
+      "Review document requirements and add any extra notes that may help the review team.",
   },
   {
     title: "Declaration / Final Review",
@@ -89,22 +89,22 @@ const ATTACHMENT_FIELDS = [
     name: "crAttachment",
     documentType: "CR",
     label: "CR",
-    helper: "Commercial registration document.",
-    required: true,
+    helper: "Commercial registration document. Send this by email after submission.",
+    required: false,
   },
   {
     name: "vatAttachment",
     documentType: "VAT",
     label: "VAT",
-    helper: "VAT certificate or tax registration document.",
-    required: true,
+    helper: "VAT certificate or tax registration document. Send this by email after submission.",
+    required: false,
   },
   {
     name: "companyProfileAttachment",
     documentType: "COMPANY_PROFILE",
     label: "Company Profile",
-    helper: "Profile, brochure, or capability deck.",
-    required: true,
+    helper: "Profile, brochure, or capability deck. Send this by email after submission.",
+    required: false,
   },
   {
     name: "financialsAttachment",
@@ -125,6 +125,7 @@ const ATTACHMENT_FIELDS = [
 type AttachmentFieldName = (typeof ATTACHMENT_FIELDS)[number]["name"];
 type SelectedUploadFiles = Partial<Record<AttachmentFieldName, File>>;
 type UploadFieldErrors = Partial<Record<AttachmentFieldName, string>>;
+type RegistrationSubmitPayload = Record<string, string | string[]>;
 type SubmitBlockingField = {
   field: string;
   label: string;
@@ -599,10 +600,7 @@ function AttachmentField({
   label,
   helper,
   required,
-  isPending,
-  selectedFile,
   error,
-  onFileChange,
 }: {
   name: AttachmentFieldName;
   label: string;
@@ -624,34 +622,19 @@ function AttachmentField({
         {label}
         {required ? <span className="text-[#991b1b]"> *</span> : null}
       </Label>
-      <Input
+      <div
         id={name}
-        name={name}
-        type="file"
-        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-        required={required}
-        disabled={isPending}
-        onChange={(event) =>
-          onFileChange(name, event.currentTarget.files?.[0] ?? null)
-        }
-        aria-invalid={Boolean(error)}
-        className={cn(
-          "mt-2 file:mr-4 file:rounded-full file:border-0 file:bg-[var(--color-panel-soft)] file:px-4 file:py-2 file:text-xs file:font-semibold file:text-[var(--color-ink)]",
-          error && "border-[rgba(185,28,28,0.58)] bg-[rgba(185,28,28,0.04)] shadow-[0_0_0_4px_rgba(185,28,28,0.08)]",
-        )}
-      />
-      {selectedFile ? (
-        <p className="mt-2 rounded-[14px] bg-[rgba(21,128,61,0.08)] px-3 py-2 text-xs font-medium text-[#166534]">
-          Selected: {selectedFile.name}
-        </p>
-      ) : null}
+        className="mt-3 rounded-[18px] border border-[rgba(200,164,92,0.22)] bg-[rgba(255,251,235,0.68)] px-4 py-3 text-xs font-medium leading-6 text-[#5f4511]"
+      >
+        Send this document by email after submitting the registration.
+      </div>
       {error ? (
         <p className="mt-2 rounded-[14px] bg-[rgba(185,28,28,0.08)] px-3 py-2 text-xs font-medium text-[#991b1b]">
           {error}
         </p>
       ) : null}
       <p className="mt-2 text-xs leading-6 text-[var(--color-muted)]">
-        {helper} PDF, JPG, or PNG only. Max 10MB per file.
+        {helper}
       </p>
     </div>
   );
@@ -762,8 +745,24 @@ function validateUploadInputs(uploadFiles: SelectedUploadFiles) {
   };
 }
 
-function appendControlToFormData(
-  formData: FormData,
+function setPayloadValue(
+  payload: RegistrationSubmitPayload,
+  name: string,
+  value: string,
+) {
+  if (
+    !name ||
+    !PRIMITIVE_SUBMIT_FIELD_NAMES.has(name) ||
+    BLOCKED_PAYLOAD_FIELD_NAMES.has(name)
+  ) {
+    return;
+  }
+
+  payload[name] = value;
+}
+
+function appendControlToPayload(
+  payload: RegistrationSubmitPayload,
   element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
 ) {
   if (
@@ -782,35 +781,34 @@ function appendControlToFormData(
 
     if (element.type === "checkbox" || element.type === "radio") {
       if (element.checked) {
-        formData.append(element.name, element.value || "on");
+        setPayloadValue(payload, element.name, element.value || "on");
       }
       return;
     }
 
-    formData.append(element.name, element.value);
+    setPayloadValue(payload, element.name, element.value);
     return;
   }
 
   if (element instanceof HTMLSelectElement && element.multiple) {
-    for (const option of Array.from(element.selectedOptions)) {
-      formData.append(element.name, option.value);
-    }
+    payload[element.name] = Array.from(element.selectedOptions).map(
+      (option) => option.value,
+    );
     return;
   }
 
-  formData.append(element.name, element.value);
+  setPayloadValue(payload, element.name, element.value);
 }
 
-function buildCompleteRegistrationFormData(
+function buildCompleteRegistrationPayload(
   form: HTMLFormElement,
   input: {
     coverageScope: CoverageScope;
     selectedCityIds: string[];
     selectedSubcategoryIds: string[];
-    selectedUploadFiles: SelectedUploadFiles;
   },
 ) {
-  const formData = new FormData();
+  const payload: RegistrationSubmitPayload = {};
   const controls = Array.from(
     form.querySelectorAll<
       HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
@@ -818,67 +816,43 @@ function buildCompleteRegistrationFormData(
   );
 
   for (const control of controls) {
-    appendControlToFormData(formData, control);
+    appendControlToPayload(payload, control);
   }
 
-  if (input.coverageScope === "SPECIFIC_CITIES") {
-    for (const cityId of Array.from(new Set(input.selectedCityIds))) {
-      formData.append("cityIds", cityId);
-    }
-  }
+  payload.cityIds =
+    input.coverageScope === "SPECIFIC_CITIES"
+      ? Array.from(new Set(input.selectedCityIds))
+      : [];
+  payload.subcategoryIds = Array.from(new Set(input.selectedSubcategoryIds));
 
-  for (const subcategoryId of Array.from(
-    new Set(input.selectedSubcategoryIds),
-  )) {
-    formData.append("subcategoryIds", subcategoryId);
-  }
-
-  for (const field of ATTACHMENT_FIELDS) {
-    const file = input.selectedUploadFiles[field.name];
-
-    if (file) {
-      formData.set(field.name, file, file.name);
-    }
-  }
-
-  return formData;
+  return payload;
 }
 
 function logFinalSubmitPayloadDebug(input: {
-  formData: FormData;
+  payload: RegistrationSubmitPayload;
   coverageScope: CoverageScope;
   submittedCityCount: number;
   selectedSubcategoryCount: number;
-  uploadedFilesCount: number;
+  selectedFilesIgnored: number;
 }) {
-  const keys = Array.from(new Set(Array.from(input.formData.keys()))).sort();
-  let nonFileFieldCount = 0;
-  let fileFieldCount = 0;
-
-  for (const [key, value] of input.formData.entries()) {
-    if (value instanceof File) {
-      fileFieldCount += 1;
-      console.info("[supplier-registration] file payload", {
-        field: key,
-        sizeMB: Number((value.size / (1024 * 1024)).toFixed(2)),
-      });
-      continue;
-    }
-
-    nonFileFieldCount += 1;
-  }
+  const keys = Object.keys(input.payload).sort();
+  const nonFileFieldCount = Object.values(input.payload).reduce(
+    (total, value) => total + (Array.isArray(value) ? value.length : 1),
+    0,
+  );
 
   console.log("payload keys:", keys);
   console.log("cities count", input.submittedCityCount);
   console.log("subcategories count", input.selectedSubcategoryCount);
-  console.log("files count", input.uploadedFilesCount);
+  console.log("files count", 0);
   console.info("[supplier-registration] final submit payload", {
     keys,
     coverageScope: input.coverageScope,
     selectedCities: input.submittedCityCount,
     selectedSubcategories: input.selectedSubcategoryCount,
     nonFileFields: nonFileFieldCount,
-    files: fileFieldCount,
+    files: 0,
+    selectedFilesIgnored: input.selectedFilesIgnored,
   });
 }
 
@@ -1853,21 +1827,6 @@ export function VendorRegistrationForm({
       }
     }
 
-    const uploadValidation = validateUploadInputs(selectedUploadFiles);
-
-    for (const field of ATTACHMENT_FIELDS) {
-      const uploadError = uploadValidation.fieldErrors[field.name];
-
-      if (uploadError) {
-        const meta = getSubmitFieldMeta(field.name);
-        const message = !selectedUploadFiles[field.name] && field.required
-          ? `${meta.label} is required.`
-          : uploadError;
-
-        addSubmitBlockingField(groups, field.name, message);
-      }
-    }
-
     if (!effectiveCountryCode || !selectedCountry) {
       addSubmitBlockingField(groups, "countryCode", "Country is required.");
     }
@@ -2082,10 +2041,6 @@ export function VendorRegistrationForm({
       }
     }
 
-    if (currentStep === 6 && !validateUploadsBeforeSubmit()) {
-      return false;
-    }
-
     return true;
   }
 
@@ -2136,32 +2091,31 @@ export function VendorRegistrationForm({
       selectedCities:
         coverageScope === "SPECIFIC_CITIES" ? selectedCityIds.length : 0,
       selectedSubcategories: subcategoryIds.length,
-      selectedFiles: Object.keys(selectedUploadFiles).length,
+      selectedFilesIgnored: Object.keys(selectedUploadFiles).length,
     });
 
-    const formData = buildCompleteRegistrationFormData(
-      event.currentTarget,
-      {
-        coverageScope,
-        selectedCityIds,
-        selectedSubcategoryIds: subcategoryIds,
-        selectedUploadFiles,
-      },
-    );
+    const payload = buildCompleteRegistrationPayload(event.currentTarget, {
+      coverageScope,
+      selectedCityIds,
+      selectedSubcategoryIds: subcategoryIds,
+    });
 
     logFinalSubmitPayloadDebug({
-      formData,
+      payload,
       coverageScope,
       submittedCityCount:
         coverageScope === "SPECIFIC_CITIES" ? selectedCityIds.length : 0,
       selectedSubcategoryCount: subcategoryIds.length,
-      uploadedFilesCount: Object.keys(selectedUploadFiles).length,
+      selectedFilesIgnored: Object.keys(selectedUploadFiles).length,
     });
 
     try {
       const response = await fetch("/api/vendor-registration/submit", {
         method: "POST",
-        body: formData,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
       });
       const result = (await response.json().catch(() => null)) as
         | ActionState
@@ -3301,9 +3255,8 @@ export function VendorRegistrationForm({
                     className="mt-1 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]"
                   />
                   <span>
-                    I confirm that the information, attachments, and supporting
-                    documents submitted in this form are true and complete to the
-                    best of my knowledge.
+                    I confirm that the information provided in this form is true
+                    and complete to the best of my knowledge.
                   </span>
                 </label>
                 <InlineFieldError message={fieldError("declarationAccepted")} />
@@ -3319,14 +3272,14 @@ export function VendorRegistrationForm({
                   Submission checklist
                 </p>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <ChecklistItem label="CR attachment" />
-                  <ChecklistItem label="VAT attachment" />
-                  <ChecklistItem label="Company profile" />
+                  <ChecklistItem label="Email CR document to procurement" />
+                  <ChecklistItem label="Email VAT certificate to procurement" />
+                  <ChecklistItem label="Email company profile to procurement" />
                 </div>
                 <p className="mt-4 text-xs leading-6 text-[var(--color-muted)]">
-                  Financials, bank certificate, and additional information can
-                  be added when available, but they are no longer required for
-                  submission.
+                  After submission, send your CR, VAT Certificate, and Company
+                  Profile to procurement@thegatheringksa.com with the request
+                  number in the email subject.
                 </p>
               </div>
             </div>

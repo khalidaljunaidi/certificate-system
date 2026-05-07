@@ -93,6 +93,12 @@ function SubmittedRegistrationPanel({ requestNumber }: { requestNumber: string }
               {requestNumber}
             </span>
           </div>
+
+          <div className="mt-5 rounded-[22px] border border-[rgba(200,164,92,0.32)] bg-[rgba(255,251,235,0.88)] p-4 text-sm leading-7 text-[#5f4511]">
+            Please send your CR, VAT Certificate, and Company Profile to
+            procurement@thegatheringksa.com and include your request number in
+            the email subject.
+          </div>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row md:flex-col">
