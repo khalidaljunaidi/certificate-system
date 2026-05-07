@@ -95,9 +95,23 @@ function SubmittedRegistrationPanel({ requestNumber }: { requestNumber: string }
           </div>
 
           <div className="mt-5 rounded-[22px] border border-[rgba(200,164,92,0.32)] bg-[rgba(255,251,235,0.88)] p-4 text-sm leading-7 text-[#5f4511]">
-            Please send your CR, VAT Certificate, and Company Profile to
-            procurement@thegatheringksa.com and include your request number in
-            the email subject.
+            <p className="font-semibold text-[#3f2f0d]">
+              Next step: email your required documents to procurement.
+            </p>
+            <p className="mt-2">
+              Send them to{" "}
+              <span className="font-semibold">
+                procurement@thegatheringksa.com
+              </span>{" "}
+              and include your request number,{" "}
+              <span className="font-semibold">{requestNumber}</span>, in the
+              email subject.
+            </p>
+            <ul className="mt-3 list-disc space-y-1 pl-5">
+              <li>CR</li>
+              <li>VAT Certificate</li>
+              <li>Company Profile</li>
+            </ul>
           </div>
         </div>
 
