@@ -75,6 +75,13 @@ const VENDOR_REGISTRATION_ATTACHMENT_TYPES = new Set<string>([
 type ParsedVendorRegistrationSubmission = z.infer<
   typeof vendorRegistrationSubmissionSchema
 >;
+type UploadedRegistrationAttachmentMetadata = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  storagePath: string;
+  sizeBytes: number;
+};
 
 function withNotice(path: string, notice: string) {
   const safePath = path.startsWith("/") ? path : "/admin/vendor-registrations";
@@ -345,6 +352,9 @@ function validateRegistrationPayloadShape(formData: FormData): ActionState | nul
 
   for (const [fieldName, value] of formData.entries()) {
     if (value instanceof File) {
+      fieldErrors[fieldName] = [
+        "Files must be uploaded before final submission. Please retry the document upload.",
+      ];
       continue;
     }
 
@@ -490,15 +500,84 @@ function parseRegistrationFormData(formData: FormData):
   };
 }
 
-function collectRegistrationFiles(formData: FormData):
+function getRequiredAttachmentMetadata(
+  formData: FormData,
+  fieldName: string,
+  fieldErrors: Record<string, string[]>,
+) {
+  const metadata = getOptionalAttachmentMetadata(formData, fieldName, fieldErrors);
+  const label = supplierRegistrationFileLabels[fieldName] ?? fieldName;
+
+  if (!metadata && !fieldErrors[fieldName]) {
+    fieldErrors[fieldName] = [`${label} is required.`];
+  }
+
+  return metadata;
+}
+
+function getOptionalAttachmentMetadata(
+  formData: FormData,
+  fieldName: string,
+  fieldErrors: Record<string, string[]>,
+): UploadedRegistrationAttachmentMetadata | undefined {
+  const label = supplierRegistrationFileLabels[fieldName] ?? fieldName;
+  const attachmentId = String(formData.get(`${fieldName}AttachmentId`) ?? "");
+  const fileName = String(formData.get(`${fieldName}FileName`) ?? "");
+  const mimeType = String(formData.get(`${fieldName}MimeType`) ?? "");
+  const storagePath = String(formData.get(`${fieldName}StoragePath`) ?? "");
+  const sizeBytesRaw = String(formData.get(`${fieldName}SizeBytes`) ?? "");
+
+  if (!attachmentId && !fileName && !mimeType && !storagePath && !sizeBytesRaw) {
+    return undefined;
+  }
+
+  const sizeBytes = Number(sizeBytesRaw);
+
+  if (!attachmentId || !fileName || !mimeType || !storagePath || !sizeBytes) {
+    fieldErrors[fieldName] = [`${label} upload metadata is incomplete.`];
+    return undefined;
+  }
+
+  if (sizeBytes > MAX_SUPPLIER_REGISTRATION_FILE_BYTES) {
+    fieldErrors[fieldName] = [FILE_TOO_LARGE_MESSAGE];
+    return undefined;
+  }
+
+  if (!ALLOWED_SUPPLIER_REGISTRATION_FILE_TYPES.has(mimeType)) {
+    const lowerName = fileName.trim().toLowerCase();
+    const hasAllowedExtension = ALLOWED_SUPPLIER_REGISTRATION_FILE_EXTENSIONS.some(
+      (extension) => lowerName.endsWith(extension),
+    );
+
+    if (!hasAllowedExtension) {
+      fieldErrors[fieldName] = [`${label} must be a PDF, JPG, or PNG file.`];
+      return undefined;
+    }
+  }
+
+  if (storagePath.includes("..") || storagePath.startsWith("/")) {
+    fieldErrors[fieldName] = [`${label} storage path is invalid.`];
+    return undefined;
+  }
+
+  return {
+    id: attachmentId,
+    fileName,
+    mimeType,
+    storagePath,
+    sizeBytes,
+  };
+}
+
+function collectRegistrationAttachments(formData: FormData):
   | {
       success: true;
-      files: {
-        CR: File;
-        VAT: File;
-        COMPANY_PROFILE: File;
-        FINANCIALS?: File;
-        BANK_CERTIFICATE?: File;
+      attachments: {
+        CR: UploadedRegistrationAttachmentMetadata;
+        VAT: UploadedRegistrationAttachmentMetadata;
+        COMPANY_PROFILE: UploadedRegistrationAttachmentMetadata;
+        FINANCIALS?: UploadedRegistrationAttachmentMetadata;
+        BANK_CERTIFICATE?: UploadedRegistrationAttachmentMetadata;
       };
     }
   | {
@@ -506,28 +585,29 @@ function collectRegistrationFiles(formData: FormData):
       state: ActionState;
     } {
   const fieldErrors: Record<string, string[]> = {};
-  const files = {
-    CR: getRequiredFile(formData, "crAttachment", fieldErrors),
-    VAT: getRequiredFile(formData, "vatAttachment", fieldErrors),
-    COMPANY_PROFILE: getRequiredFile(
+  const attachments = {
+    CR: getRequiredAttachmentMetadata(formData, "crAttachment", fieldErrors),
+    VAT: getRequiredAttachmentMetadata(formData, "vatAttachment", fieldErrors),
+    COMPANY_PROFILE: getRequiredAttachmentMetadata(
       formData,
       "companyProfileAttachment",
       fieldErrors,
     ),
-    FINANCIALS: getOptionalFile(formData, "financialsAttachment", fieldErrors),
-    BANK_CERTIFICATE: getOptionalFile(
+    FINANCIALS: getOptionalAttachmentMetadata(formData, "financialsAttachment", fieldErrors),
+    BANK_CERTIFICATE: getOptionalAttachmentMetadata(
       formData,
       "bankCertificateAttachment",
       fieldErrors,
     ),
   };
 
-  for (const [documentType, file] of Object.entries(files)) {
-    if (file instanceof File) {
+  for (const [documentType, attachment] of Object.entries(attachments)) {
+    if (attachment) {
       console.info("[vendor-registration-file-mapping]", {
         documentType,
-        originalFileName: file.name,
-        sizeBytes: file.size,
+        originalFileName: attachment.fileName,
+        sizeBytes: attachment.sizeBytes,
+        storagePath: attachment.storagePath,
       });
     }
   }
@@ -548,12 +628,13 @@ function collectRegistrationFiles(formData: FormData):
 
   return {
     success: true,
-    files: {
-      CR: files.CR as File,
-      VAT: files.VAT as File,
-      COMPANY_PROFILE: files.COMPANY_PROFILE as File,
-      FINANCIALS: files.FINANCIALS,
-      BANK_CERTIFICATE: files.BANK_CERTIFICATE,
+    attachments: {
+      CR: attachments.CR as UploadedRegistrationAttachmentMetadata,
+      VAT: attachments.VAT as UploadedRegistrationAttachmentMetadata,
+      COMPANY_PROFILE:
+        attachments.COMPANY_PROFILE as UploadedRegistrationAttachmentMetadata,
+      FINANCIALS: attachments.FINANCIALS,
+      BANK_CERTIFICATE: attachments.BANK_CERTIFICATE,
     },
   };
 }
@@ -630,23 +711,23 @@ export async function submitVendorRegistrationAction(
       return parsedRegistration.state;
     }
 
-    const collectedFiles = collectRegistrationFiles(formData);
+    const collectedAttachments = collectRegistrationAttachments(formData);
 
-    if (!collectedFiles.success) {
+    if (!collectedAttachments.success) {
       await logSupplierRegistrationSubmitError(
-        new Error(collectedFiles.state.error ?? "File validation failed."),
+        new Error(collectedAttachments.state.error ?? "File validation failed."),
         {
-          fieldErrors: collectedFiles.state.fieldErrors,
+          fieldErrors: collectedAttachments.state.fieldErrors,
           persist: false,
           reason: "file-validation",
         },
       );
-      return collectedFiles.state;
+      return collectedAttachments.state;
     }
 
     const request = await submitVendorRegistrationRequest({
       values: parsedRegistration.values,
-      files: collectedFiles.files,
+      attachments: collectedAttachments.attachments,
     });
 
     revalidatePath("/admin/vendor-registrations");
