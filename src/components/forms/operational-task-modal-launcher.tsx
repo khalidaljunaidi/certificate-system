@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { OperationalTaskForm } from "@/components/forms/operational-task-form";
 import { Button } from "@/components/ui/button";
-import type { TaskLookupOptions } from "@/lib/types";
+import type { ActionState, TaskLookupOptions } from "@/lib/types";
 
 export function OperationalTaskModalLauncher({
   lookupOptions,
@@ -13,14 +15,21 @@ export function OperationalTaskModalLauncher({
   lookupOptions?: TaskLookupOptions;
   canManage: boolean;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [loadedLookupOptions, setLoadedLookupOptions] =
     useState<TaskLookupOptions | null>(lookupOptions ?? null);
   const [isLoadingLookupOptions, setIsLoadingLookupOptions] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
 
   const activeLookupOptions = lookupOptions ?? loadedLookupOptions;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) {
@@ -90,15 +99,27 @@ export function OperationalTaskModalLauncher({
     }
   };
 
+  const handleSuccess = (state: ActionState) => {
+    setIsOpen(false);
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("notice", state.noticeKey ?? "task-created");
+
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    router.refresh();
+  };
+
   return (
     <>
       <Button type="button" onClick={handleOpen}>
         Create Task
       </Button>
 
-      {isOpen ? (
+      {mounted && isOpen
+        ? createPortal(
         <div
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-[rgba(17,17,17,0.42)] px-4 py-8 backdrop-blur-sm"
+          className="theme-admin fixed inset-0 z-[1000] flex items-center justify-center bg-[rgba(11,11,20,0.62)] px-4 py-8 backdrop-blur-sm"
+          role="presentation"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               setIsOpen(false);
@@ -106,18 +127,20 @@ export function OperationalTaskModalLauncher({
           }}
         >
           <div
-            ref={panelRef}
-            className="tg-floating-panel max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-[28px]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Create operational task"
+            className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-[28px] border border-[var(--border)] bg-[var(--surface)] shadow-[0_30px_90px_rgba(11,11,20,0.28)]"
           >
-            <div className="flex items-start justify-between gap-4 border-b border-[var(--color-border)] px-6 py-5">
-              <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.10em] text-[var(--color-accent)]">
+            <div className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-6 py-5">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium uppercase tracking-[0.10em] text-[var(--accent)]">
                   Operations
                 </p>
-                <h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">
+                <h2 className="mt-2 text-2xl font-semibold text-[var(--text-main)]">
                   Create operational task
                 </h2>
-                <p className="mt-2 text-sm leading-7 text-[var(--color-muted)]">
+                <p className="mt-2 text-sm leading-7 text-[var(--text-muted)]">
                   Launch a new execution task with ownership, SLA timing, checklist controls, and linked governance context.
                 </p>
               </div>
@@ -130,9 +153,11 @@ export function OperationalTaskModalLauncher({
                 <OperationalTaskForm
                   lookupOptions={activeLookupOptions}
                   canManage={canManage}
+                  redirectOnSuccess={false}
+                  onSuccess={handleSuccess}
                 />
               ) : (
-                <div className="rounded-[22px] border border-[var(--color-border)] bg-[var(--color-panel-soft)] p-5 text-sm text-[var(--color-muted)]">
+                <div className="rounded-[22px] border border-[var(--border)] bg-[var(--surface-soft)] p-5 text-sm text-[var(--text-muted)]">
                   {lookupError ??
                     (isLoadingLookupOptions
                       ? "Loading task setup options..."
@@ -141,8 +166,10 @@ export function OperationalTaskModalLauncher({
               )}
             </div>
           </div>
-        </div>
-      ) : null}
+        </div>,
+        document.body,
+          )
+        : null}
     </>
   );
 }
