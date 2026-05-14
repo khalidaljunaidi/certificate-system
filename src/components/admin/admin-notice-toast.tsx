@@ -67,6 +67,11 @@ const NOTICE_TOASTS: Record<string, ToastConfig> = {
     body: "Operational task updated successfully.",
     tone: "success",
   },
+  "task-completed": {
+    title: "Task completed",
+    body: "Operational task marked as completed.",
+    tone: "success",
+  },
   "performance-review-saved": {
     title: "Performance review saved",
     body: "Quarterly performance review saved successfully.",

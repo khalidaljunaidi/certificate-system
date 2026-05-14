@@ -91,6 +91,7 @@ export async function updateOperationalTaskExecutionAction(
         email: session.user.email,
         name: session.user.name,
         role: session.user.role,
+        permissions: session.user.permissions,
       },
       values,
     });

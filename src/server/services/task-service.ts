@@ -551,6 +551,7 @@ export async function updateOperationalTaskExecution(input: {
     email: string;
     role: UserRole;
     name: string;
+    permissions?: string[] | null;
   };
   values: z.infer<typeof taskExecutionSchema>;
 }) {
@@ -586,8 +587,12 @@ export async function updateOperationalTaskExecution(input: {
       throw new Error("Operational task not found.");
     }
 
-    if (currentTask.assignedToUserId !== input.actorUser.id) {
-      throw new Error("Only the assigned user can complete this task.");
+    const canCompleteTask =
+      currentTask.assignedToUserId === input.actorUser.id ||
+      canManageOperationalTasks(input.actorUser);
+
+    if (!canCompleteTask) {
+      throw new Error("Only the assigned user or a task manager can complete this task.");
     }
 
     if (currentTask.status === "COMPLETED") {

@@ -58,12 +58,13 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
     filterOptions.monthlyCycles.find((cycle) => cycle.isActive) ??
     null;
 
+  const activeTasks = tasks.filter((task) => task.status !== "COMPLETED");
   const kpis = {
     totalTasks: tasks.length,
     assignedTasks: tasks.filter((task) => task.assignedTo.id === session.user.id).length,
     completedTasks: tasks.filter((task) => task.status === "COMPLETED").length,
-    overdueTasks: tasks.filter((task) => task.slaStatus === "OVERDUE").length,
-    slaRiskTasks: tasks.filter((task) => task.slaStatus === "AT_RISK").length,
+    overdueTasks: activeTasks.filter((task) => task.slaStatus === "OVERDUE").length,
+    slaRiskTasks: activeTasks.filter((task) => task.slaStatus === "AT_RISK").length,
   };
 
   return (
@@ -294,7 +295,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
                           <TaskPriorityChip priority={task.priority} />
                         </td>
                         <td className="px-4 py-5">
-                          <TaskSlaStatusBadge status={task.slaStatus} />
+                          <TaskSlaCell task={task} />
                         </td>
                         <td className="px-6 py-5">
                           <div className="flex justify-end">
@@ -342,7 +343,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
                     <div className="mt-4 flex flex-wrap gap-2">
                       <OperationalTaskStatusBadge status={task.status} />
                       <TaskPriorityChip priority={task.priority} />
-                      <TaskSlaStatusBadge status={task.slaStatus} />
+                      <TaskSlaCell task={task} />
                     </div>
                   </div>
                 ))}
@@ -480,6 +481,14 @@ function TaskPriorityChip({
           : "neutral";
 
   return <Chip tone={tone}>{priority.replaceAll("_", " ")}</Chip>;
+}
+
+function TaskSlaCell({ task }: { task: OperationalTaskListItem }) {
+  if (task.status === "COMPLETED") {
+    return <Chip tone="green">Completed</Chip>;
+  }
+
+  return <TaskSlaStatusBadge status={task.slaStatus} />;
 }
 
 function getDueDateHelper(task: OperationalTaskListItem) {

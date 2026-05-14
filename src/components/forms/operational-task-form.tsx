@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { saveOperationalTaskAction } from "@/actions/task-actions";
@@ -17,6 +17,7 @@ import {
   OPERATIONAL_TASK_TYPE_OPTIONS,
 } from "@/lib/constants";
 import type {
+  ActionState,
   OperationalTaskDetailView,
   TaskLookupOptions,
 } from "@/lib/types";
@@ -40,12 +41,17 @@ export function OperationalTaskForm({
   task,
   lookupOptions,
   canManage,
+  onSuccess,
+  redirectOnSuccess = true,
 }: {
   task?: OperationalTaskDetailView;
   lookupOptions: TaskLookupOptions;
   canManage: boolean;
+  onSuccess?: (state: ActionState) => void;
+  redirectOnSuccess?: boolean;
 }) {
   const router = useRouter();
+  const handledSuccessRef = useRef<string | null>(null);
   const [state, formAction, isPending] = useActionState(
     saveOperationalTaskAction,
     EMPTY_ACTION_STATE,
@@ -66,10 +72,28 @@ export function OperationalTaskForm({
   );
 
   useEffect(() => {
+    if (!state.success && !state.redirectTo) {
+      return;
+    }
+
+    const successKey = `${state.noticeKey ?? ""}:${state.redirectTo ?? ""}:${state.success ?? ""}`;
+
+    if (handledSuccessRef.current === successKey) {
+      return;
+    }
+
+    handledSuccessRef.current = successKey;
+
+    if (!redirectOnSuccess) {
+      onSuccess?.(state);
+      router.refresh();
+      return;
+    }
+
     if (state.redirectTo) {
       router.replace(state.redirectTo, { scroll: false });
     }
-  }, [router, state.redirectTo]);
+  }, [onSuccess, redirectOnSuccess, router, state]);
 
   const filteredAssignments = useMemo(
     () =>

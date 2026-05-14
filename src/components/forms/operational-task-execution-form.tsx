@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { updateOperationalTaskExecutionAction } from "@/actions/task-actions";
@@ -9,7 +9,7 @@ import { FormStateMessage } from "@/components/forms/form-state-message";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/utils";
-import type { OperationalTaskDetailView } from "@/lib/types";
+import type { ActionState, OperationalTaskDetailView } from "@/lib/types";
 
 type ChecklistDraftItem = {
   id?: string;
@@ -20,14 +20,20 @@ type ChecklistDraftItem = {
 
 export function OperationalTaskExecutionForm({
   task,
+  onSuccess,
+  redirectOnSuccess = true,
 }: {
   task: OperationalTaskDetailView;
+  onSuccess?: (state: ActionState) => void;
+  redirectOnSuccess?: boolean;
 }) {
   const router = useRouter();
+  const handledSuccessRef = useRef<string | null>(null);
   const [state, formAction, isPending] = useActionState(
     updateOperationalTaskExecutionAction,
     EMPTY_ACTION_STATE,
   );
+  const [clientError, setClientError] = useState<string | null>(null);
   const [executionResult, setExecutionResult] = useState(
     task.task.executionResult ?? "",
   );
@@ -41,10 +47,40 @@ export function OperationalTaskExecutionForm({
   );
 
   useEffect(() => {
+    if (!state.success && !state.redirectTo) {
+      return;
+    }
+
+    const successKey = `${state.noticeKey ?? ""}:${state.redirectTo ?? ""}:${state.success ?? ""}`;
+
+    if (handledSuccessRef.current === successKey) {
+      return;
+    }
+
+    handledSuccessRef.current = successKey;
+
+    if (!redirectOnSuccess) {
+      onSuccess?.(state);
+      router.refresh();
+      return;
+    }
+
     if (state.redirectTo) {
       router.replace(state.redirectTo, { scroll: false });
     }
-  }, [router, state.redirectTo]);
+  }, [onSuccess, redirectOnSuccess, router, state]);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    setClientError(null);
+
+    if (
+      task.task.requiresChecklistCompletion &&
+      checklistItems.some((item) => !item.completed)
+    ) {
+      event.preventDefault();
+      setClientError("Complete every checklist item before marking the task as completed.");
+    }
+  }
 
   if (task.task.status === "COMPLETED") {
     return (
@@ -75,7 +111,7 @@ export function OperationalTaskExecutionForm({
   }
 
   return (
-    <form action={formAction} className="space-y-5">
+    <form action={formAction} onSubmit={handleSubmit} className="space-y-5">
       <input type="hidden" name="taskId" value={task.task.id} />
       <input
         type="hidden"
@@ -146,6 +182,15 @@ export function OperationalTaskExecutionForm({
           ))}
         </div>
       </div>
+
+      {clientError ? (
+        <div
+          role="alert"
+          className="rounded-[18px] border border-[rgba(185,28,28,0.18)] bg-[rgba(185,28,28,0.06)] px-4 py-3 text-sm leading-6 text-[#991b1b]"
+        >
+          {clientError}
+        </div>
+      ) : null}
 
       <FormStateMessage state={state.error ? state : EMPTY_ACTION_STATE} />
 
